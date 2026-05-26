@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌌 Galaxy Mirror Premium Web Viewer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(255, 255, 255, 0.04);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --accent-glow: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            --accent-color: #38bdf8;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(79, 172, 254, 0.08) 0px, transparent 50%);
+        }
+
+        /* 메인 컨테이너 */
+        #appContainer {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* 왼쪽 정보 패널 (글래스모피즘) */
+        #infoPanel {
+            width: 320px;
+            height: calc(100% - 40px);
+            margin: 20px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            background: var(--accent-glow);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-sub);
+            line-height: 1.5;
+            margin-bottom: 30px;
+        }
+
+        .status-container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: var(--text-sub);
+        }
+
+        .status-value {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444; /* offline Red */
+            box-shadow: 0 0 10px #ef4444;
+            transition: all 0.3s ease;
+        }
+
+        .indicator.online {
+            background-color: #10b981; /* online Green */
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        /* 뷰포트 영역 */
+        #viewerArea {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            padding: 20px 20px 20px 0;
+        }
+
+        /* 비디오 컨테이너 (그림자 및 모서리 깎기) */
+        #videoContainer {
+            width: auto;
+            height: 100%;
+            max-width: 100%;
+            aspect-ratio: 9 / 19.5; /* 갤럭시 기본 렌더 비율 */
+            position: relative;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--panel-border);
+            border-radius: 36px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: auto;
+            cursor: crosshair;
+        }
+
+        /* 컨트롤 버튼 */
+        .btn {
+            background: var(--accent-glow);
+            color: #0b0f19;
+            border: none;
+            border-radius: 14px;
+            padding: 14px;
+            font-size: 14px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(79, 172, 254, 0.25);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .log-box {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            max-height: 120px;
+            overflow-y: auto;
+            flex-grow: 1;
+            margin-top: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+        }
+    </style>
+</head>
+<body>
+    <div id="appContainer">
+        <!-- 왼쪽 글래스모피즘 대시보드 -->
+        <div id="infoPanel">
+            <div>
+                <h1>🌌 GALAXY MIRROR</h1>
+                <p class="subtitle">Tailscale MagicDNS & WebRTC 기반 초저지연 개인화 무설치 원격 제어 뷰어</p>
+
+                <!-- 상태 대시보드 -->
+                <div class="status-container">
+                    <div class="status-item">
+                        <span class="status-label">서버 연결</span>
+                        <span class="status-value" id="wsStatus">
+                            <span class="indicator" id="wsIndicator"></span>Offline
+                        </span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">WebRTC 스트림</span>
+                        <span class="status-value" id="rtcStatus">Offline</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">가상 터치 제어</span>
+                        <span class="status-value" id="controlStatus">비활성</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 하단 액션 및 라이브 로그 -->
+            <div style="display: flex; flex-direction: column; flex-grow: 1;">
+                <button class="btn" id="connectBtn">미러링 연결하기</button>
+                <div class="log-box" id="logBox">시스템 로그 대기 중...</div>
+            </div>
+        </div>
+
+        <!-- 오른쪽 미러링 실시간 뷰포트 -->
+        <div id="viewerArea">
+            <div id="videoContainer">
+                <video id="remoteVideo" autoplay playsinline muted></video>
+            </div>
+        </div>
+    </div>
+
+    <!-- WebRTC 뷰어 자바스크립트 모듈 로드 -->
+    <script src="/viewer.js"></script>
+</body>
+</html>
