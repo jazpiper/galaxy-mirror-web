@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.media.projection.MediaProjection
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -263,17 +264,30 @@ class MainActivity : ComponentActivity() {
                     }
                     sendResponse(json.toString())
                   }
-                  override fun onSetFailure(reason: String?) {}
+                  override fun onCreateFailure(reason: String?) {
+                    Log.e("WebRTC", "setLocalDescription onCreateFailure: $reason")
+                  }
+                  override fun onSetFailure(reason: String?) {
+                    Log.e("WebRTC", "setLocalDescription onSetFailure: $reason")
+                  }
                 }, it)
               }
             }
             override fun onSetSuccess() {}
-            override fun onCreateFailure(reason: String?) {}
-            override fun onSetFailure(reason: String?) {}
+            override fun onCreateFailure(reason: String?) {
+              Log.e("WebRTC", "createAnswer onCreateFailure: $reason")
+            }
+            override fun onSetFailure(reason: String?) {
+              Log.e("WebRTC", "createAnswer onSetFailure: $reason")
+            }
           }, MediaConstraints())
         }
-        override fun onCreateFailure(reason: String?) {}
-        override fun onSetFailure(reason: String?) {}
+        override fun onCreateFailure(reason: String?) {
+          Log.e("WebRTC", "setRemoteDescription onCreateFailure: $reason")
+        }
+        override fun onSetFailure(reason: String?) {
+          Log.e("WebRTC", "setRemoteDescription onSetFailure: $reason")
+        }
       }, remoteSdp)
 
     } catch (e: Exception) {

@@ -50,7 +50,7 @@ class MediaProjectionService : Service() {
                 // Foreground Service 시작 (안드로이드 10+ 미디어 프로젝션 타입 명시)
                 val notification = createNotification()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ActivityInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
                 } else {
                     startForeground(NOTIFICATION_ID, notification)
                 }
