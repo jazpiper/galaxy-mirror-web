@@ -87,6 +87,6 @@ dependencies {
   implementation("io.ktor:ktor-server-cio:2.3.12")
   implementation("io.ktor:ktor-server-websockets:2.3.12")
 
-  // WebRTC Android Library (JitPack Open Source Build)
-  implementation("com.github.webrtc-sdk:android:1.0.32006")
+  // WebRTC Android Library (Stream Packaged Version on Maven Central)
+  implementation("io.getstream:stream-webrtc-android:1.3.10")
 }
