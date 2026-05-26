@@ -24,6 +24,8 @@ updated: 2026-05-26
 * **아키텍처 상세 기술 명세서(2종) 설계 완료**
   * **[Protocols.md](./Protocols.md)** 생성: Ktor WebSocket 시그널링 채널 메시지 규격(Offer, Answer, ICE Candidate)과 WebRTC DataChannel을 활용한 실시간 마우스 제어 및 키보드 완성형 텍스트 입력의 JSON 통신 프로토콜을 규정했습니다.
   * **[Coordinates.md](./Coordinates.md)** 생성: 맥 브라우저 뷰어의 반응형 창 비율 왜곡에 대응하기 위해, 2D 레터박스/필러박스 상쇄 보정 공식 및 Android `AccessibilityService`를 통한 클릭/드래그 스트로크 구현 뼈대를 완성했습니다.
+* **GitHub 비공개(Private) 저장소 신설 및 연동**
+  * 로컬 개발 도구인 `gh` CLI 권한 검증을 통과하여 깃허브에 비공개 원격 저장소 **`jazpiper/galaxy-mirror-web`**을 성공적으로 생성하고, 로컬의 뼈대 문서 세트와 `.gitignore`를 1차로 원격 동기화했습니다.
 * **마일스톤 1 완수 및 마일스톤 2 활성화**
   * 기술 설계가 완비됨에 따라 Milestone 1을 완료(Completed) 처리하고, 실제 개발 단계인 **Milestone 2 (Android Host 기초 인프라 구축)**를 활성(Active) 상태로 전환하여 태스크를 정비했습니다.
   * 모든 마크다운 문서 간의 상대 양방향 링크 연결성 및 유효성 검증을 마쳤습니다.
