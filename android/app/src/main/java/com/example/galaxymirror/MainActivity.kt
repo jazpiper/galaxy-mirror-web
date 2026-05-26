@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
   private var videoTrack: VideoTrack? = null
   private var surfaceTextureHelper: SurfaceTextureHelper? = null
   private var videoCapturer: VideoCapturer? = null
+  private var controlChannel: DataChannel? = null
 
   // 화면 캡처 권한 요청 런처
   private val screenCaptureLauncher = registerForActivityResult(
@@ -217,7 +218,29 @@ class MainActivity : ComponentActivity() {
         override fun onAddStream(stream: MediaStream?) {}
         override fun onRemoveStream(stream: MediaStream?) {}
         override fun onDataChannel(dataChannel: DataChannel?) {
-          Log.d("WebRTC", "WebRTC DataChannel received.")
+          dataChannel?.let { dc ->
+            controlChannel = dc
+            Log.d("WebRTC", "DataChannel received: ${dc.label()}")
+            dc.registerObserver(object : DataChannel.Observer {
+              override fun onBufferedAmountChange(previousAmount: Long) {}
+              override fun onStateChange() {
+                Log.d("WebRTC", "DataChannel state: ${dc.state()}")
+              }
+              override fun onMessage(buffer: DataChannel.Buffer) {
+                try {
+                  val bytes = ByteArray(buffer.data.remaining())
+                  buffer.data.get(bytes)
+                  val text = String(bytes, Charsets.UTF_8)
+                  Log.d("WebRTC", "DataChannel message: $text")
+                  val json = org.json.JSONObject(text)
+                  GalaxyMirrorAccessibilityService.instance?.handleControlEvent(json)
+                    ?: Log.w("WebRTC", "AccessibilityService not connected yet!")
+                } catch (e: Exception) {
+                  Log.e("WebRTC", "Error processing DataChannel message: ${e.message}", e)
+                }
+              }
+            })
+          }
         }
         override fun onRenegotiationNeeded() {}
         override fun onAddTrack(receiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) {}

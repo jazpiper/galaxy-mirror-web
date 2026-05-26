@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Galaxy Mirror</string>
+    <string name="accessibility_service_description">Galaxy Mirror uses Accessibility Service to control your device remotely from a browser.</string>
 </resources>

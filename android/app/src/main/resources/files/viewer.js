@@ -29,7 +29,7 @@ function log(msg) {
 function connectSignaling() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/signaling`;
-    
+
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
     socket = new WebSocket(wsUrl);
 
@@ -46,6 +46,7 @@ function connectSignaling() {
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
         rtcStatus.innerText = "Offline";
         controlStatus.innerText = "비활성";
+        dataChannel = null;
     };
 
     socket.onerror = (err) => {
@@ -81,7 +82,8 @@ async function setupWebRTC() {
     peerConnection = new RTCPeerConnection(rtcConfig);
 
     // DataChannel 개설 (터치/키보드 제어 명령 전송용)
-    dataChannel = peerConnection.createDataChannel('controlChannel', {
+    // Channel name 'control' is matched by Android onDataChannel handler
+    dataChannel = peerConnection.createDataChannel('control', {
         ordered: true,
         maxRetransmits: 0 // 레이턴시 최소화 세팅
     });
@@ -130,6 +132,7 @@ function setupDataChannelHandlers(channel) {
         log("WebRTC DataChannel 제어 채널 오픈!");
         controlStatus.innerText = "제어 활성화";
         setupTouchControl();
+        setupKeyControl();
     };
 
     channel.onclose = () => {
@@ -142,79 +145,138 @@ function setupDataChannelHandlers(channel) {
     };
 }
 
-// 4. 터치/클릭 마우스 이벤트 캡처 및 백분율(%) 계산식
+// ─── Coordinate helper ───────────────────────────────────────────────────────
+/**
+ * Convert a mouse event into normalized {x, y} coordinates (0.0–1.0)
+ * that account for letterbox / pillarbox caused by object-fit: contain.
+ */
+function getNormalizedCoords(e) {
+    const rect   = remoteVideo.getBoundingClientRect();
+    const xOff   = e.clientX - rect.left;
+    const yOff   = e.clientY - rect.top;
+    const wElem  = rect.width;
+    const hElem  = rect.height;
+    const wVideo = remoteVideo.videoWidth  || 1080;
+    const hVideo = remoteVideo.videoHeight || 2400;
+    const rVideo = wVideo / hVideo;
+    const rElem  = wElem  / hElem;
+
+    let x, y;
+    if (rElem > rVideo) {
+        // Pillarbox: black bars on left/right
+        const wAct    = hElem * rVideo;
+        const wMargin = (wElem - wAct) / 2;
+        x = (xOff - wMargin) / wAct;
+        y = yOff / hElem;
+    } else {
+        // Letterbox: black bars on top/bottom
+        const hAct    = wElem / rVideo;
+        const hMargin = (hElem - hAct) / 2;
+        x = xOff / wElem;
+        y = (yOff - hMargin) / hAct;
+    }
+
+    return {
+        x: Math.max(0, Math.min(1, parseFloat(x.toFixed(4)))),
+        y: Math.max(0, Math.min(1, parseFloat(y.toFixed(4))))
+    };
+}
+
+// 4. 터치/클릭 & 스와이프 제어 세팅
 function setupTouchControl() {
     log("마우스 원격 터치 좌표 리스너 기동 완료.");
 
-    function sendTouchMessage(action, e) {
+    let dragStart   = null;  // { x, y, time }
+    let isDragging  = false;
+    let startClientX = 0;
+    let startClientY = 0;
+    const DRAG_THRESHOLD_PX = 8;
+
+    function sendControl(payload) {
         if (!dataChannel || dataChannel.readyState !== 'open') return;
-
-        const rect = remoteVideo.getBoundingClientRect();
-        
-        // 1. 마우스 원시 오프셋 좌표 산출
-        const xOff = e.clientX - rect.left;
-        const yOff = e.clientY - rect.top;
-
-        // Video 엘리먼트 스펙 및 원본 비디오 크기 획득
-        const wElem = rect.width;
-        const hElem = rect.height;
-        
-        // 비디오 본래 종횡비 획득 (가변 뷰포트 containment 감안)
-        const wVideo = remoteVideo.videoWidth || 1080;
-        const hVideo = remoteVideo.videoHeight || 2400;
-        const rVideo = wVideo / hVideo;
-        const rElem = wElem / hElem;
-
-        let xPct = 0;
-        let yPct = 0;
-
-        // 2. Coordinates.md에 설계된 조건별 레터박스 상쇄 보정 공식 대입
-        if (rElem > rVideo) {
-            // Pillarbox 발생 (좌우 여백 발생 조건)
-            const wAct = hElem * rVideo;
-            const wMargin = (wElem - wAct) / 2;
-            xPct = ((xOff - wMargin) / wAct) * 100;
-            yPct = (yOff / hElem) * 100;
-        } else {
-            // Letterbox 발생 (상하 여백 발생 조건)
-            const hAct = wElem / rVideo;
-            const hMargin = (hElem - hAct) / 2;
-            xPct = (xOff / wElem) * 100;
-            yPct = ((yOff - hMargin) / hAct) * 100;
-        }
-
-        // 3. 바운더리 체크 (0% ~ 100% 범위 보장)
-        xPct = Math.max(0, Math.min(100, xPct));
-        yPct = Math.max(0, Math.min(100, yPct));
-
-        // 4. DataChannel로 제어 메시지 최종 전송
-        const payload = {
-            action: action,
-            pointerId: 0,
-            x: parseFloat(xPct.toFixed(2)),
-            y: parseFloat(yPct.toFixed(2))
-        };
-
         dataChannel.send(JSON.stringify(payload));
     }
 
-    // 마우스 이벤트 바인딩
     remoteVideo.addEventListener('mousedown', (e) => {
-        sendTouchMessage('TOUCH_DOWN', e);
+        e.preventDefault();
+        const coords = getNormalizedCoords(e);
+        dragStart    = { ...coords, time: Date.now() };
+        startClientX = e.clientX;
+        startClientY = e.clientY;
+        isDragging   = false;
     });
 
     remoteVideo.addEventListener('mousemove', (e) => {
-        if (e.buttons === 1) { // 드래그 중인 경우에만 TOUCH_MOVE 전송
-            sendTouchMessage('TOUCH_MOVE', e);
+        if (e.buttons !== 1 || !dragStart) return;
+        const dx = e.clientX - startClientX;
+        const dy = e.clientY - startClientY;
+        if (!isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+            isDragging = true;
         }
     });
 
     remoteVideo.addEventListener('mouseup', (e) => {
-        sendTouchMessage('TOUCH_UP', e);
+        if (!dragStart) return;
+        const end      = getNormalizedCoords(e);
+        const duration = Date.now() - dragStart.time;
+
+        if (isDragging) {
+            // Swipe gesture
+            sendControl({
+                type: 'swipe',
+                x1: dragStart.x,
+                y1: dragStart.y,
+                x2: end.x,
+                y2: end.y,
+                duration: Math.max(100, Math.min(duration, 1500))
+            });
+            log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
+        } else {
+            // Tap gesture
+            sendControl({ type: 'tap', x: dragStart.x, y: dragStart.y });
+            log(`Tap: (${dragStart.x}, ${dragStart.y})`);
+        }
+
+        dragStart  = null;
+        isDragging = false;
+    });
+
+    // Cancel drag if mouse leaves the video element
+    remoteVideo.addEventListener('mouseleave', () => {
+        dragStart  = null;
+        isDragging = false;
     });
 }
 
-// 5. 연결하기 버튼 이벤트
+// 5. 키보드 단축키 → Android 키 이벤트
+function setupKeyControl() {
+    log("키보드 단축키 리스너 기동 완료.");
+
+    function sendKey(keyCode) {
+        if (!dataChannel || dataChannel.readyState !== 'open') return;
+        dataChannel.send(JSON.stringify({ type: 'key', keyCode }));
+        log(`Key sent: keyCode=${keyCode}`);
+    }
+
+    document.addEventListener('keydown', (e) => {
+        switch (e.key) {
+            case 'Backspace':
+                e.preventDefault();
+                sendKey(4);    // Android KEYCODE_BACK
+                break;
+            case 'Home':
+                e.preventDefault();
+                sendKey(3);    // Android KEYCODE_HOME
+                break;
+            case 'F1':
+                e.preventDefault();
+                sendKey(187);  // Android KEYCODE_APP_SWITCH (recent apps)
+                break;
+        }
+    });
+}
+
+// 6. 연결하기 버튼 이벤트
 connectBtn.addEventListener('click', () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
         log("이미 연결된 상태입니다. 재연결을 시도합니다.");
