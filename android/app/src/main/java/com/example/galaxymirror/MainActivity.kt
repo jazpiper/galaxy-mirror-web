@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 import org.webrtc.*
 
 class MainActivity : ComponentActivity() {
-  private var server: io.ktor.server.engine.ApplicationEngine? = null
+  private var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
   private var mediaProjectionManager: MediaProjectionManager? = null
 
   // WebRTC Components
