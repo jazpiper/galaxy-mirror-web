@@ -22,8 +22,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures {
       compose = true
@@ -40,7 +40,7 @@ android {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -83,9 +83,9 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
   // Ktor Embedded Web Server (CIO Engine & WebSockets)
-  implementation("io.ktor:ktor-server-core:2.3.12")
-  implementation("io.ktor:ktor-server-cio:2.3.12")
-  implementation("io.ktor:ktor-server-websockets:2.3.12")
+  implementation("io.ktor:ktor-server-core:3.0.3")
+  implementation("io.ktor:ktor-server-cio:3.0.3")
+  implementation("io.ktor:ktor-server-websockets:3.0.3")
 
   // WebRTC Android Library (Stream Packaged Version on Maven Central)
   implementation("io.getstream:stream-webrtc-android:1.3.10")

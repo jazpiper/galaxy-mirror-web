@@ -22,8 +22,8 @@ updated: 2026-05-26
 ## 🛠️ 기술 스택 (Technology Stack)
 
 ### 1. Android Host (Galaxy App)
-* **개발 언어:** Kotlin
-* **임베디드 웹서버:** **Ktor** (초경량 비동기 프레임워크)
+* **개발 언어:** Kotlin (Java 21 LTS 툴체인 기반)
+* **임베디드 웹서버:** **Ktor 3.0.3** (최신 고성능 비동기 프레임워크)
   * 포트 `8080`을 `0.0.0.0`으로 바인딩하여 가상망 내에서 접근 허용
 * **화면 캡처:** Android `MediaProjection` API (H.264/VP8 인코딩)
 * **네트워크 터널링:** Tailscale Android SDK 또는 로컬 데몬 연동
