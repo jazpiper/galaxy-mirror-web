@@ -10,6 +10,8 @@ const logBox = document.getElementById('logBox');
 let socket = null;
 let peerConnection = null;
 let dataChannel = null;
+let remoteDescriptionSet = false;
+let pendingRemoteCandidates = [];
 
 const rtcConfig = {
     iceServers: [
@@ -21,7 +23,9 @@ const rtcConfig = {
 function log(msg) {
     console.log(msg);
     const time = new Date().toLocaleTimeString();
-    logBox.innerHTML += `<div>[${time}] ${msg}</div>`;
+    const entry = document.createElement('div');
+    entry.textContent = `[${time}] ${msg}`;
+    logBox.appendChild(entry);
     logBox.scrollTop = logBox.scrollHeight;
 }
 
@@ -61,12 +65,13 @@ function connectSignaling() {
             switch (message.type) {
                 case 'ANSWER':
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload));
+                    remoteDescriptionSet = true;
+                    await flushPendingRemoteCandidates();
                     log("WebRTC Remote Description (Answer) 설정 완료.");
                     break;
                 case 'ICE_CANDIDATE':
                     if (message.payload) {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.payload));
-                        log("신규 ICE Candidate 추가 완수.");
+                        await addRemoteCandidate(message.payload);
                     }
                     break;
             }
@@ -80,6 +85,9 @@ function connectSignaling() {
 async function setupWebRTC() {
     log("WebRTC PeerConnection 생성 및 초기화 중...");
     peerConnection = new RTCPeerConnection(rtcConfig);
+    remoteDescriptionSet = false;
+    pendingRemoteCandidates = [];
+    peerConnection.addTransceiver('video', { direction: 'recvonly' });
 
     // DataChannel 개설 (터치/키보드 제어 명령 전송용)
     // Channel name 'control' is matched by Android onDataChannel handler
@@ -102,7 +110,7 @@ async function setupWebRTC() {
 
     // ICE Candidate 획득 시 시그널링 서버로 전송
     peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
                 type: 'ICE_CANDIDATE',
                 payload: event.candidate
@@ -123,6 +131,27 @@ async function setupWebRTC() {
         log("Signaling Server로 Offer 전송 완료.");
     } catch (err) {
         log(`WebRTC 기동 중 오류 발생: ${err.message}`);
+    }
+}
+
+async function addRemoteCandidate(candidate) {
+    if (!remoteDescriptionSet || !peerConnection.remoteDescription) {
+        pendingRemoteCandidates.push(candidate);
+        log("Remote Description 설정 전 ICE Candidate 대기열 저장.");
+        return;
+    }
+    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    log("신규 ICE Candidate 추가 완수.");
+}
+
+async function flushPendingRemoteCandidates() {
+    const candidates = pendingRemoteCandidates;
+    pendingRemoteCandidates = [];
+    for (const candidate of candidates) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+    if (candidates.length > 0) {
+        log(`대기 중 ICE Candidate ${candidates.length}개 추가 완료.`);
     }
 }
 
@@ -176,9 +205,13 @@ function getNormalizedCoords(e) {
         y = (yOff - hMargin) / hAct;
     }
 
+    if (x < 0 || x > 1 || y < 0 || y > 1) {
+        return null;
+    }
+
     return {
-        x: Math.max(0, Math.min(1, parseFloat(x.toFixed(4)))),
-        y: Math.max(0, Math.min(1, parseFloat(y.toFixed(4))))
+        x: parseFloat(x.toFixed(4)),
+        y: parseFloat(y.toFixed(4))
     };
 }
 
@@ -200,6 +233,10 @@ function setupTouchControl() {
     remoteVideo.addEventListener('mousedown', (e) => {
         e.preventDefault();
         const coords = getNormalizedCoords(e);
+        if (!coords) {
+            dragStart = null;
+            return;
+        }
         dragStart    = { ...coords, time: Date.now() };
         startClientX = e.clientX;
         startClientY = e.clientY;
@@ -218,6 +255,11 @@ function setupTouchControl() {
     remoteVideo.addEventListener('mouseup', (e) => {
         if (!dragStart) return;
         const end      = getNormalizedCoords(e);
+        if (!end) {
+            dragStart  = null;
+            isDragging = false;
+            return;
+        }
         const duration = Date.now() - dragStart.time;
 
         if (isDragging) {

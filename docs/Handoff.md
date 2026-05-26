@@ -30,7 +30,9 @@ updated: 2026-05-26
 
 ### 🚀 Milestone 3: WebRTC 스트리밍 및 시그널링 구현 (Active)
 - [ ] **T3.1: Android MediaProjection 화면 실시간 캡처 프로토타이핑**
+  - [x] Android 14+ single-use consent 규칙에 맞춰 foreground service와 `ScreenCapturerAndroid`의 projection token 소유권 정리
 - [ ] **T3.2: Ktor WebSocket 기반 1:1 시그널링 채널 개설**
+  - [x] 1개 활성 viewer session 제한, ICE candidate 대기열, `control` DataChannel 검증 추가
 - [ ] **T3.3: WebRTC PeerConnection 화질 및 초당 프레임 수 최적화**
 
 ---

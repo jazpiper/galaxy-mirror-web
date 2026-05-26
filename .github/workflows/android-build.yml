@@ -27,10 +27,31 @@ jobs:
       run: chmod +x android/gradlew
       continue-on-error: true # gradlew 파일이 없을 경우 대비 예외 방지
 
+    - name: Run unit tests
+      run: |
+        cd android
+        ./gradlew app:testDebugUnitTest --no-daemon
+
+    - name: Run lint
+      run: |
+        cd android
+        ./gradlew app:lintDebug --no-daemon
+
     - name: Build with Gradle
       run: |
         cd android
         ./gradlew assembleDebug --no-daemon
+
+    - name: Upload Test and Lint Reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: verification-reports
+        path: |
+          android/app/build/reports/tests/
+          android/app/build/reports/lint-results-debug.html
+        if-no-files-found: ignore
+        retention-days: 7
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4

@@ -44,6 +44,11 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
      */
     fun handleControlEvent(json: JSONObject) {
         try {
+            if (!ControlEventValidator.isValid(json)) {
+                Log.w(TAG, "Rejected invalid control event: $json")
+                return
+            }
+
             when (val type = json.getString("type")) {
                 "tap" -> {
                     val x = (json.getDouble("x") * screenWidth).toFloat()

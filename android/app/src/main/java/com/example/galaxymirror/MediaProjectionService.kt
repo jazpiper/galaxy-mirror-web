@@ -6,8 +6,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -17,8 +15,6 @@ import androidx.core.app.NotificationCompat
 class MediaProjectionService : Service() {
 
     private val binder = LocalBinder()
-    private var mediaProjection: MediaProjection? = null
-    private var mediaProjectionManager: MediaProjectionManager? = null
 
     companion object {
         private const val CHANNEL_ID = "GalaxyMirrorCaptureChannel"
@@ -35,7 +31,6 @@ class MediaProjectionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         createNotificationChannel()
     }
 
@@ -43,7 +38,13 @@ class MediaProjectionService : Service() {
         Log.d(TAG, "onStartCommand called.")
         
         val resultCode = intent?.getIntExtra("resultCode", -1) ?: -1
-        val resultData = intent?.getParcelableExtra<Intent>("resultData")
+        val resultData =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent?.getParcelableExtra("resultData", Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra("resultData")
+            }
 
         if (resultCode != -1 && resultData != null) {
             try {
@@ -55,12 +56,10 @@ class MediaProjectionService : Service() {
                     startForeground(NOTIFICATION_ID, notification)
                 }
 
-                // MediaProjection 객체 획득
-                mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, resultData)
                 isRunning = true
-                Log.d(TAG, "MediaProjection successfully acquired and started.")
+                Log.d(TAG, "MediaProjection foreground service is ready.")
             } catch (e: Exception) {
-                Log.e(TAG, "Error acquiring MediaProjection: ${e.message}", e)
+                Log.e(TAG, "Error starting MediaProjection foreground service: ${e.message}", e)
                 stopSelf()
             }
         } else {
@@ -71,20 +70,14 @@ class MediaProjectionService : Service() {
         return START_NOT_STICKY
     }
 
-    fun getMediaProjectionInstance(): MediaProjection? {
-        return mediaProjection
-    }
-
     override fun onBind(intent: Intent?): IBinder {
         return binder
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        mediaProjection?.stop()
-        mediaProjection = null
         isRunning = false
-        Log.d(TAG, "MediaProjectionService stopped and cleaned up.")
+        Log.d(TAG, "MediaProjectionService stopped.")
     }
 
     private fun createNotification(): Notification {

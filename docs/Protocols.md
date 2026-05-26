@@ -59,45 +59,47 @@ Tailscale 가상 메시 VPN 내부에서 맥북 브라우저가 안드로이드 
 
 ## 2. WebRTC DataChannel 제어 입력 프로토콜 (Control Protocol)
 
-WebRTC PeerConnection의 DataChannel(레이턴시 최소화를 위해 `ordered: true`, `maxRetransmits: 0` 설정 권장)을 열어 실시간 좌표 및 텍스트 입력을 전송합니다.
+WebRTC PeerConnection의 `control` DataChannel(레이턴시 최소화를 위해 `ordered: true`, `maxRetransmits: 0` 설정 권장)을 열어 실시간 좌표 및 제한된 키 입력을 전송합니다.
 
 ### 2.1 실시간 터치 제스처 (Mouse/Touch Control)
-뷰포트 크기에 무관하도록 마우스 클릭 및 드래그 좌표는 소수점 단위의 **백분율(%)**로 인코딩되어 전송됩니다.
+뷰포트 크기에 무관하도록 마우스 클릭 및 드래그 좌표는 `0.0`부터 `1.0`까지의 정규화 좌표로 인코딩되어 전송됩니다. 브라우저 뷰어는 레터박스/필러박스 바깥 여백 클릭을 버리고 실제 영상 영역 안의 좌표만 전송합니다.
 
-#### ① 단발성 터치 (`TOUCH_DOWN`, `TOUCH_UP`)
-마우스 좌클릭을 누르고 뗄 때 발생합니다.
-* **JSON 패킷 예시 (`TOUCH_DOWN`):**
+#### ① 단발성 터치 (`tap`)
+마우스 좌클릭을 누른 뒤 드래그 임계값 이하에서 뗄 때 발생합니다.
+* **JSON 패킷 예시 (`tap`):**
 ```json
 {
-  "action": "TOUCH_DOWN",
-  "pointerId": 0,
-  "x": 45.28,
-  "y": 72.15
+  "type": "tap",
+  "x": 0.4528,
+  "y": 0.7215
 }
 ```
 
-#### ② 연속 드래그 (`TOUCH_MOVE`)
+#### ② 연속 드래그 (`swipe`)
 마우스를 드래그하여 스와이프하거나 화면을 스크롤할 때 발생합니다.
-* **JSON 패킷 예시 (`TOUCH_MOVE`):**
+* **JSON 패킷 예시 (`swipe`):**
 ```json
 {
-  "action": "TOUCH_MOVE",
-  "pointerId": 0,
-  "x": 46.12,
-  "y": 71.85
+  "type": "swipe",
+  "x1": 0.4612,
+  "y1": 0.7185,
+  "x2": 0.4612,
+  "y2": 0.2185,
+  "duration": 300
 }
 ```
 
-### 2.2 실시간 키보드 타이핑 (`KEYBOARD_INPUT`)
-한글 자소 분리 깨짐 현상을 원천 방지하기 위해 단일 문자가 아닌 **완성된 문자열(String)** 단위로 전송합니다.
-* **입력 원리**: 맥북 뷰어 화면 내 숨겨진 `input` 태그에 포커스를 준 뒤 사용자가 입력을 마치거나 조합이 끝나는 시점에 텍스트 버퍼를 전송합니다. 안드로이드 호스트는 활성화된 텍스트 필드의 `AccessibilityNodeInfo`를 감지하여 텍스트를 인젝션합니다.
+### 2.2 제한된 키 제어 (`key`)
+현재 구현은 텍스트 인젝션이 아니라 Android 전역 액션에 매핑되는 제한된 키코드만 전송합니다.
 * **JSON 패킷 예시:**
 ```json
 {
-  "action": "KEYBOARD_INPUT",
-  "text": "안녕하세요 세계"
+  "type": "key",
+  "keyCode": 4
 }
 ```
+
+허용 키코드는 `4`(Back), `3`(Home), `187`(Recent apps)입니다.
 
 ---
 

@@ -69,6 +69,7 @@ dependencies {
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)
+  testImplementation(libs.json)
   testImplementation(libs.kotlinx.coroutines.test)
 
   // Instrumented tests: jUnit rules and runners
@@ -83,10 +84,10 @@ dependencies {
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
   // Ktor Embedded Web Server (CIO Engine & WebSockets)
-  implementation("io.ktor:ktor-server-core:3.0.3")
-  implementation("io.ktor:ktor-server-cio:3.0.3")
-  implementation("io.ktor:ktor-server-websockets:3.0.3")
+  implementation(libs.ktor.server.core)
+  implementation(libs.ktor.server.cio)
+  implementation(libs.ktor.server.websockets)
 
   // WebRTC Android Library (Stream Packaged Version on Maven Central)
-  implementation("io.getstream:stream-webrtc-android:1.3.10")
+  implementation(libs.stream.webrtc.android)
 }

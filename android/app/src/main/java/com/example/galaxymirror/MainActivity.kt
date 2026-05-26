@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.launch
 import org.webrtc.*
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : ComponentActivity() {
   private var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
@@ -46,6 +47,10 @@ class MainActivity : ComponentActivity() {
   private var videoCapturer: VideoCapturer? = null
   private var controlChannel: DataChannel? = null
   private var eglBase: org.webrtc.EglBase? = null
+  private val sessionCounter = AtomicInteger(0)
+  @Volatile private var activeSessionId: Int = 0
+  @Volatile private var remoteDescriptionSet = false
+  private val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
 
   // MediaProjection intent stored for WebRTC use
   private var mediaProjectionResultData: Intent? = null
@@ -113,22 +118,27 @@ class MainActivity : ComponentActivity() {
             
             // WebRTC 1:1 시그널링 WebSocket
             webSocket("/signaling") {
-              Log.d("KtorServer", "New WebRTC signaling WebSocket connection established!")
+              val sessionId = beginViewerSession()
+              Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
               try {
                 for (frame in incoming) {
                   if (frame is Frame.Text) {
                     val text = frame.readText()
                     Log.d("KtorServer", "Signaling packet received: $text")
                     // 브라우저 뷰어가 보낸 OFFER/ANSWER/CANDIDATE 패킷을 내부 WebRTC 로직으로 주입하거나 릴레이
-                    handleSignalingMessage(text) { response ->
-                      launch { send(Frame.Text(response)) }
+                    handleSignalingMessage(sessionId, text) { response ->
+                      if (isActiveSession(sessionId)) {
+                        launch { send(Frame.Text(response)) }
+                      }
                     }
                   }
                 }
               } catch (e: ClosedReceiveChannelException) {
-                Log.d("KtorServer", "Signaling connection closed by peer.")
+                Log.d("KtorServer", "Signaling connection closed by peer: $sessionId")
               } catch (e: Throwable) {
-                Log.e("KtorServer", "Error in signaling session: ${e.message}", e)
+                Log.e("KtorServer", "Error in signaling session $sessionId: ${e.message}", e)
+              } finally {
+                endViewerSession(sessionId)
               }
             }
           }
@@ -140,8 +150,54 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  private fun beginViewerSession(): Int {
+    val sessionId = sessionCounter.incrementAndGet()
+    if (activeSessionId != 0) {
+      Log.w("WebRTC", "Replacing active viewer session: $activeSessionId -> $sessionId")
+      cleanupWebRTCResources(stopProjectionService = false)
+    }
+    activeSessionId = sessionId
+    return sessionId
+  }
+
+  private fun endViewerSession(sessionId: Int) {
+    if (isActiveSession(sessionId)) {
+      activeSessionId = 0
+      cleanupWebRTCResources(stopProjectionService = true)
+    }
+  }
+
+  private fun isActiveSession(sessionId: Int): Boolean = activeSessionId == sessionId
+
+  private fun addRemoteIceCandidate(candidate: IceCandidate) {
+    if (!remoteDescriptionSet || peerConnection == null) {
+      synchronized(pendingRemoteIceCandidates) {
+        pendingRemoteIceCandidates.add(candidate)
+      }
+      Log.d("WebRTC", "Queued remote ICE candidate until remote description is set.")
+      return
+    }
+
+    peerConnection?.addIceCandidate(candidate)
+  }
+
+  private fun flushPendingRemoteIceCandidates() {
+    val candidates = synchronized(pendingRemoteIceCandidates) {
+      pendingRemoteIceCandidates.toList().also { pendingRemoteIceCandidates.clear() }
+    }
+    candidates.forEach { peerConnection?.addIceCandidate(it) }
+    if (candidates.isNotEmpty()) {
+      Log.d("WebRTC", "Flushed ${candidates.size} queued remote ICE candidates.")
+    }
+  }
+
   // 1:1 시그널링 메시지 처리 및 WebRTC PeerConnection 제어
-  private fun handleSignalingMessage(message: String, sendResponse: (String) -> Unit) {
+  private fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
+    if (!isActiveSession(sessionId)) {
+      Log.w("WebRTC", "Ignoring signaling message for inactive session: $sessionId")
+      return
+    }
+
     try {
       val json = org.json.JSONObject(message)
       val type = json.getString("type")
@@ -155,7 +211,7 @@ class MainActivity : ComponentActivity() {
             sdpObj.getString("sdp")
           )
           
-          initializeWebRTC(sdpDescription, sendResponse)
+          initializeWebRTC(sessionId, sdpDescription, sendResponse)
         }
         "ICE_CANDIDATE" -> {
           Log.d("WebRTC", "ICE Candidate received.")
@@ -165,7 +221,7 @@ class MainActivity : ComponentActivity() {
             candidateObj.getInt("sdpMLineIndex"),
             candidateObj.getString("candidate")
           )
-          peerConnection?.addIceCandidate(candidate)
+          addRemoteIceCandidate(candidate)
         }
       }
     } catch (e: Exception) {
@@ -174,7 +230,7 @@ class MainActivity : ComponentActivity() {
   }
 
   // WebRTC PeerConnection 초기설정 및 SDP Answer 생성
-  private fun initializeWebRTC(remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
+  private fun initializeWebRTC(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
     // Guard: MediaProjectionService must be running before WebRTC can use screen capture
     if (!MediaProjectionService.isRunning) {
       Log.e("WebRTC", "MediaProjectionService not running yet. Cannot initialize WebRTC.")
@@ -209,6 +265,7 @@ class MainActivity : ComponentActivity() {
       val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
         sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
       }
+      remoteDescriptionSet = false
 
       // 3. PeerConnection 생성
       peerConnection = peerConnectionFactory?.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
@@ -218,6 +275,7 @@ class MainActivity : ComponentActivity() {
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
         override fun onIceCandidate(candidate: IceCandidate?) {
           candidate?.let {
+            if (!isActiveSession(sessionId)) return
             val json = org.json.JSONObject().apply {
               put("type", "ICE_CANDIDATE")
               put("payload", org.json.JSONObject().apply {
@@ -234,6 +292,15 @@ class MainActivity : ComponentActivity() {
         override fun onRemoveStream(stream: MediaStream?) {}
         override fun onDataChannel(dataChannel: DataChannel?) {
           dataChannel?.let { dc ->
+            if (!isActiveSession(sessionId)) {
+              dc.close()
+              return
+            }
+            if (!ControlEventValidator.isControlChannel(dc.label())) {
+              Log.w("WebRTC", "Rejected DataChannel with unexpected label: ${dc.label()}")
+              dc.close()
+              return
+            }
             controlChannel = dc
             Log.d("WebRTC", "DataChannel received: ${dc.label()}")
             dc.registerObserver(object : DataChannel.Observer {
@@ -243,13 +310,18 @@ class MainActivity : ComponentActivity() {
               }
               override fun onMessage(buffer: DataChannel.Buffer) {
                 try {
+                  if (!isActiveSession(sessionId)) return
                   val bytes = ByteArray(buffer.data.remaining())
                   buffer.data.get(bytes)
                   val text = String(bytes, Charsets.UTF_8)
                   Log.d("WebRTC", "DataChannel message: $text")
                   val json = org.json.JSONObject(text)
-                  GalaxyMirrorAccessibilityService.instance?.handleControlEvent(json)
-                    ?: Log.w("WebRTC", "AccessibilityService not connected yet!")
+                  if (ControlEventValidator.isValid(json)) {
+                    GalaxyMirrorAccessibilityService.instance?.handleControlEvent(json)
+                      ?: Log.w("WebRTC", "AccessibilityService not connected yet!")
+                  } else {
+                    Log.w("WebRTC", "Rejected invalid control event: $text")
+                  }
                 } catch (e: Exception) {
                   Log.e("WebRTC", "Error processing DataChannel message: ${e.message}", e)
                 }
@@ -275,6 +347,8 @@ class MainActivity : ComponentActivity() {
       videoCapturer = ScreenCapturerAndroid(projectionIntent, object : MediaProjection.Callback() {
         override fun onStop() {
           Log.d("WebRTC", "MediaProjection stopped inside capturer.")
+          activeSessionId = 0
+          cleanupWebRTCResources(stopProjectionService = false, stopCapturer = false)
         }
       })
       
@@ -290,6 +364,8 @@ class MainActivity : ComponentActivity() {
       peerConnection?.setRemoteDescription(object : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription?) {}
         override fun onSetSuccess() {
+          remoteDescriptionSet = true
+          flushPendingRemoteIceCandidates()
           Log.d("WebRTC", "SetRemoteDescription success. Creating Answer...")
           peerConnection?.createAnswer(object : SdpObserver {
             override fun onCreateSuccess(desc: SessionDescription?) {
@@ -338,8 +414,41 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  private fun cleanupWebRTCResources(stopProjectionService: Boolean, stopCapturer: Boolean = true) {
+    try {
+      controlChannel?.close()
+      if (stopCapturer) {
+        videoCapturer?.stopCapture()
+      }
+      videoCapturer?.dispose()
+      surfaceTextureHelper?.dispose()
+      peerConnection?.close()
+      peerConnectionFactory?.dispose()
+      eglBase?.release()
+      synchronized(pendingRemoteIceCandidates) {
+        pendingRemoteIceCandidates.clear()
+      }
+      controlChannel = null
+      videoCapturer = null
+      videoTrack = null
+      surfaceTextureHelper = null
+      peerConnection = null
+      peerConnectionFactory = null
+      eglBase = null
+      remoteDescriptionSet = false
+      if (stopProjectionService) {
+        stopService(Intent(this, MediaProjectionService::class.java))
+        mediaProjectionResultData = null
+      }
+      Log.d("WebRTC", "WebRTC resources cleaned up successfully.")
+    } catch (e: Exception) {
+      Log.e("WebRTC", "Error cleaning up WebRTC resources: ${e.message}", e)
+    }
+  }
+
   override fun onDestroy() {
     super.onDestroy()
+    activeSessionId = 0
     
     // Ktor Server stop
     lifecycleScope.launch(Dispatchers.IO) {
@@ -351,17 +460,6 @@ class MainActivity : ComponentActivity() {
       }
     }
 
-    // WebRTC cleanup
-    try {
-      videoCapturer?.stopCapture()
-      videoCapturer?.dispose()
-      surfaceTextureHelper?.dispose()
-      peerConnection?.close()
-      peerConnectionFactory?.dispose()
-      eglBase?.release()
-      Log.d("WebRTC", "WebRTC resources cleaned up successfully.")
-    } catch (e: Exception) {
-      Log.e("WebRTC", "Error cleaning up WebRTC resources: ${e.message}", e)
-    }
+    cleanupWebRTCResources(stopProjectionService = true)
   }
 }
