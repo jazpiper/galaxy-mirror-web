@@ -23,12 +23,12 @@ updated: 2026-05-26
 - [x] **T1.3: Accessibility Service 터치 이벤트 전송 좌표 변환 상세화**
   - [x] 화면비(Viewport/Display aspect ratio) 보정식 및 클릭/드래그 제스처 인젝션 구조도 정의 (`docs/Coordinates.md` 반영)
 
-### 🚀 Milestone 2: Android Host 기초 인프라 구축 (Active)
-- [ ] **T2.1: Kotlin Android 프로젝트 뼈대 생성**
-- [ ] **T2.2: Ktor 모듈 내장 및 HTTP 서버 포트 8080 구동**
-- [ ] **T2.3: 웹 뷰어 클라이언트 정적 리소스 서빙 구현**
+### 🚀 Milestone 2: Android Host 기초 인프라 구축 (Completed)
+- [x] **T2.1: Kotlin Android 프로젝트 뼈대 생성** (`android-cli` 이용)
+- [x] **T2.2: Ktor 모듈 내장 및 HTTP 서버 포트 8080 구동** (CIO 엔진 연동)
+- [x] **T2.3: 웹 뷰어 클라이언트 정적 리소스 서빙 구현** (GitHub Actions 빌드 완료)
 
-### ⏳ Milestone 3: WebRTC 스트리밍 및 시그널링 구현 (Backlog)
+### 🚀 Milestone 3: WebRTC 스트리밍 및 시그널링 구현 (Active)
 - [ ] **T3.1: Android MediaProjection 화면 실시간 캡처 프로토타이핑**
 - [ ] **T3.2: Ktor WebSocket 기반 1:1 시그널링 채널 개설**
 - [ ] **T3.3: WebRTC PeerConnection 화질 및 초당 프레임 수 최적화**
@@ -38,13 +38,14 @@ updated: 2026-05-26
 ## 🤝 세션 인수인계 노트 (Handoff Notes)
 
 ### 1. 현재 개발 상태 요약
-* 현재 코드가 작성될 수 있는 빈 폴더 구조에서 시작하여, 프로젝트 문서화 프레임워크 수립에 이어 실제 코드 작성의 기준선이 되는 **아키텍처 상세 기술 설계 명세서 2종([Protocols.md](./Protocols.md), [Coordinates.md](./Coordinates.md))을 완전하게 완성**했습니다.
-* 기획 및 아키텍처 설계 단계(Milestone 1)가 공식 종료됨에 따라, 다음 작업 세션에서는 **Milestone 2 (Android Host 기초 인프라 구축)**에 곧바로 진입하면 됩니다.
+* 기 완비된 설계 명세를 바탕으로 안드로이드 뼈대 프로젝트 신설 및 **Ktor CIO 초경량 서버 탑재(0.0.0.0:8080 바인딩 및 에코/시그널링 웹소켓 기본 채널 매핑)**를 완수하였습니다.
+* 맥북에 무거운 컴파일 환경을 구성하지 않고 깃허브 푸시만으로 `app-debug.apk`를 완전 무설치 생산하는 **GitHub Actions CI/CD 인프라 구축 및 1차 빌드 통과 검증**을 마쳤습니다.
+* 다음 작업 세션에서는 최핵심 성능 구역인 **Milestone 3 (WebRTC 스트리밍 및 시그널링 구현)**에 본격 돌입합니다.
 
 ### 2. 다음 개발 단계 핵심 미션
-1. **Android 스튜디오 프로젝트 초기화**: Kotlin 기반 프로젝트를 생성하고, Gradle 디펜던시에 `Ktor` 서버 라이브러리를 추가합니다.
-2. **HTTP/WebSocket 기본 라우팅 구현**: Ktor 웹 서버를 구축하여 `/signaling` 엔드포인트를 바인딩하고 가볍게 접속 상태를 로깅하는 에코(Echo) 기능을 구현합니다.
-3. **기초 HTML 서빙**: Ktor 리소스 서빙 기능을 사용해 `index.html` 파일을 맥북 브라우저 뷰어로 정상 송출할 수 있는지 확인합니다.
+1. **MediaProjection 디스플레이 캡처**: Android 화면 미디어 프로젝션 API를 기동하여 화면 스트림을 가로채고, WebRTC 송출을 위해 프레임을 인코딩(VP8/H.264)할 수 있는 모듈 실장.
+2. **시그널링 채널 실구현**: Ktor WebSocket(`/signaling`)을 통하여 `Protocols.md` 규격의 Offer/Answer SDP 및 ICE Candidate를 교환하는 1:1 브로드캐스트 라우팅 코드 작성.
+3. **WebRTC PeerConnection 완성**: 맥 브라우저 뷰어 HTML5 코드와 단말기 간의 1:1 초저지연 비디오 스트리밍 채널 최종 연결.
 
 ---
 
