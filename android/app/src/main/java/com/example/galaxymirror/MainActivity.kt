@@ -45,6 +45,10 @@ class MainActivity : ComponentActivity() {
   private var surfaceTextureHelper: SurfaceTextureHelper? = null
   private var videoCapturer: VideoCapturer? = null
   private var controlChannel: DataChannel? = null
+  private var eglBase: org.webrtc.EglBase? = null
+
+  // MediaProjection intent stored for WebRTC use
+  private var mediaProjectionResultData: Intent? = null
 
   // 화면 캡처 권한 요청 런처
   private val screenCaptureLauncher = registerForActivityResult(
@@ -80,6 +84,7 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun startMediaProjectionService(resultCode: Int, data: Intent) {
+    mediaProjectionResultData = data  // Store for WebRTC ScreenCapturerAndroid use
     val serviceIntent = Intent(this, MediaProjectionService::class.java).apply {
       putExtra("resultCode", resultCode)
       putExtra("resultData", data)
@@ -170,15 +175,25 @@ class MainActivity : ComponentActivity() {
 
   // WebRTC PeerConnection 초기설정 및 SDP Answer 생성
   private fun initializeWebRTC(remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
+    // Guard: MediaProjectionService must be running before WebRTC can use screen capture
+    if (!MediaProjectionService.isRunning) {
+      Log.e("WebRTC", "MediaProjectionService not running yet. Cannot initialize WebRTC.")
+      return
+    }
+
     try {
       // 1. PeerConnectionFactory 초기화
       val initOptions = PeerConnectionFactory.InitializationOptions.builder(this)
         .createInitializationOptions()
       PeerConnectionFactory.initialize(initOptions)
 
+      // Create EGL context (required for hardware encoder/decoder and SurfaceTextureHelper)
+      eglBase = org.webrtc.EglBase.create()
+      val eglContext = eglBase!!.eglBaseContext
+
       val factoryOptions = PeerConnectionFactory.Options()
-      val encoderFactory = DefaultVideoEncoderFactory(null, true, true)
-      val decoderFactory = DefaultVideoDecoderFactory(null)
+      val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
+      val decoderFactory = DefaultVideoDecoderFactory(eglContext)
       
       peerConnectionFactory = PeerConnectionFactory.builder()
         .setOptions(factoryOptions)
@@ -247,12 +262,17 @@ class MainActivity : ComponentActivity() {
       })
 
       // 4. 화면 미디어 캡처 소스 & 비디오 트랙 생성
-      surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", null)
+      surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
       val videoSource = peerConnectionFactory?.createVideoSource(true)
       videoTrack = peerConnectionFactory?.createVideoTrack("video_track_id", videoSource)
 
       // 미디어 프로젝션 시스템 연동
-      videoCapturer = ScreenCapturerAndroid(null, object : MediaProjection.Callback() {
+      val projectionIntent = mediaProjectionResultData
+      if (projectionIntent == null) {
+        Log.e("WebRTC", "MediaProjection intent is null! Cannot start screen capture.")
+        return
+      }
+      videoCapturer = ScreenCapturerAndroid(projectionIntent, object : MediaProjection.Callback() {
         override fun onStop() {
           Log.d("WebRTC", "MediaProjection stopped inside capturer.")
         }
@@ -338,6 +358,7 @@ class MainActivity : ComponentActivity() {
       surfaceTextureHelper?.dispose()
       peerConnection?.close()
       peerConnectionFactory?.dispose()
+      eglBase?.release()
       Log.d("WebRTC", "WebRTC resources cleaned up successfully.")
     } catch (e: Exception) {
       Log.e("WebRTC", "Error cleaning up WebRTC resources: ${e.message}", e)
