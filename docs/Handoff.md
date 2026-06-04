@@ -34,10 +34,10 @@ updated: 2026-05-27
   - [x] 접근성 서비스가 이미 활성화되어 있으면 설정 관련 버튼 비활성화
 
 ### 🚀 Milestone 3: WebRTC 스트리밍 및 시그널링 구현 (Active)
-- [ ] **T3.1: Android MediaProjection 화면 실시간 캡처 프로토타이핑**
+- [x] **T3.1: Android MediaProjection 화면 실시간 캡처 프로토타이핑**
   - [x] Android 14+ single-use consent 규칙에 맞춰 foreground service와 `ScreenCapturerAndroid`의 projection token 소유권 정리
   - [x] ADB 없이 현장 크래시를 회수할 수 있도록 `/debug/crash` 진단 엔드포인트와 프로세스 종료 이력 저장 추가
-- [ ] **T3.2: Ktor WebSocket 기반 1:1 시그널링 채널 개설**
+- [x] **T3.2: Ktor WebSocket 기반 1:1 시그널링 채널 개설**
   - [x] 1개 활성 viewer session 제한, ICE candidate 대기열, `control` DataChannel 검증 추가
   - [x] 브라우저 Offer가 화면 캡처 준비보다 먼저 도착해도 pending offer로 보류하고 Android 승인 후 자동 협상 재개
   - [x] viewer WebSocket 종료/교체 시 Android 14+ single-use MediaProjection consent를 재사용하지 않도록 projection service와 저장 Intent 정리
@@ -50,7 +50,7 @@ updated: 2026-05-27
   - [x] 세션 시작 시 `ScreenCapturerAndroid.startCapture()`와 `RtpSender` encoding parameter에 선택 프로필 적용
   - [x] Viewer 입력이 일정 시간 없으면 idle 품질 제한으로 전환하고 새 입력이 오면 active 품질로 복귀
   - [x] `GET/POST /stream/quality` API와 `STATUS.streamQuality` payload로 Mac Viewer 상태 동기화
-- [ ] **T3.4: AccessibilityService 기반 원격 입력 고도화**
+- [x] **T3.4: AccessibilityService 기반 원격 입력 고도화**
   - [x] tap/swipe dispatch 결과와 key/text 입력 처리 breadcrumb를 `/debug/crash` 최근 이벤트에 기록
   - [x] Mac 키보드 일반 문자/Enter/Backspace를 DataChannel `text` 이벤트로 보내 Android focused editable node에 `ACTION_SET_TEXT` 수행
   - [x] 접근성 서비스 package filter 제거 및 window content 조회 활성화
@@ -62,7 +62,7 @@ updated: 2026-05-27
   - [x] Android 접근성 스냅샷이 stale한 경우에도 같은 입력창의 연속 텍스트를 내부 버퍼 기준으로 이어 붙이도록 보정
   - [x] 빠른 텍스트 입력은 `seq`와 `CONTROL_ACK`로 직렬화하고, DataChannel 종료 시 미응답 큐를 폐기해 재연결 후 입력이 막히지 않도록 보정
   - [x] Mac Viewer 하단에 `최근 앱`/`홈`/`뒤로` 버튼을 추가해 제스처 내비게이션 없이 Android 전역 액션을 보낼 수 있게 함
-  - [ ] Galaxy S26 Android 16 실기기 fresh APK 설치 후 연결 순서, 터치, 스와이프, 텍스트 입력 smoke test
+  - [ ] [대기] Galaxy S26 Android 16 실기기 fresh APK 설치 후 연결 순서, 터치, 스와이프, 텍스트 입력 smoke test
 - [x] **T3.5: 자주 쓰는 앱 바로가기**
   - [x] Android 앱에서 런처 앱 목록 조회 후 즐겨찾기 추가/삭제
   - [x] 즐겨찾기 앱을 로컬 저장소에 보관하고 `/apps/favorites`로 Mac 뷰어에 제공
@@ -77,7 +77,7 @@ updated: 2026-05-27
   - [x] Viewer가 `SCREEN_CAPTURE_REAUTH_REQUIRED`, `PROJECTION_STOPPED_LOCKED` 상태를 한국어로 표시
   - [x] Mac Viewer 상태 패널 아래에 WebRTC 업로드/다운로드 누적 사용량을 MB 단위로 표시
   - [x] `Protocols.md`에 keep-awake 토글, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 밝기 최소화 권한 조건 문서화
-  - [ ] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
+  - [ ] [대기] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
 
 ---
 

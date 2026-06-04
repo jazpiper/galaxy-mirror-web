@@ -174,7 +174,28 @@ updated: 2026-05-27
   * stale MediaProjection callback, stale WebSocket close, stale DataChannel close 회귀 테스트를 추가했습니다.
   * `node --check android/app/src/main/resources/files/viewer.js`, `node --check android/app/src/main/resources/files/viewer-keyboard.js`, `node android/app/src/test/js/viewer-keyboard.test.mjs`, `cd android && ./gradlew app:testDebugUnitTest assembleDebug app:lintDebug app:compileDebugAndroidTestKotlin --no-daemon`, `git diff --check` 통과.
 
+### 2026-06-05 (코드 리뷰 개선 세션)
+* **스레드 안전성 및 세션 동시성 보강**
+  - Ktor WebSocket 시그널링 수신 처리와 WebRTC session lifecycle API 호출(`beginViewerSession`, `endViewerSession`)을 `sessionLock` 동기화 락 하에서 `Dispatchers.Main` 스레드로 강제하여 다중 스레드 혼선으로 인한 JVM/Native 크래시 원인을 완벽히 통과 및 격리하였습니다.
+  - WebRTC ICE candidates 추가 시 remote description 설정 여부에 대한 레이스 컨디션을 큐 동기화 블록으로 완전히 분리하여 candidate 유실을 방지하였습니다.
+* **AccessibilityService 터치/입력 엔진 직렬화 및 제어 보정**
+  - 가상 제스처(`dispatchGesture`) 비동기 실행 시 레이스를 예방하기 위한 FIFO 큐 (`PendingGesture`) 제어 및 비동기 작업 직렬화 구조를 적용했습니다.
+  - 디바이스의 물리 화면 해상도, 가로/세로 방향(orientation) 및 폴더블 해상도 전환 상황에서 뷰포트 대비 디바이스 좌표 공식이 틀어지지 않도록 `resources.displayMetrics`를 활용해 실시간 획득 연산하도록 고도화하였습니다.
+  - 비밀번호 필드 포커싱 시 보안 키보드의 마스킹 문자(`••••••`)가 원격 버퍼로 역류하여 원본 텍스트를 손상시키는 예외를 방지하기 위해 `isPassword` 감지 및 마스킹 문자 무시 로직을 적용하였습니다.
+  - 키보드 caret 조작 향상을 위해 ArrowLeft/ArrowRight 키 매핑 시 접근성 Caret Navigation Action (`ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY`, `ACTION_NEXT_AT_MOVEMENT_GRANULARITY`)을 구현하여 커서 이동을 호환시켰습니다.
+* **화면 켜짐 유지, 밝기 제어 및 적응형 비디오 스트림 품질 튜닝**
+  - `MediaProjectionService`가 백그라운드 구동 중일 때 CPU 절전으로 화면이 강제 소멸되는 현상을 방지하도록 `SCREEN_BRIGHT_WAKE_LOCK or ACQUIRE_CAUSES_WAKEUP`을 소유하도록 강화하였습니다.
+  - active-to-idle 상태 품질 전환 시 `MediaCodec` 하드웨어 디코더가 재시작하며 화면이 일시 정지(stutter)하는 문제를 회피하기 위해, 해상도는 일정하게 유지하고 FPS와 전송률(bitrate) 한도만 낮추는 방향으로 어댑티브 필터를 변경했습니다.
+  - WiFi에서 Cellular 이동통신 전환 혹은 그 반대의 동적 네트워크 핸드오프를 감지하도록 `NetworkCallback`을 MainActivity에 추가하여 최적 스트림 프로필을 실시간 가변 조정하도록 적용했습니다.
+  - `ScreenBrightnessController`에서 밝기 복원 신뢰성을 위해 SharedPreferences 저장 모드를 비동기 `.apply()`에서 원자적 트랜잭션 방식인 `.commit()`으로 상향하고, OLED 번인 방지 및 블랙아웃 방지를 위해 최소 밝기 임계치를 `10`으로 안전하게 수정하였습니다.
+* **Mac Viewer 리소스 누수 해제 및 편의성 튜닝**
+  - 재연결 및 끊김 감지 시 PeerConnection과 WebSocket의 중복 리스너 소멸 로직을 반영해 메모리 누수를 원천 차단했습니다.
+  - WebRTC connection stats API를 파싱하여 live RTT(ping) 지연율 통계를 대시보드 사이드바에 실시간 렌더링하고, 화면 폭 850px 이하 장치에서 비디오 영역이 잘리지 않는 반응형 CSS 룰을 매핑했습니다.
+* **로컬 빌드 검증**
+  - Android 로컬 SDK가 지정되지 않은 워크스테이션 특성상 단위 테스트 및 APK 컴파일은 GitHub Actions 클라우드 CI 파이프라인에서 빌드 통과로 위임 검증합니다.
+
 ---
+
 
 ## 🔗 Related Documents
 | 문서 | 관계 |

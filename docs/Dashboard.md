@@ -45,15 +45,15 @@ updated: 2026-05-26
 - [x] **M2: Android Host 기초 인프라 구축 (완료)**
   - [x] Ktor 기반 초경량 서버 구현 (포트 8080)
   - [x] HTML5 정적 뷰어 서빙 구현 (CI 빌드 구성)
-- [ ] **M3: WebRTC 스트리밍 및 시그널링 구현 (진행 중)**
-  - [ ] MediaProjection 기반 화면 캡처 모듈 개발
-  - [ ] Ktor WebSocket 기반 1:1 인라인 시그널링 구현
-  - [ ] WebRTC PeerConnection 비디오 스트리밍 연동
-- [ ] **M4: 마우스 제어 및 제스처 주입 구현**
-  - [ ] Accessibility Service 기반 가상 터치 주입 구현
-  - [ ] WebRTC DataChannel 마우스 좌표 전송 프로토콜 수립
-  - [ ] 클라이언트 좌표 보정 알고리즘 실장
-- [ ] **M5: UI 고도화 및 안정화**
+- [x] **M3: WebRTC 스트리밍 및 시그널링 구현 (완료)**
+  - [x] MediaProjection 기반 화면 캡처 모듈 개발
+  - [x] Ktor WebSocket 기반 1:1 인라인 시그널링 구현
+  - [x] WebRTC PeerConnection 비디오 스트리밍 연동
+- [x] **M4: 마우스 제어 및 제스처 주입 구현 (완료 - 검증 대기)**
+  - [x] Accessibility Service 기반 가상 터치 주입 구현
+  - [x] WebRTC DataChannel 마우스 좌표 전송 프로토콜 수립
+  - [x] 클라이언트 좌표 보정 알고리즘 실장
+- [ ] **M5: UI 고도화 및 안정화 (진행 중)**
   - [ ] 프리미엄 글래스모피즘(Glassmorphism) 및 반응형 뷰어 UI 완성
   - [ ] Tailscale 터널 전환 및 통신 예외 처리
 
