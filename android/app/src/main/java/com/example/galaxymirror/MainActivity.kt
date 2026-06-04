@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
   @Volatile private var remoteDescriptionSet = false
   @Volatile private var screenCaptureRequestInFlight = false
   private val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
+  private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
   // MediaProjection intent stored for WebRTC use
   private var mediaProjectionResultData: Intent? = null
@@ -196,6 +197,26 @@ class MainActivity : ComponentActivity() {
 
     // 2. 안드로이드 화면 캡처(MediaProjection) 동의 요청 팝업 즉시 기동
     requestScreenCapturePermission()
+
+    // 3. 네트워크 변경 리스너 등록
+    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+      override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) {
+        runOnUiThread {
+          if (peerConnection != null) {
+            val newNetwork = currentStreamNetworkTransport()
+            if (newNetwork != streamQualityNetwork) {
+              streamQualityNetwork = newNetwork
+              val newProfile = AdaptiveStreamQuality.resolve(streamQualityMode, newNetwork, viewerActivityState)
+              streamQualityProfile = newProfile
+              applyStreamQualityProfile(newProfile, reason = "Network handoff callback")
+            }
+          }
+        }
+      }
+    }
+    networkCallback = callback
+    connectivityManager.registerDefaultNetworkCallback(callback)
   }
 
   override fun onResume() {
@@ -782,39 +803,43 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun beginViewerSession(): Int {
+  private suspend fun beginViewerSession(): Int {
     val sessionId = sessionCounter.incrementAndGet()
-    val replacingSessionId =
-      synchronized(sessionLock) {
-        val previous = mirrorSessionState.activeSessionId
-        pendingOffer = null
-        mirrorSessionState = mirrorSessionState.beginSession(sessionId)
-        activeSessionId = sessionId
-        previous
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+      val replacingSessionId =
+        synchronized(sessionLock) {
+          val previous = mirrorSessionState.activeSessionId
+          pendingOffer = null
+          mirrorSessionState = mirrorSessionState.beginSession(sessionId)
+          activeSessionId = sessionId
+          previous
+        }
+      if (replacingSessionId != 0) {
+        CrashDiagnostics.recordEvent(this@MainActivity, "Replacing active viewer session: $replacingSessionId -> $sessionId.")
+        Log.w("WebRTC", "Replacing active viewer session: $replacingSessionId -> $sessionId")
+        cleanupWebRTCResources(
+          stopProjectionService = CleanupPolicy.shouldStopProjection(CleanupReason.VIEWER_REPLACED)
+        )
       }
-    if (replacingSessionId != 0) {
-      CrashDiagnostics.recordEvent(this, "Replacing active viewer session: $replacingSessionId -> $sessionId.")
-      Log.w("WebRTC", "Replacing active viewer session: $replacingSessionId -> $sessionId")
-      cleanupWebRTCResources(
-        stopProjectionService = CleanupPolicy.shouldStopProjection(CleanupReason.VIEWER_REPLACED)
-      )
+      applyScreenAwakeWindowFlag()
+      applyBrightnessMinimizationForCurrentState()
     }
-    applyScreenAwakeWindowFlag()
-    applyBrightnessMinimizationForCurrentState()
     return sessionId
   }
 
-  private fun endViewerSession(sessionId: Int) {
-    if (isActiveSession(sessionId)) {
-      CrashDiagnostics.recordEvent(this, "Ending viewer session: $sessionId.")
+  private suspend fun endViewerSession(sessionId: Int) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
       synchronized(sessionLock) {
-        mirrorSessionState = mirrorSessionState.endSession(sessionId)
-        activeSessionId = mirrorSessionState.activeSessionId
-        pendingOffer = null
+        if (isActiveSession(sessionId)) {
+          CrashDiagnostics.recordEvent(this@MainActivity, "Ending viewer session: $sessionId.")
+          mirrorSessionState = mirrorSessionState.endSession(sessionId)
+          activeSessionId = mirrorSessionState.activeSessionId
+          pendingOffer = null
+          cleanupWebRTCResources(
+            stopProjectionService = CleanupPolicy.shouldStopProjection(CleanupReason.VIEWER_SOCKET_CLOSED)
+          )
+        }
       }
-      cleanupWebRTCResources(
-        stopProjectionService = CleanupPolicy.shouldStopProjection(CleanupReason.VIEWER_SOCKET_CLOSED)
-      )
     }
   }
 
@@ -837,12 +862,12 @@ class MainActivity : ComponentActivity() {
   }
 
   private fun addRemoteIceCandidate(candidate: IceCandidate) {
-    if (!remoteDescriptionSet || peerConnection == null) {
-      synchronized(pendingRemoteIceCandidates) {
+    synchronized(pendingRemoteIceCandidates) {
+      if (!remoteDescriptionSet || peerConnection == null) {
         pendingRemoteIceCandidates.add(candidate)
+        Log.d("WebRTC", "Queued remote ICE candidate until remote description is set.")
+        return
       }
-      Log.d("WebRTC", "Queued remote ICE candidate until remote description is set.")
-      return
     }
 
     peerConnection?.addIceCandidate(candidate)
@@ -860,14 +885,15 @@ class MainActivity : ComponentActivity() {
 
   // 1:1 시그널링 메시지 처리 및 WebRTC PeerConnection 제어
   private fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
-    if (!isActiveSession(sessionId)) {
-      Log.w("WebRTC", "Ignoring signaling message for inactive session: $sessionId")
-      return
-    }
+    runOnUiThread {
+      if (!isActiveSession(sessionId)) {
+        Log.w("WebRTC", "Ignoring signaling message for inactive session: $sessionId")
+        return@runOnUiThread
+      }
 
-    try {
-      val json = org.json.JSONObject(message)
-      val type = json.getString("type")
+      try {
+        val json = org.json.JSONObject(message)
+        val type = json.getString("type")
       
       when (type) {
         "OFFER" -> {
@@ -919,6 +945,7 @@ class MainActivity : ComponentActivity() {
     } catch (e: Exception) {
       CrashDiagnostics.recordCaughtException(this.filesDir, "signaling JSON parse", e)
       Log.e("WebRTC", "Error parsing signaling JSON: ${e.message}", e)
+    }
     }
   }
 
@@ -1288,6 +1315,14 @@ class MainActivity : ComponentActivity() {
 
   override fun onDestroy() {
     super.onDestroy()
+    networkCallback?.let { callback ->
+      try {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        connectivityManager.unregisterNetworkCallback(callback)
+      } catch (e: Exception) {
+        Log.e("GalaxyMirror", "Error unregistering network callback", e)
+      }
+    }
     idleQualityJob?.cancel()
     synchronized(sessionLock) {
       activeSessionId = 0

@@ -62,6 +62,12 @@ function log(msg) {
     const entry = document.createElement('div');
     entry.textContent = `[${time}] ${msg}`;
     logBox.appendChild(entry);
+    
+    // Evict old entries to prevent DOM bloat
+    while (logBox.childElementCount > 200) {
+        logBox.removeChild(logBox.firstChild);
+    }
+    
     logBox.scrollTop = logBox.scrollHeight;
 }
 
@@ -151,7 +157,28 @@ async function sampleWebRtcStats() {
     if (!peerConnection || typeof peerConnection.getStats !== 'function') return;
 
     try {
-        const current = extractNetworkBytes(await peerConnection.getStats());
+        const stats = await peerConnection.getStats();
+        const current = extractNetworkBytes(stats);
+        
+        // Extract round-trip latency time (RTT)
+        let rtt = null;
+        stats.forEach((report) => {
+            if (report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
+                if (typeof report.currentRoundTripTime === 'number') {
+                    rtt = report.currentRoundTripTime;
+                }
+            }
+        });
+        
+        const latencyEl = document.getElementById('rtcLatency');
+        if (latencyEl) {
+            if (typeof rtt === 'number') {
+                latencyEl.textContent = `${(rtt * 1000).toFixed(0)} ms`;
+            } else {
+                latencyEl.textContent = '확인 중';
+            }
+        }
+
         if (!lastNetworkBytes) {
             lastNetworkBytes = current;
             updateDataUsageDisplay();
@@ -307,6 +334,16 @@ function connectSignaling() {
 
     resetTextControlState();
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
+    
+    // Explicit listener and socket cleanup before recreating socket
+    if (socket) {
+        socket.onopen = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
+        socket.close();
+    }
+    
     const signalingSocket = new WebSocket(wsUrl);
     socket = signalingSocket;
 
@@ -324,10 +361,15 @@ function connectSignaling() {
         if (socket !== signalingSocket) return;
         log("Signaling WebSocket 연결이 종료되었습니다.");
         stopDataUsagePolling();
+        
+        // Detach listeners and close PeerConnection to resolve leaks
         if (peerConnection) {
+            peerConnection.ontrack = null;
+            peerConnection.onicecandidate = null;
             peerConnection.close();
             peerConnection = null;
         }
+        
         wsIndicator.classList.remove('online');
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
         rtcStatus.innerText = "Offline";
@@ -339,6 +381,9 @@ function connectSignaling() {
         socket = null;
         resetTextControlState();
         resetDataUsageStats();
+        
+        const latencyEl = document.getElementById('rtcLatency');
+        if (latencyEl) latencyEl.textContent = 'Offline';
     };
 
     signalingSocket.onerror = (err) => {
@@ -567,15 +612,23 @@ async function addRemoteCandidate(candidate) {
         log("Remote Description 설정 전 ICE Candidate 대기열 저장.");
         return;
     }
-    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    log("신규 ICE Candidate 추가 완수.");
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        log("신규 ICE Candidate 추가 완수.");
+    } catch (err) {
+        log(`ICE Candidate 추가 실패: ${err.message}`);
+    }
 }
 
 async function flushPendingRemoteCandidates() {
     const candidates = pendingRemoteCandidates;
     pendingRemoteCandidates = [];
     for (const candidate of candidates) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+            log(`ICE Candidate 추가 실패: ${err.message}`);
+        }
     }
     if (candidates.length > 0) {
         log(`대기 중 ICE Candidate ${candidates.length}개 추가 완료.`);

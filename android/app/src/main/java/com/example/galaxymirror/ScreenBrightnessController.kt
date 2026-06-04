@@ -100,7 +100,7 @@ class ScreenBrightnessController(
   }
 
   companion object {
-    const val MIN_BRIGHTNESS = 1
+    const val MIN_BRIGHTNESS = 10
     const val MAX_BRIGHTNESS = 255
     const val MANUAL_BRIGHTNESS_MODE = Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
   }
@@ -158,7 +158,7 @@ private class SharedPreferencesBrightnessRestoreStore(
       .putBoolean(KEY_HAS_SNAPSHOT, true)
       .putInt(KEY_BRIGHTNESS, snapshot.brightness)
       .putInt(KEY_MODE, snapshot.mode)
-      .apply()
+      .commit()
   }
 
   override fun clearSnapshot() {
@@ -167,7 +167,7 @@ private class SharedPreferencesBrightnessRestoreStore(
       .remove(KEY_HAS_SNAPSHOT)
       .remove(KEY_BRIGHTNESS)
       .remove(KEY_MODE)
-      .apply()
+      .commit()
   }
 
   private companion object {

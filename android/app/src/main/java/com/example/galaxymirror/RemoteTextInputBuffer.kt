@@ -16,6 +16,8 @@ data class RemoteTextEdit(
 
 class RemoteTextInputBuffer {
   private var cached: RemoteTextSnapshot? = null
+  private var cachedAt: Long = 0L
+  private val CACHE_TTL_MS = 1000L
 
   fun planCommit(snapshot: RemoteTextSnapshot, text: String): RemoteTextEdit {
     val base = currentSnapshot(snapshot)
@@ -55,15 +57,18 @@ class RemoteTextInputBuffer {
         selectionStart = edit.nextSelectionStart,
         selectionEnd = edit.nextSelectionEnd,
       )
+    cachedAt = android.os.SystemClock.elapsedRealtime()
   }
 
   fun invalidate() {
     cached = null
+    cachedAt = 0L
   }
 
   private fun currentSnapshot(snapshot: RemoteTextSnapshot): RemoteTextSnapshot {
     val cachedSnapshot = cached
-    return if (cachedSnapshot?.targetKey == snapshot.targetKey) {
+    val now = android.os.SystemClock.elapsedRealtime()
+    return if (cachedSnapshot?.targetKey == snapshot.targetKey && (now - cachedAt) < CACHE_TTL_MS) {
       cachedSnapshot
     } else {
       snapshot

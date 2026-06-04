@@ -109,6 +109,7 @@ class MediaProjectionService : Service() {
         updateWakeLock()
     }
 
+    @Suppress("DEPRECATION")
     private fun updateWakeLock() {
         val shouldHoldWakeLock =
             MediaProjectionWakeLockPolicy.shouldHoldWakeLock(
@@ -118,14 +119,15 @@ class MediaProjectionService : Service() {
         if (shouldHoldWakeLock) {
             val currentWakeLock = wakeLock
             if (currentWakeLock?.isHeld == true) return
+            val lockType = PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP
             wakeLock =
                 (getSystemService(Context.POWER_SERVICE) as PowerManager)
-                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AndroidMirror:Projection")
+                    .newWakeLock(lockType, "AndroidMirror:Projection")
                     .apply {
                         setReferenceCounted(false)
                         acquire()
                     }
-            CrashDiagnostics.recordEvent(this, "MediaProjection partial wake lock acquired.")
+            CrashDiagnostics.recordEvent(this, "MediaProjection screen bright wake lock acquired.")
             return
         }
 

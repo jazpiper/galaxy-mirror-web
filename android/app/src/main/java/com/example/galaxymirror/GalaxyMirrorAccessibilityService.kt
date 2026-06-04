@@ -21,18 +21,67 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         fun isReadyForRemoteInput(): Boolean = instance != null
     }
 
-    private var screenWidth = 0
-    private var screenHeight = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val textInputBuffer = RemoteTextInputBuffer()
+
+    private fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
+    private fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
+
+    // Gesture Queueing structures to ensure serialized execution
+    private val gestureQueue = mutableListOf<PendingGesture>()
+    private var gestureDispatchInProgress = false
+
+    private data class PendingGesture(
+        val gesture: GestureDescription,
+        val xDesc: String,
+        val onResult: (Boolean) -> Unit
+    )
+
+    private fun enqueueGesture(gesture: GestureDescription, xDesc: String, onResult: (Boolean) -> Unit) {
+        synchronized(gestureQueue) {
+            gestureQueue.add(PendingGesture(gesture, xDesc, onResult))
+            if (!gestureDispatchInProgress) {
+                dispatchNextGesture()
+            }
+        }
+    }
+
+    private fun dispatchNextGesture() {
+        synchronized(gestureQueue) {
+            if (gestureQueue.isEmpty()) {
+                gestureDispatchInProgress = false
+                return
+            }
+            gestureDispatchInProgress = true
+            val pending = gestureQueue.removeAt(0)
+            
+            Log.d(TAG, "Dispatching gesture from queue: ${pending.xDesc}")
+            val dispatched = dispatchGesture(pending.gesture, object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription) {
+                    Log.d(TAG, "Gesture completed: ${pending.xDesc}")
+                    pending.onResult(true)
+                    dispatchNextGesture()
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription) {
+                    Log.w(TAG, "Gesture cancelled: ${pending.xDesc}")
+                    pending.onResult(false)
+                    dispatchNextGesture()
+                }
+            }, null)
+
+            if (!dispatched) {
+                Log.w(TAG, "Gesture dispatch failed immediately: ${pending.xDesc}")
+                pending.onResult(false)
+                mainHandler.post { dispatchNextGesture() }
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        val displayMetrics = resources.displayMetrics
-        screenWidth = displayMetrics.widthPixels
-        screenHeight = displayMetrics.heightPixels
-        Log.d(TAG, "AccessibilityService connected. Screen: ${screenWidth}x${screenHeight}")
+        Log.d(TAG, "AccessibilityService connected. Screen: ${getScreenWidth()}x${getScreenHeight()}")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -41,6 +90,10 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        synchronized(gestureQueue) {
+            gestureQueue.clear()
+            gestureDispatchInProgress = false
+        }
     }
 
     /**
@@ -74,22 +127,24 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             when (val type = json.getString("type")) {
                 "tap" -> {
                     textInputBuffer.invalidate()
-                    val x = (json.getDouble("x") * screenWidth).toFloat()
-                    val y = (json.getDouble("y") * screenHeight).toFloat()
+                    val x = (json.getDouble("x") * getScreenWidth()).toFloat()
+                    val y = (json.getDouble("y") * getScreenHeight()).toFloat()
                     CrashDiagnostics.recordEvent(this, "Accessibility tap requested.")
-                    val applied = performTap(x, y)
-                    resultCallback(ControlEventResult(seq, type, applied, "GESTURE_DISPATCH_REQUESTED"))
+                    performTap(x, y) { applied ->
+                        resultCallback(ControlEventResult(seq, type, applied, "TAP_COMPLETED"))
+                    }
                 }
                 "swipe" -> {
                     textInputBuffer.invalidate()
-                    val x1 = (json.getDouble("x1") * screenWidth).toFloat()
-                    val y1 = (json.getDouble("y1") * screenHeight).toFloat()
-                    val x2 = (json.getDouble("x2") * screenWidth).toFloat()
-                    val y2 = (json.getDouble("y2") * screenHeight).toFloat()
+                    val x1 = (json.getDouble("x1") * getScreenWidth()).toFloat()
+                    val y1 = (json.getDouble("y1") * getScreenHeight()).toFloat()
+                    val x2 = (json.getDouble("x2") * getScreenWidth()).toFloat()
+                    val y2 = (json.getDouble("y2") * getScreenHeight()).toFloat()
                     val duration = if (json.has("duration")) json.getLong("duration") else 300L
                     CrashDiagnostics.recordEvent(this, "Accessibility swipe requested.")
-                    val applied = performSwipe(x1, y1, x2, y2, duration)
-                    resultCallback(ControlEventResult(seq, type, applied, "GESTURE_DISPATCH_REQUESTED"))
+                    performSwipe(x1, y1, x2, y2, duration) { applied ->
+                        resultCallback(ControlEventResult(seq, type, applied, "SWIPE_COMPLETED"))
+                    }
                 }
                 "key" -> {
                     textInputBuffer.invalidate()
@@ -126,55 +181,77 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun performTap(x: Float, y: Float): Boolean {
-        Log.d(TAG, "Performing tap at ($x, $y)")
+    private fun performTap(x: Float, y: Float, onResult: (Boolean) -> Unit) {
+        Log.d(TAG, "Queueing tap at ($x, $y)")
         val path = Path().apply { moveTo(x, y) }
         val strokeDescription = GestureDescription.StrokeDescription(path, 0, 100)
         val gesture = GestureDescription.Builder().addStroke(strokeDescription).build()
-        val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription) {
-                Log.d(TAG, "Tap completed at ($x, $y)")
-            }
-            override fun onCancelled(gestureDescription: GestureDescription) {
-                Log.w(TAG, "Tap cancelled at ($x, $y)")
-            }
-        }, null)
-        CrashDiagnostics.recordEvent(this, "Accessibility tap dispatch requested=$dispatched.")
-        return dispatched
+        enqueueGesture(gesture, "tap ($x, $y)", onResult)
     }
 
-    private fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean {
-        Log.d(TAG, "Performing swipe from ($x1,$y1) to ($x2,$y2) in ${durationMs}ms")
+    private fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long, onResult: (Boolean) -> Unit) {
+        Log.d(TAG, "Queueing swipe from ($x1,$y1) to ($x2,$y2) in ${durationMs}ms")
         val path = Path().apply {
             moveTo(x1, y1)
             lineTo(x2, y2)
         }
         val strokeDescription = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(strokeDescription).build()
-        val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription) {
-                Log.d(TAG, "Swipe completed")
-            }
-            override fun onCancelled(gestureDescription: GestureDescription) {
-                Log.w(TAG, "Swipe cancelled")
-            }
-        }, null)
-        CrashDiagnostics.recordEvent(this, "Accessibility swipe dispatch requested=$dispatched.")
-        return dispatched
+        enqueueGesture(gesture, "swipe ($x1,$y1)->($x2,$y2)", onResult)
     }
 
     private fun handleKeyEvent(keyCode: Int): Boolean {
-        // Map common keycodes to global actions
+        // Map common keycodes to global actions or granularity actions
         val applied = when (keyCode) {
             4 -> performGlobalAction(GLOBAL_ACTION_BACK)      // Android KEYCODE_BACK
             3 -> performGlobalAction(GLOBAL_ACTION_HOME)      // Android KEYCODE_HOME
             187 -> performGlobalAction(GLOBAL_ACTION_RECENTS) // KEYCODE_APP_SWITCH
+            21 -> moveCursorPrevious()                        // KEYCODE_DPAD_LEFT
+            22 -> moveCursorNext()                            // KEYCODE_DPAD_RIGHT
             else -> {
                 Log.w(TAG, "Unhandled keyCode: $keyCode")
                 false
             }
         }
         CrashDiagnostics.recordEvent(this, "Accessibility key applied=$applied.")
+        return applied
+    }
+
+    private fun moveCursorPrevious(): Boolean {
+        val node = findTextInputTarget("cursor_left") ?: return false
+        val arguments = Bundle().apply {
+            putInt(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+            )
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
+        }
+        val applied = node.performAction(
+            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
+            arguments
+        )
+        if (applied) {
+            textInputBuffer.invalidate()
+        }
+        return applied
+    }
+
+    private fun moveCursorNext(): Boolean {
+        val node = findTextInputTarget("cursor_right") ?: return false
+        val arguments = Bundle().apply {
+            putInt(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+            )
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
+        }
+        val applied = node.performAction(
+            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
+            arguments
+        )
+        if (applied) {
+            textInputBuffer.invalidate()
+        }
         return applied
     }
 
@@ -249,7 +326,11 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
     }
 
     private fun AccessibilityNodeInfo.toRemoteTextSnapshot(): RemoteTextSnapshot {
-        val text = this.text?.toString().orEmpty()
+        val text = if (this.isPassword) {
+            ""
+        } else {
+            this.text?.toString().orEmpty()
+        }
         val selection = selectionRange(text) ?: (text.length to text.length)
         return RemoteTextSnapshot(
             targetKey = textInputTargetKey(),

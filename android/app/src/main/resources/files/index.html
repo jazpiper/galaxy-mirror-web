@@ -343,6 +343,37 @@
             margin-top: 15px;
             border: 1px solid rgba(255, 255, 255, 0.02);
         }
+
+        @media (max-width: 850px) {
+            body {
+                overflow-y: auto;
+            }
+            #appContainer {
+                flex-direction: column-reverse;
+                height: auto;
+                min-height: 100vh;
+            }
+            #infoPanel {
+                width: calc(100% - 40px);
+                height: auto;
+                margin: 20px;
+                padding: 20px;
+            }
+            #viewerArea {
+                width: 100%;
+                height: auto;
+                padding: 20px;
+            }
+            #videoContainer {
+                height: auto;
+                width: 100%;
+                max-width: 420px;
+                aspect-ratio: 9 / 19.5;
+            }
+            .log-box {
+                max-height: 200px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -364,6 +395,10 @@
                     <div class="status-item">
                         <span class="status-label">WebRTC 스트림</span>
                         <span class="status-value" id="rtcStatus">Offline</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">지연 시간 (RTT)</span>
+                        <span class="status-value" id="rtcLatency">Offline</span>
                     </div>
                     <div class="status-item">
                         <span class="status-label">제어 채널</span>

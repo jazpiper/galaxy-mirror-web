@@ -15,8 +15,6 @@ object AdaptiveStreamQuality {
     if (viewerActivity == ViewerActivityState.ACTIVE) return active
 
     return active.copy(
-      width = minOf(active.width, 540),
-      height = minOf(active.height, 1200),
       fps = minOf(active.fps, 5),
       maxBitrateBps = minOf(active.maxBitrateBps, 350_000),
     )

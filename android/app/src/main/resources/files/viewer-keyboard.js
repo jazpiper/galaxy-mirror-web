@@ -129,6 +129,16 @@
                     sendKey(4);
                     resetSink();
                     return;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    sendKey(21);
+                    resetSink();
+                    return;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    sendKey(22);
+                    resetSink();
+                    return;
             }
 
             if (event.metaKey || event.ctrlKey || event.altKey) return;
