@@ -1,17 +1,53 @@
-// 🌌 Galaxy Mirror: WebRTC & Signaling Client
+// Android Mirror: WebRTC & Signaling Client
 const remoteVideo = document.getElementById('remoteVideo');
+const keyboardSink = document.getElementById('keyboardSink');
 const connectBtn = document.getElementById('connectBtn');
 const wsIndicator = document.getElementById('wsIndicator');
 const wsStatus = document.getElementById('wsStatus');
 const rtcStatus = document.getElementById('rtcStatus');
 const controlStatus = document.getElementById('controlStatus');
+const accessibilityStatus = document.getElementById('accessibilityStatus');
+const favoriteAppsList = document.getElementById('favoriteAppsList');
+const statusDetail = document.getElementById('statusDetail');
 const logBox = document.getElementById('logBox');
+const uploadUsage = document.getElementById('uploadUsage');
+const downloadUsage = document.getElementById('downloadUsage');
+const qualityMode = document.getElementById('qualityMode');
+const qualityEffective = document.getElementById('qualityEffective');
+const qualityNetwork = document.getElementById('qualityNetwork');
+const qualityAutoBtn = document.getElementById('qualityAutoBtn');
+const qualityDataSaverBtn = document.getElementById('qualityDataSaverBtn');
+const qualityStandardBtn = document.getElementById('qualityStandardBtn');
+const qualityHighBtn = document.getElementById('qualityHighBtn');
+const navRecentsBtn = document.getElementById('navRecentsBtn');
+const navHomeBtn = document.getElementById('navHomeBtn');
+const navBackBtn = document.getElementById('navBackBtn');
 
 let socket = null;
 let peerConnection = null;
 let dataChannel = null;
 let remoteDescriptionSet = false;
 let pendingRemoteCandidates = [];
+let accessibilityReady = false;
+let touchControlInitialized = false;
+let keyControlInitialized = false;
+let navigationControlInitialized = false;
+let keyboardControl = null;
+let dataUsagePollId = null;
+let lastNetworkBytes = null;
+let accumulatedNetworkBytes = { sent: 0, received: 0 };
+let nextTextSeq = 1;
+let inFlightTextSeq = null;
+let queuedTextPayloads = [];
+
+const viewerAccessToken = new URLSearchParams(window.location.search).get('token') || '';
+
+const streamQualityButtons = [
+    { mode: 'AUTO', element: qualityAutoBtn },
+    { mode: 'DATA_SAVER', element: qualityDataSaverBtn },
+    { mode: 'STANDARD', element: qualityStandardBtn },
+    { mode: 'HIGH', element: qualityHighBtn }
+];
 
 const rtcConfig = {
     iceServers: [
@@ -29,35 +65,289 @@ function log(msg) {
     logBox.scrollTop = logBox.scrollHeight;
 }
 
+function focusKeyboardCapture() {
+    if (keyboardControl) {
+        keyboardControl.focus();
+        return;
+    }
+    remoteVideo.focus();
+}
+
+function showStatusDetail(text, tone = '') {
+    if (!statusDetail) return;
+    statusDetail.className = `status-detail${tone ? ` ${tone}` : ''}`;
+    statusDetail.textContent = text;
+}
+
+function viewerAuthHeaders() {
+    return viewerAccessToken ? { 'X-Android-Mirror-Token': viewerAccessToken } : {};
+}
+
+function formatMegabytes(bytes) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function updateDataUsageDisplay() {
+    if (uploadUsage) uploadUsage.textContent = formatMegabytes(accumulatedNetworkBytes.sent);
+    if (downloadUsage) downloadUsage.textContent = formatMegabytes(accumulatedNetworkBytes.received);
+}
+
+function resetDataUsageStats() {
+    lastNetworkBytes = null;
+    accumulatedNetworkBytes = { sent: 0, received: 0 };
+    updateDataUsageDisplay();
+}
+
+function extractNetworkBytes(stats) {
+    let selectedCandidatePairId = null;
+    let selectedPair = null;
+    let fallbackSent = 0;
+    let fallbackReceived = 0;
+
+    stats.forEach((report) => {
+        if (report.type === 'transport' && report.selectedCandidatePairId) {
+            selectedCandidatePairId = report.selectedCandidatePairId;
+        }
+    });
+
+    if (selectedCandidatePairId && typeof stats.get === 'function') {
+        selectedPair = stats.get(selectedCandidatePairId);
+    }
+
+    stats.forEach((report) => {
+        if (
+            !selectedPair &&
+            report.type === 'candidate-pair' &&
+            report.state === 'succeeded' &&
+            (report.selected || report.nominated)
+        ) {
+            selectedPair = report;
+        }
+
+        if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number') {
+            fallbackReceived += report.bytesReceived;
+        } else if (report.type === 'outbound-rtp' && typeof report.bytesSent === 'number') {
+            fallbackSent += report.bytesSent;
+        } else if (report.type === 'data-channel') {
+            fallbackSent += report.bytesSent || 0;
+            fallbackReceived += report.bytesReceived || 0;
+        }
+    });
+
+    if (selectedPair) {
+        return {
+            sent: selectedPair.bytesSent || 0,
+            received: selectedPair.bytesReceived || 0
+        };
+    }
+
+    return {
+        sent: fallbackSent,
+        received: fallbackReceived
+    };
+}
+
+async function sampleWebRtcStats() {
+    if (!peerConnection || typeof peerConnection.getStats !== 'function') return;
+
+    try {
+        const current = extractNetworkBytes(await peerConnection.getStats());
+        if (!lastNetworkBytes) {
+            lastNetworkBytes = current;
+            updateDataUsageDisplay();
+            return;
+        }
+
+        accumulatedNetworkBytes.sent += Math.max(0, current.sent - lastNetworkBytes.sent);
+        accumulatedNetworkBytes.received += Math.max(0, current.received - lastNetworkBytes.received);
+        lastNetworkBytes = current;
+        updateDataUsageDisplay();
+    } catch (error) {
+        log(`데이터 사용량 집계 실패: ${error.message}`);
+    }
+}
+
+function startDataUsagePolling() {
+    stopDataUsagePolling();
+    resetDataUsageStats();
+    dataUsagePollId = setInterval(sampleWebRtcStats, 1000);
+    sampleWebRtcStats();
+}
+
+function stopDataUsagePolling() {
+    if (dataUsagePollId) {
+        clearInterval(dataUsagePollId);
+        dataUsagePollId = null;
+    }
+}
+
+function formatBitrate(maxBitrateBps) {
+    if (typeof maxBitrateBps !== 'number' || Number.isNaN(maxBitrateBps)) return '';
+    return `${(maxBitrateBps / 1_000_000).toFixed(1)}Mbps`;
+}
+
+function renderStreamQualityStatus(payload = {}) {
+    const selectedMode = payload.selectedMode || 'AUTO';
+    const selectedLabel = payload.selectedLabel || selectedMode;
+    const effectiveLabel = payload.effectiveLabel || payload.effectiveMode || '확인 중';
+    const networkLabel = payload.networkLabel || payload.networkTransport || '확인 중';
+    const activityLabel = payload.activityState === 'IDLE' ? '대기 절약 중' : '활성';
+    const resolution =
+        payload.width && payload.height && payload.fps
+            ? `${payload.width}x${payload.height} ${payload.fps}fps`
+            : '';
+    const bitrate = formatBitrate(payload.maxBitrateBps);
+    const effectiveText = [effectiveLabel, activityLabel, resolution, bitrate].filter(Boolean).join(' · ');
+
+    if (qualityMode) qualityMode.textContent = selectedLabel;
+    if (qualityEffective) qualityEffective.textContent = effectiveText || '확인 중';
+    if (qualityNetwork) qualityNetwork.textContent = networkLabel;
+
+    streamQualityButtons.forEach(({ mode, element }) => {
+        if (!element) return;
+        if (mode === selectedMode) {
+            element.classList.add('active');
+        } else {
+            element.classList.remove('active');
+        }
+    });
+}
+
+async function loadStreamQualityStatus() {
+    try {
+        const response = await fetch('/stream/quality', {
+            cache: 'no-store',
+            headers: viewerAuthHeaders()
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        renderStreamQualityStatus(await response.json());
+    } catch (error) {
+        log(`스트림 화질 상태 로드 실패: ${error.message}`);
+    }
+}
+
+async function setStreamQualityMode(mode) {
+    try {
+        const response = await fetch('/stream/quality', {
+            method: 'POST',
+            headers: { ...viewerAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        renderStreamQualityStatus(await response.json());
+        log(`스트림 화질 변경 요청: ${mode}`);
+        focusKeyboardCapture();
+    } catch (error) {
+        log(`스트림 화질 변경 실패: ${error.message}`);
+    }
+}
+
+function sendControlPayload(payload) {
+    if (!dataChannel || dataChannel.readyState !== 'open') {
+        log("제어 채널이 아직 열리지 않았습니다.");
+        return false;
+    }
+    dataChannel.send(JSON.stringify(payload));
+    return true;
+}
+
+function sendAndroidKey(keyCode) {
+    if (sendControlPayload({ type: 'key', keyCode })) {
+        log(`Key sent: keyCode=${keyCode}`);
+    }
+}
+
+function sendSequencedTextPayload(payload) {
+    if (inFlightTextSeq !== null) {
+        queuedTextPayloads.push(payload);
+        return false;
+    }
+
+    const seq = nextTextSeq;
+    nextTextSeq += 1;
+    inFlightTextSeq = seq;
+    const sent = sendControlPayload({ ...payload, seq });
+    if (!sent) {
+        inFlightTextSeq = null;
+        return false;
+    }
+    return true;
+}
+
+function resetTextControlState() {
+    inFlightTextSeq = null;
+    queuedTextPayloads = [];
+    nextTextSeq = 1;
+}
+
+function flushNextQueuedTextPayload() {
+    if (inFlightTextSeq !== null || queuedTextPayloads.length === 0) return;
+    const nextPayload = queuedTextPayloads.shift();
+    sendSequencedTextPayload(nextPayload);
+}
+
+function handleControlAck(payload = {}) {
+    if (payload.seq !== inFlightTextSeq) return;
+    inFlightTextSeq = null;
+    if (payload.applied === false) {
+        log(`Text control ACK failed: ${payload.message || 'UNKNOWN'}`);
+    }
+    flushNextQueuedTextPayload();
+}
+
 // 1. WebSocket 시그널링 채널 연결
 function connectSignaling() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/signaling`;
+    const tokenQuery = viewerAccessToken ? `?token=${encodeURIComponent(viewerAccessToken)}` : '';
+    const wsUrl = `${protocol}//${window.location.host}/signaling${tokenQuery}`;
 
+    resetTextControlState();
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
-    socket = new WebSocket(wsUrl);
+    const signalingSocket = new WebSocket(wsUrl);
+    socket = signalingSocket;
 
-    socket.onopen = () => {
+    signalingSocket.onopen = () => {
+        if (socket !== signalingSocket) return;
         log("Signaling WebSocket 연결 성공!");
         wsIndicator.classList.add('online');
         wsStatus.innerHTML = `<span class="indicator online" id="wsIndicator"></span>Online`;
-        setupWebRTC();
+        loadFavoriteApps();
+        loadStreamQualityStatus();
+        setupWebRTC(signalingSocket);
     };
 
-    socket.onclose = () => {
+    signalingSocket.onclose = () => {
+        if (socket !== signalingSocket) return;
         log("Signaling WebSocket 연결이 종료되었습니다.");
+        stopDataUsagePolling();
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
         wsIndicator.classList.remove('online');
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
         rtcStatus.innerText = "Offline";
         controlStatus.innerText = "비활성";
+        accessibilityStatus.innerText = "확인 중";
+        showStatusDetail("Android Mirror 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.");
+        accessibilityReady = false;
         dataChannel = null;
+        socket = null;
+        resetTextControlState();
+        resetDataUsageStats();
     };
 
-    socket.onerror = (err) => {
+    signalingSocket.onerror = (err) => {
+        if (socket !== signalingSocket) return;
         log(`WebSocket 에러 발생: ${err.message || '알 수 없는 오류'}`);
     };
 
-    socket.onmessage = async (event) => {
+    signalingSocket.onmessage = async (event) => {
+        if (socket !== signalingSocket) return;
         try {
             const message = JSON.parse(event.data);
             log(`수신된 시그널 패킷: ${message.type}`);
@@ -68,6 +358,9 @@ function connectSignaling() {
                     remoteDescriptionSet = true;
                     await flushPendingRemoteCandidates();
                     log("WebRTC Remote Description (Answer) 설정 완료.");
+                    break;
+                case 'STATUS':
+                    handleStatusMessage(message.payload || {});
                     break;
                 case 'ICE_CANDIDATE':
                     if (message.payload) {
@@ -81,37 +374,166 @@ function connectSignaling() {
     };
 }
 
+function handleStatusMessage(payload) {
+    if (typeof payload.captureReady === 'boolean') {
+        rtcStatus.innerText = payload.captureReady ? "Capture Ready" : "화면 공유 대기";
+    }
+    if (typeof payload.accessibilityReady === 'boolean') {
+        accessibilityReady = payload.accessibilityReady;
+        accessibilityStatus.innerText = accessibilityReady ? "활성화" : "권한 필요";
+    }
+    if (typeof payload.brightnessWriteSettingsReady === 'boolean' && payload.brightnessMinimizeEnabled) {
+        const message = payload.brightnessWriteSettingsReady
+            ? '밝기 최소화 준비됨'
+            : '밝기 최소화 권한 필요';
+        log(`Android 밝기 상태: ${message}`);
+    }
+    if (payload.streamQuality) {
+        renderStreamQualityStatus(payload.streamQuality);
+    }
+    if (payload.message) {
+        applyAndroidStatusMessage(payload.message);
+        log(`Android 상태: ${payload.message}`);
+    }
+}
+
+function applyAndroidStatusMessage(message) {
+    switch (message) {
+        case 'SIGNALING_CONNECTED':
+            showStatusDetail("Android Host와 연결되었습니다. 화면 공유 승인을 기다립니다.");
+            return;
+        case 'WAITING_FOR_SCREEN_CAPTURE':
+        case 'SCREEN_CAPTURE_NOT_READY':
+            rtcStatus.innerText = "화면 공유 대기";
+            showStatusDetail("Android 기기에서 화면 공유 권한을 승인하면 미러링이 시작됩니다.", "warning");
+            return;
+        case 'SCREEN_CAPTURE_READY':
+            rtcStatus.innerText = "Capture Ready";
+            showStatusDetail("화면 공유가 준비되었습니다. 스트림이 시작되면 이 창에서 Android 화면을 제어할 수 있습니다.", "success");
+            return;
+        case 'SCREEN_CAPTURE_PERMISSION_DENIED':
+            rtcStatus.innerText = "권한 거부됨";
+            showStatusDetail("Android 화면 공유 권한이 거부되었습니다. Android 앱에서 화면 공유를 다시 시작하고 승인하세요.", "warning");
+            return;
+        case 'SCREEN_CAPTURE_REAUTH_REQUIRED':
+            rtcStatus.innerText = "재승인 필요";
+            controlStatus.innerText = "대기";
+            showStatusDetail("Android 화면 공유 재승인이 필요합니다. Android 기기에서 화면 공유를 다시 승인한 뒤 미러링 연결하기를 누르세요.", "warning");
+            return;
+        case 'PROJECTION_STOPPED_LOCKED':
+            rtcStatus.innerText = "잠금으로 중단";
+            controlStatus.innerText = "대기";
+            showStatusDetail("Android 화면 잠금 또는 화면 꺼짐으로 미러링이 중단되었습니다. 잠금을 해제하고 화면 공유를 다시 승인하세요.", "warning");
+            return;
+        case 'CONTROL_CHANNEL_ACCEPTED':
+            controlStatus.innerText = "채널 승인됨";
+            showStatusDetail("원격 입력 채널이 Android Host에서 승인되었습니다.", "success");
+            return;
+        case 'STATUS_TICK':
+            return;
+        default:
+            showStatusDetail(`Android 상태: ${message}`);
+    }
+}
+
+function renderFavoriteApps(apps) {
+    if (!favoriteAppsList) return;
+
+    const safeApps = Array.isArray(apps) ? apps : [];
+    if (safeApps.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'shortcut-empty';
+        empty.textContent = 'Android 앱에서 자주 쓰는 앱을 추가하세요.';
+        favoriteAppsList.replaceChildren(empty);
+        return;
+    }
+
+    const buttons = safeApps.map((app) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'shortcut-btn';
+        button.textContent = app.label || app.packageName;
+        button.addEventListener('click', () => launchFavoriteApp(app.packageName, app.label));
+        return button;
+    });
+    favoriteAppsList.replaceChildren(...buttons);
+}
+
+async function loadFavoriteApps() {
+    if (!favoriteAppsList) return;
+    try {
+        const response = await fetch('/apps/favorites', {
+            cache: 'no-store',
+            headers: viewerAuthHeaders()
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        renderFavoriteApps(payload.apps || []);
+    } catch (error) {
+        log(`앱 바로가기 목록 로드 실패: ${error.message}`);
+        renderFavoriteApps([]);
+    }
+}
+
+async function launchFavoriteApp(packageName, label) {
+    if (!packageName) return;
+    try {
+        const response = await fetch('/apps/launch', {
+            method: 'POST',
+            headers: { ...viewerAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ packageName })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        log(`앱 실행 요청: ${label || packageName}`);
+        focusKeyboardCapture();
+    } catch (error) {
+        log(`앱 실행 실패: ${label || packageName} (${error.message})`);
+    }
+}
+
 // 2. WebRTC PeerConnection 세팅 및 Offer 생성
-async function setupWebRTC() {
+async function setupWebRTC(signalingSocket = socket) {
     log("WebRTC PeerConnection 생성 및 초기화 중...");
-    peerConnection = new RTCPeerConnection(rtcConfig);
+    stopDataUsagePolling();
+    resetDataUsageStats();
+    const currentPeerConnection = new RTCPeerConnection(rtcConfig);
+    peerConnection = currentPeerConnection;
     remoteDescriptionSet = false;
     pendingRemoteCandidates = [];
-    peerConnection.addTransceiver('video', { direction: 'recvonly' });
+    currentPeerConnection.addTransceiver('video', { direction: 'recvonly' });
 
     // DataChannel 개설 (터치/키보드 제어 명령 전송용)
     // Channel name 'control' is matched by Android onDataChannel handler
-    dataChannel = peerConnection.createDataChannel('control', {
-        ordered: true,
-        maxRetransmits: 0 // 레이턴시 최소화 세팅
+    dataChannel = currentPeerConnection.createDataChannel('control', {
+        ordered: true
     });
 
     setupDataChannelHandlers(dataChannel);
 
     // 비디오 스트림 수신 이벤트 바인딩
-    peerConnection.ontrack = (event) => {
-        log("갤럭시 실시간 화면 비디오 트랙 감지!");
+    currentPeerConnection.ontrack = (event) => {
+        if (peerConnection !== currentPeerConnection) return;
+        log("Android 실시간 화면 비디오 트랙 감지!");
         if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             rtcStatus.innerText = "Streaming Active";
+            focusKeyboardCapture();
             log("비디오 소스 스트림 렌더링 시작.");
         }
     };
 
     // ICE Candidate 획득 시 시그널링 서버로 전송
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate && socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
+    currentPeerConnection.onicecandidate = (event) => {
+        if (
+            event.candidate &&
+            socket === signalingSocket &&
+            signalingSocket.readyState === WebSocket.OPEN
+        ) {
+            signalingSocket.send(JSON.stringify({
                 type: 'ICE_CANDIDATE',
                 payload: event.candidate
             }));
@@ -120,15 +542,20 @@ async function setupWebRTC() {
 
     // WebRTC Offer 생성 및 전송
     try {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+        const offer = await currentPeerConnection.createOffer();
+        await currentPeerConnection.setLocalDescription(offer);
+        if (socket !== signalingSocket || peerConnection !== currentPeerConnection) {
+            currentPeerConnection.close();
+            return;
+        }
         log("WebRTC Local Description (Offer) 생성 및 설정 완료.");
 
-        socket.send(JSON.stringify({
+        signalingSocket.send(JSON.stringify({
             type: 'OFFER',
             payload: offer
         }));
         log("Signaling Server로 Offer 전송 완료.");
+        startDataUsagePolling();
     } catch (err) {
         log(`WebRTC 기동 중 오류 발생: ${err.message}`);
     }
@@ -158,19 +585,31 @@ async function flushPendingRemoteCandidates() {
 // 3. DataChannel 이벤트 핸들러 세팅
 function setupDataChannelHandlers(channel) {
     channel.onopen = () => {
+        if (dataChannel !== channel) return;
         log("WebRTC DataChannel 제어 채널 오픈!");
-        controlStatus.innerText = "제어 활성화";
+        controlStatus.innerText = "채널 연결됨";
         setupTouchControl();
         setupKeyControl();
     };
 
     channel.onclose = () => {
+        if (dataChannel !== channel) return;
         log("WebRTC DataChannel 제어 채널 닫힘.");
         controlStatus.innerText = "비활성";
+        resetTextControlState();
     };
 
     channel.onmessage = (event) => {
+        if (dataChannel !== channel) return;
         log(`DataChannel 수신 메시지: ${event.data}`);
+        try {
+            const message = JSON.parse(event.data);
+            if (message.type === 'CONTROL_ACK') {
+                handleControlAck(message.payload || {});
+            }
+        } catch (error) {
+            log(`DataChannel 메시지 처리 실패: ${error.message}`);
+        }
     };
 }
 
@@ -217,6 +656,8 @@ function getNormalizedCoords(e) {
 
 // 4. 터치/클릭 & 스와이프 제어 세팅
 function setupTouchControl() {
+    if (touchControlInitialized) return;
+    touchControlInitialized = true;
     log("마우스 원격 터치 좌표 리스너 기동 완료.");
 
     let dragStart   = null;  // { x, y, time }
@@ -225,13 +666,9 @@ function setupTouchControl() {
     let startClientY = 0;
     const DRAG_THRESHOLD_PX = 8;
 
-    function sendControl(payload) {
-        if (!dataChannel || dataChannel.readyState !== 'open') return;
-        dataChannel.send(JSON.stringify(payload));
-    }
-
     remoteVideo.addEventListener('mousedown', (e) => {
         e.preventDefault();
+        focusKeyboardCapture();
         const coords = getNormalizedCoords(e);
         if (!coords) {
             dragStart = null;
@@ -264,7 +701,7 @@ function setupTouchControl() {
 
         if (isDragging) {
             // Swipe gesture
-            sendControl({
+            sendControlPayload({
                 type: 'swipe',
                 x1: dragStart.x,
                 y1: dragStart.y,
@@ -275,7 +712,7 @@ function setupTouchControl() {
             log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
         } else {
             // Tap gesture
-            sendControl({ type: 'tap', x: dragStart.x, y: dragStart.y });
+            sendControlPayload({ type: 'tap', x: dragStart.x, y: dragStart.y });
             log(`Tap: (${dragStart.x}, ${dragStart.y})`);
         }
 
@@ -292,29 +729,102 @@ function setupTouchControl() {
 
 // 5. 키보드 단축키 → Android 키 이벤트
 function setupKeyControl() {
+    if (keyControlInitialized) return;
+    keyControlInitialized = true;
     log("키보드 단축키 리스너 기동 완료.");
 
-    function sendKey(keyCode) {
-        if (!dataChannel || dataChannel.readyState !== 'open') return;
-        dataChannel.send(JSON.stringify({ type: 'key', keyCode }));
-        log(`Key sent: keyCode=${keyCode}`);
+    function sendTextCommit(text) {
+        if (sendSequencedTextPayload({ type: 'text', action: 'commit', text })) {
+            log(`Text sent: length=${text.length}`);
+        } else if (inFlightTextSeq !== null) {
+            log(`Text queued: length=${text.length}`);
+        }
+    }
+
+    function sendTextDeleteBackward(count) {
+        if (sendSequencedTextPayload({ type: 'text', action: 'deleteBackward', count })) {
+            log(`Text delete sent: count=${count}`);
+        } else if (inFlightTextSeq !== null) {
+            log(`Text delete queued: count=${count}`);
+        }
+    }
+
+    if (window.GalaxyMirrorKeyboard && keyboardSink) {
+        keyboardControl = window.GalaxyMirrorKeyboard.createKeyboardControl({
+            document,
+            remoteTarget: remoteVideo,
+            keyboardSink,
+            sendKey: sendAndroidKey,
+            sendTextCommit,
+            sendTextDeleteBackward
+        });
+        keyboardControl.init();
+        log("키보드 IME 입력 리스너 기동 완료.");
+        return;
     }
 
     document.addEventListener('keydown', (e) => {
+        if (document.activeElement !== remoteVideo) return;
+        if (e.isComposing) return;
+
         switch (e.key) {
             case 'Backspace':
                 e.preventDefault();
-                sendKey(4);    // Android KEYCODE_BACK
-                break;
+                sendTextDeleteBackward(1);
+                return;
             case 'Home':
                 e.preventDefault();
-                sendKey(3);    // Android KEYCODE_HOME
-                break;
+                sendAndroidKey(3);    // Android KEYCODE_HOME
+                return;
             case 'F1':
                 e.preventDefault();
-                sendKey(187);  // Android KEYCODE_APP_SWITCH (recent apps)
-                break;
+                sendAndroidKey(187);  // Android KEYCODE_APP_SWITCH (recent apps)
+                return;
+            case 'Enter':
+                e.preventDefault();
+                sendTextCommit('\n');
+                return;
+            case 'Escape':
+                e.preventDefault();
+                sendAndroidKey(4);    // Android KEYCODE_BACK
+                return;
         }
+
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.key.length === 1) {
+            e.preventDefault();
+            sendTextCommit(e.key);
+        }
+    });
+}
+
+function setupNavigationControls() {
+    if (navigationControlInitialized) return;
+    navigationControlInitialized = true;
+
+    const buttons = [
+        { element: navRecentsBtn, keyCode: 187 },
+        { element: navHomeBtn, keyCode: 3 },
+        { element: navBackBtn, keyCode: 4 }
+    ];
+
+    buttons.forEach(({ element, keyCode }) => {
+        if (!element) return;
+        element.addEventListener('click', (event) => {
+            event.preventDefault();
+            focusKeyboardCapture();
+            sendAndroidKey(keyCode);
+        });
+    });
+}
+
+function setupStreamQualityControls() {
+    streamQualityButtons.forEach(({ mode, element }) => {
+        if (!element) return;
+        element.addEventListener('click', (event) => {
+            event?.preventDefault?.();
+            setStreamQualityMode(mode);
+        });
     });
 }
 
@@ -326,3 +836,8 @@ connectBtn.addEventListener('click', () => {
     }
     connectSignaling();
 });
+
+setupStreamQualityControls();
+setupNavigationControls();
+loadFavoriteApps();
+loadStreamQualityStatus();

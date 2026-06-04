@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🌌 Galaxy Mirror Premium Web Viewer</title>
+    <title>Android Mirror Web Viewer</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -85,6 +85,99 @@
             margin-bottom: 20px;
         }
 
+        .status-detail {
+            min-height: 54px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 16px;
+            background: rgba(56, 189, 248, 0.06);
+            color: var(--text-main);
+            font-size: 12px;
+            line-height: 1.5;
+            padding: 14px 16px;
+        }
+
+        .status-detail.warning {
+            border-color: rgba(251, 191, 36, 0.28);
+            background: rgba(251, 191, 36, 0.08);
+        }
+
+        .status-detail.success {
+            border-color: rgba(16, 185, 129, 0.26);
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .shortcut-container,
+        .quality-container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .usage-container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        .shortcut-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .shortcut-btn {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 10px 12px;
+            text-align: left;
+        }
+
+        .shortcut-empty {
+            color: var(--text-sub);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .quality-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .quality-btn {
+            min-height: 38px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .quality-btn.active {
+            background: rgba(56, 189, 248, 0.18);
+            border-color: rgba(56, 189, 248, 0.42);
+            color: #e0f2fe;
+        }
+
         .status-item {
             display: flex;
             justify-content: space-between;
@@ -133,12 +226,22 @@
             padding: 20px 20px 20px 0;
         }
 
+        #mirrorStage {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+
         /* 비디오 컨테이너 (그림자 및 모서리 깎기) */
         #videoContainer {
             width: auto;
-            height: 100%;
+            height: calc(100% - 62px);
             max-width: 100%;
-            aspect-ratio: 9 / 19.5; /* 갤럭시 기본 렌더 비율 */
+            aspect-ratio: 9 / 19.5; /* Android phone default render ratio */
             position: relative;
             background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--panel-border);
@@ -155,7 +258,23 @@
             height: 100%;
             object-fit: contain;
             pointer-events: auto;
-            cursor: crosshair;
+            cursor: default;
+        }
+
+        #keyboardSink {
+            position: fixed;
+            width: 1px;
+            height: 1px;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            pointer-events: none;
+            border: 0;
+            padding: 0;
+            resize: none;
+            caret-color: transparent;
+            user-select: text;
+            z-index: -1;
         }
 
         /* 컨트롤 버튼 */
@@ -183,6 +302,34 @@
             transform: translateY(0);
         }
 
+        .nav-controls {
+            width: min(420px, 100%);
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            flex: 0 0 48px;
+        }
+
+        .nav-btn {
+            height: 48px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .nav-btn:hover {
+            background: rgba(56, 189, 248, 0.16);
+            border-color: rgba(56, 189, 248, 0.32);
+        }
+
+        .nav-btn:active {
+            transform: translateY(1px);
+        }
+
         .log-box {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 12px;
@@ -203,8 +350,8 @@
         <!-- 왼쪽 글래스모피즘 대시보드 -->
         <div id="infoPanel">
             <div>
-                <h1>🌌 GALAXY MIRROR</h1>
-                <p class="subtitle">Tailscale MagicDNS & WebRTC 기반 초저지연 개인화 무설치 원격 제어 뷰어</p>
+                <h1>Android Mirror</h1>
+                <p class="subtitle">Tailscale MagicDNS & WebRTC 기반 Android 원격 미러링 뷰어</p>
 
                 <!-- 상태 대시보드 -->
                 <div class="status-container">
@@ -219,8 +366,57 @@
                         <span class="status-value" id="rtcStatus">Offline</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">가상 터치 제어</span>
+                        <span class="status-label">제어 채널</span>
                         <span class="status-value" id="controlStatus">비활성</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">접근성 입력</span>
+                        <span class="status-value" id="accessibilityStatus">확인 중</span>
+                    </div>
+                </div>
+
+                <div class="status-detail" id="statusDetail">
+                    Android 화면 공유를 승인한 뒤 연결하세요. 화면이 잠기거나 꺼지면 미러링이 중단될 수 있습니다.
+                </div>
+
+                <div class="quality-container">
+                    <div class="section-title">스트림 화질</div>
+                    <div class="status-item">
+                        <span class="status-label">선택</span>
+                        <span class="status-value" id="qualityMode">자동</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">현재</span>
+                        <span class="status-value" id="qualityEffective">확인 중</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">네트워크</span>
+                        <span class="status-value" id="qualityNetwork">확인 중</span>
+                    </div>
+                    <div class="quality-actions" aria-label="Stream quality controls">
+                        <button class="quality-btn" id="qualityAutoBtn" type="button" data-mode="AUTO">자동</button>
+                        <button class="quality-btn" id="qualityDataSaverBtn" type="button" data-mode="DATA_SAVER">저데이터</button>
+                        <button class="quality-btn" id="qualityStandardBtn" type="button" data-mode="STANDARD">표준</button>
+                        <button class="quality-btn" id="qualityHighBtn" type="button" data-mode="HIGH">고화질</button>
+                    </div>
+                </div>
+
+                <div class="usage-container">
+                    <div class="section-title">데이터 사용량</div>
+                    <div class="status-item">
+                        <span class="status-label">업로드</span>
+                        <span class="status-value" id="uploadUsage">0.00 MB</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">다운로드</span>
+                        <span class="status-value" id="downloadUsage">0.00 MB</span>
+                    </div>
+                </div>
+
+                <div class="shortcut-container">
+                    <div class="section-title">앱 바로가기</div>
+                    <div class="shortcut-list" id="favoriteAppsList">
+                        <div class="shortcut-empty">Android 앱에서 자주 쓰는 앱을 추가하세요.</div>
                     </div>
                 </div>
             </div>
@@ -234,13 +430,22 @@
 
         <!-- 오른쪽 미러링 실시간 뷰포트 -->
         <div id="viewerArea">
-            <div id="videoContainer">
-                <video id="remoteVideo" autoplay playsinline muted></video>
+            <div id="mirrorStage">
+                <div id="videoContainer">
+                    <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
+                    <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+                </div>
+                <div class="nav-controls" aria-label="Android navigation controls">
+                    <button class="nav-btn" id="navRecentsBtn" type="button">최근 앱</button>
+                    <button class="nav-btn" id="navHomeBtn" type="button">홈</button>
+                    <button class="nav-btn" id="navBackBtn" type="button">뒤로</button>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- WebRTC 뷰어 자바스크립트 모듈 로드 -->
+    <script src="/viewer-keyboard.js"></script>
     <script src="/viewer.js"></script>
 </body>
 </html>

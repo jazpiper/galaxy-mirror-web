@@ -22,6 +22,11 @@ class ControlEventValidatorTest {
             )
         )
         assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":4}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","text":"hello"}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","text":"한글 입력"}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","text":"\n"}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":1}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":64}""")))
     }
 
     @Test
@@ -38,5 +43,21 @@ class ControlEventValidatorTest {
     fun isValid_rejectsUnsupportedKeyAndUnknownType() {
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":66}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"TOUCH_DOWN","x":0.5,"y":0.25}""")))
+    }
+
+    @Test
+    fun isValid_rejectsInvalidTextEvents() {
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","text":""}""")))
+        assertFalse(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"text","action":"commit","text":${JSONObject.quote("a".repeat(129))}}""")
+            )
+        )
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","keyCode":66}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":0}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":65}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward"}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","text":"hello"}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"replace","text":"hello"}""")))
     }
 }

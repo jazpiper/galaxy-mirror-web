@@ -2,10 +2,10 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-05-26
+updated: 2026-05-27
 ---
 
-# 📝 Galaxy Mirror Web Development Log
+# 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
 
@@ -40,16 +40,139 @@ updated: 2026-05-26
   * GitHub Actions 클라우드 빌드 가상 머신도 JDK 21을 기동해 빌드하도록 스크립트를 최종 셋업 완료했습니다.
 
 ### 2026-05-26 (리뷰 수정 세션)
+* **Android Host 메인 화면 정리**
+  * Hello World 샘플 화면을 제거하고, Mac 접속 주소 형식, 화면 공유 승인 순서, 접근성 설정 경로, 터치/키보드 조작법을 한국어로 안내하는 메인 화면으로 교체했습니다.
+  * `접근성 설정 열기` 버튼은 Android `Settings.ACTION_ACCESSIBILITY_SETTINGS`로 이동하고, 설정 Activity가 없을 때 일반 설정으로 fallback합니다.
+  * Galaxy S26 Android 16의 제한된 설정 차단 흐름에 맞춰 `앱 정보 열기` 버튼을 추가하고, `설정 > 애플리케이션 > Android Mirror > 제한된 설정 허용` 안내를 처음 설정 단계에 반영했습니다.
+  * Android secure settings의 enabled accessibility service 목록을 읽어 Android Mirror 접근성 서비스가 이미 활성화된 경우 앱 정보/접근성 설정 버튼을 비활성화하도록 변경했습니다.
+  * `미러링 연결 해제` 버튼은 현재 WebRTC/DataChannel과 MediaProjection foreground service를 명시적으로 정리합니다.
 * **WebRTC/MediaProjection 안정화**
   * Android 14+ single-use MediaProjection consent 규칙에 맞춰 foreground service가 `getMediaProjection()`을 선점하지 않도록 정리하고, `ScreenCapturerAndroid`가 projection token을 단일 소유하도록 수정했습니다.
   * 브라우저 offer 생성 전에 `video` recv-only transceiver를 추가하여 Android answer가 화면 스트림 m-line을 안정적으로 협상할 수 있게 했습니다.
   * `/signaling`은 개인 Tailnet 운용 전제를 유지하되, 1개 활성 viewer session만 허용하고 이전 PeerConnection/DataChannel 리소스를 정리하도록 보강했습니다.
+* **ADB 없는 크래시 진단 경로 추가**
+  * Java/Kotlin uncaught exception, 주요 MediaProjection/WebRTC breadcrumb, Android 11+ 프로세스 종료 이력을 앱 내부 파일로 저장하고 `/debug/crash`에서 text/plain으로 조회할 수 있게 했습니다.
+  * 재현 후 앱을 다시 실행하고 `http://<MagicDNS-host>:8080/debug/crash` 내용을 복사하면 USB/무선 ADB 없이도 최근 크래시 원인과 직전 실행 흐름을 확인할 수 있습니다.
+  * `/debug/crash`로 확인한 `ForegroundServiceDidNotStartInTimeException`의 원인은 `Activity.RESULT_OK`가 `-1`인데 서비스가 `-1`을 missing sentinel로 사용한 것이었습니다. missing sentinel을 `Int.MIN_VALUE`로 바꾸고 정상 승인 결과를 유효하게 처리하는 회귀 테스트를 추가했습니다.
 * **원격 입력 안전장치 축소 구현**
   * DataChannel label을 `control`로 제한하고, tap/swipe/key JSON schema, 좌표 범위, duration, keyCode allowlist를 검증하는 `ControlEventValidator`와 단위 테스트를 추가했습니다.
-  * AccessibilityService 권한을 현재 구현에 필요한 gesture dispatch 중심으로 축소하고, window content 조회 권한을 비활성화했습니다.
+  * 텍스트 입력을 위해 AccessibilityService의 window content 조회 권한을 활성화하고, package filter를 제거해 focused editable node에 `ACTION_SET_TEXT`를 수행할 수 있게 했습니다.
+  * Galaxy S26 Android 16 현장 로그에서 터치는 성공하지만 텍스트 입력이 `focused node is not editable`로 실패하는 경로를 확인하고, 입력 처리 메인 스레드 실행, focused editable descendant 탐색, 예외 진단 저장을 추가했습니다.
+  * Galaxy S26 재설치 후 `Cannot perform this action on a sealed instance`가 확인되어, Kotlin 확장 함수명이 Android `AccessibilityNodeInfo.setText()` 멤버와 충돌하던 문제를 수정했습니다. 텍스트 적용 호출은 `performSetTextAction()` 이름으로 분리해 `performAction(ACTION_SET_TEXT)`만 사용하도록 회귀 테스트를 추가했습니다.
+  * AccessibilityService 활성화 이후 브라우저 상태 표시가 `권한 필요`로 남는 stale status 문제를 줄이기 위해 `/signaling` WebSocket에서 주기적인 `STATUS_TICK`을 전송하도록 보강했습니다.
+  * Mac Chrome 한글 IME 입력에서 `keydown`으로 ㄱ/ㅏ 같은 조합 중 자모가 즉시 전송되던 문제를 확인하고, 숨은 `textarea` 기반 keyboard sink의 `compositionend`/`input` 결과만 DataChannel `text` 이벤트로 전송하도록 수정했습니다.
+  * 빠른 타이핑 중 문자 단위 `ACTION_SET_TEXT`가 연속 실행되며 일부 글자가 덮일 수 있는 경로를 줄이기 위해 브라우저 text commit을 35ms/최대 64자 단위로 배치 처리하고, `control` DataChannel에서 `maxRetransmits: 0`을 제거해 reliable 전송으로 변경했습니다.
+* **자주 쓰는 앱 바로가기**
+  * Android 메인 화면에 `자주 쓰는 앱` 섹션을 추가해 설치된 런처 앱 중 원하는 앱을 즐겨찾기로 추가/삭제할 수 있게 했습니다.
+  * 즐겨찾기는 Android 로컬 저장소에 `packageName`/`label`로 저장하고, Ktor `GET /apps/favorites`에서 Mac 뷰어로 제공합니다.
+  * Mac 뷰어 왼쪽 패널에 앱 바로가기 버튼을 렌더링하고, 클릭 시 `POST /apps/launch`로 Android 단말에서 해당 앱을 실행합니다.
+  * Android 11+ package visibility 제약에 맞춰 manifest에 launcher intent query를 선언했습니다.
+* **화면 공유 순서 의존성 완화 및 원격 입력 확장**
+  * 브라우저 Offer가 화면 캡처 foreground service 준비보다 먼저 도착하면 pending offer로 보류하고 `STATUS: WAITING_FOR_SCREEN_CAPTURE`를 반환한 뒤, Android 화면 공유 승인 후 자동으로 WebRTC 협상을 재개하도록 변경했습니다.
+  * viewer WebSocket 종료/교체와 MediaProjectionService 종료 정책을 분리해, 연결 순서가 어긋나도 화면 캡처 준비 상태가 불필요하게 사라지지 않도록 했습니다.
+  * 브라우저 뷰어는 WebRTC 스트림, 제어 채널, 접근성 입력 상태를 분리 표시하고, 비디오에 포커스가 있을 때 Mac 키보드 문자/Enter/Backspace를 DataChannel `text` 이벤트로 전송합니다.
+  * Android AccessibilityService는 tap/swipe dispatch 결과, 전역 key 처리, focused editable node 기반 text commit/delete 결과를 `/debug/crash` 최근 이벤트에 남깁니다.
 * **문서/CI 동기화**
   * `Protocols.md`를 실제 구현(`type: tap|swipe|key`, `0.0..1.0` 좌표)과 맞췄습니다.
+  * `Protocols.md`에 signaling `STATUS`와 DataChannel `text` 규격을 추가하고, `Coordinates.md`에 텍스트 입력은 좌표 변환을 거치지 않는다는 제약을 문서화했습니다.
   * CI에 `app:testDebugUnitTest`, `app:lintDebug`, report artifact 업로드 단계를 추가했습니다.
+* **검증**
+  * `cd android && ./gradlew app:testDebugUnitTest --no-daemon` 통과.
+  * `cd android && ./gradlew assembleDebug --no-daemon` 통과.
+  * `cd android && ./gradlew app:lintDebug --no-daemon` 통과.
+  * Galaxy S26 Android 16 fresh APK 실기기 smoke test는 아직 수행하지 않았습니다.
+
+### 2026-05-26 (화면 켜짐/보호 모드 사이드카 세션)
+* **Android 화면 켜짐/보호 모드**
+  * 앱 메인 화면에 `미러링 중 화면 켜짐 유지`와 `화면 보호 모드` 토글을 추가하고, 설정을 로컬 SharedPreferences에 저장하도록 연결했습니다.
+  * 미러링 세션이 활성화된 동안 keep-screen-on window flag와 foreground service partial wake lock 정책을 적용하도록 `MainActivity`와 `MediaProjectionService`를 연결했습니다.
+  * 보호 모드가 켜져 있으면 미러링 시작 후 30초 뒤 `FLAG_SECURE`가 적용된 검은 `미러링 중` 화면을 열고, 탭/뒤로가기로 닫히게 했습니다.
+  * MediaProjection callback `onStop()`에서 기존 projection token을 폐기하고 Viewer에 `SCREEN_CAPTURE_REAUTH_REQUIRED`를 보내 재승인 필요 상태로 안내하도록 변경했습니다.
+* **Android Mirror 리브랜딩**
+  * 앱 표시 이름과 접근성 서비스 설명을 `Android Mirror`로 변경했습니다. 패키지명은 변경하지 않았습니다.
+  * Mac Viewer의 문서 타이틀, 헤더, 상태 안내, 로그 문구를 Android 단말 일반 표현으로 정리했습니다.
+* **Viewer 상태 안내 보강**
+  * `SCREEN_CAPTURE_REAUTH_REQUIRED`와 `PROJECTION_STOPPED_LOCKED`를 받으면 Android 잠금 해제와 화면 공유 재승인이 필요하다는 한국어 안내를 표시합니다.
+  * `SCREEN_PROTECTION_ENABLED`와 `SCREEN_PROTECTION_DISABLED`를 받으면 검은 `미러링 중` 보호 오버레이 상태를 Mac Viewer에 표시합니다.
+* **문서 동기화**
+  * `Protocols.md`에 keep-awake 토글의 한계, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 보호 오버레이의 실기기 검증 필요성을 기록했습니다.
+  * `Handoff.md`에 T3.6 완료 항목과 남은 실기기 검증 항목을 추가했습니다.
+
+### 2026-05-27 (실기기 WebRTC cleanup 스레드 수정)
+* **CalledFromWrongThreadException 수정**
+  * Galaxy S26 Android 16 로그에서 Ktor WebSocket worker가 viewer session 교체 중 `cleanupWebRTCResources()`를 호출하고, 그 안에서 `window.addFlags/clearFlags`가 실행되어 `ViewRootImpl$CalledFromWrongThreadException`이 발생하는 경로를 확인했습니다.
+  * `MainActivity.applyScreenAwakeWindowFlag()`가 호출 스레드를 검사하고, 메인 스레드가 아니면 `runOnUiThread`로 window flag 적용을 넘기도록 수정했습니다.
+  * `cd android && ./gradlew app:testDebugUnitTest assembleDebug app:lintDebug app:compileDebugAndroidTestKotlin --no-daemon` 및 `node --check android/app/src/main/resources/files/viewer.js && node android/app/src/test/js/viewer-keyboard.test.mjs` 통과.
+
+### 2026-05-27 (Android Mirror 앱 아이콘)
+* **Adaptive icon 교체**
+  * 기본 Android 템플릿 아이콘을 제거하고, 어두운 배경 위에 Android 단말, Mac 브라우저 창, 연결 신호를 조합한 `Android Mirror` 전용 adaptive vector icon으로 교체했습니다.
+
+### 2026-05-27 (밝기 최소화와 Viewer 조작 패널)
+* **검은 보호 오버레이를 밝기 최소화 모드로 대체**
+  * `ScreenAwakeSettings`의 보호 화면 설정을 미러링 중 밝기 최소화 설정으로 전환하고, legacy `mirror_protection_enabled` 저장값은 밝기 최소화로 마이그레이션하도록 했습니다.
+  * `ScreenBrightnessController`를 추가해 시스템 설정 수정 권한이 있을 때 현재 밝기/밝기 모드를 저장한 뒤 최저 밝기로 낮추고, 미러링 해제/비활성 상태에서 이전 값으로 복원합니다.
+  * Android 메인 화면에 시스템 설정 수정 권한 안내와 권한 설정 버튼을 추가했습니다. 권한이 허용되어 있으면 버튼은 비활성화된 `밝기 권한 허용됨` 상태로 표시됩니다.
+* **Mac Viewer 조작성 개선**
+  * 미러링 화면 하단에 `최근 앱`, `홈`, `뒤로` 버튼을 추가해 마우스로 Android 전역 내비게이션을 보낼 수 있게 했습니다.
+  * 비디오 위 커서를 십자가 대신 기본 마우스 커서로 변경했습니다.
+  * 상태 패널 아래에 WebRTC stats 기반 업로드/다운로드 누적 사용량을 MB 단위로 표시합니다.
+* **검증**
+  * `node --check android/app/src/main/resources/files/viewer.js`, `node android/app/src/test/js/viewer-keyboard.test.mjs`, `cd android && ./gradlew app:testDebugUnitTest assembleDebug app:lintDebug app:compileDebugAndroidTestKotlin --no-daemon` 통과.
+
+### 2026-05-27 (빠른 한글 타이핑 누락 보정)
+* **원인 분석**
+  * Galaxy S26 실기기 `/debug/crash`에서 DataChannel text 이벤트는 유실 없이 도착하고 `ACTION_SET_TEXT`도 `applied=true`로 성공하지만, 빠른 한글 입력 중 일부 글자가 이전 텍스트 기준으로 덮어써지는 증상을 확인했습니다.
+  * 원인은 Android 앱/입력창의 AccessibilityNodeInfo가 `ACTION_SET_TEXT` 직후에도 잠시 이전 문자열/커서 스냅샷을 반환하는 경로로 판단했습니다.
+* **수정**
+  * `RemoteTextInputBuffer`를 추가해 같은 입력창에 대한 연속 commit/delete는 마지막으로 성공 적용한 텍스트와 커서 위치 기준으로 계산합니다.
+  * 탭, 스와이프, Android 전역키처럼 포커스가 바뀔 수 있는 이벤트에서는 텍스트 버퍼를 무효화합니다.
+  * `ACTION_SET_TEXT` 후 `ACTION_SET_SELECTION`을 best-effort로 호출해 다음 입력 커서도 Host의 내부 상태와 맞추도록 보강했습니다.
+* **검증**
+  * stale snapshot으로 `이제 ` + `간` + `단` + `한`이 `이제 간단한`으로 누적되는 단위 테스트를 추가했습니다.
+
+### 2026-05-27 (네트워크 기반 스트림 화질 최적화)
+* **데이터 사용량 절감**
+  * `StreamQualityPolicy`를 추가해 `AUTO`, `DATA_SAVER`, `STANDARD`, `HIGH` 모드를 정의했습니다.
+  * `AUTO`는 Wi-Fi/Ethernet에서 `HIGH(1080x2400@30fps, 3Mbps cap)`, 4G/5G cellular와 기타 네트워크에서 `STANDARD(720x1600@15fps, 1.2Mbps cap)`로 해석합니다.
+  * 저데이터 모드는 `540x1200@12fps, 600kbps cap`으로 추가했습니다.
+* **Android/WebRTC 적용**
+  * Android 앱에 스트림 화질 버튼을 추가하고 선택값을 SharedPreferences에 저장합니다.
+  * WebRTC 세션 시작 시 선택 프로필로 `ScreenCapturerAndroid.startCapture()`를 호출하고, `RtpSender` encoding parameter에 bitrate/fps cap을 적용합니다.
+  * 미러링 중 변경 시 `VideoCapturer.changeCaptureFormat()`과 sender parameter 갱신을 best-effort로 수행합니다.
+* **Mac Viewer 연동**
+  * 왼쪽 패널에 스트림 화질 상태와 `자동/저데이터/표준/고화질` 버튼을 추가했습니다.
+  * `GET/POST /stream/quality`와 `STATUS.streamQuality`로 Android Host의 현재 선택값, 네트워크 종류, 실제 적용 프로필을 동기화합니다.
+* **검증**
+  * `node --check android/app/src/main/resources/files/viewer.js && node android/app/src/test/js/viewer-keyboard.test.mjs` 통과.
+  * `cd android && ./gradlew app:testDebugUnitTest assembleDebug app:lintDebug app:compileDebugAndroidTestKotlin --no-daemon` 통과.
+
+### 2026-05-27 (세션 보안/재연결/입력 ACK 하드닝)
+* **Viewer 접근 토큰**
+  * Android 앱 메인 화면의 Mac 접속 주소에 로컬 viewer token을 포함하도록 하고, `/signaling`, `/debug/crash`, 앱 바로가기, 스트림 화질 API에 token 검증을 추가했습니다.
+  * Mac Viewer는 URL query token을 WebSocket query와 HTTP `X-Android-Mirror-Token` 헤더로 전달합니다.
+* **MediaProjection 재연결 정책 보정**
+  * Android 14+ single-use MediaProjection consent를 재사용하지 않도록 viewer WebSocket 종료/교체 시 WebRTC capturer, foreground service, 저장 projection Intent를 함께 정리합니다.
+  * projection Intent가 없으면 foreground service가 아직 내려가는 중이어도 `MISSING_PERMISSION`으로 판정해 새 Offer를 pending으로 보류하고 화면 공유 재승인을 요청합니다.
+* **빠른 키보드 입력 안정화**
+  * 텍스트 control payload에 `seq`를 붙이고 Android Host가 `CONTROL_ACK`를 반환하도록 연결해, 브라우저가 다음 text commit/delete를 ACK 이후에 전송하게 했습니다.
+  * DataChannel이나 WebSocket이 끊기면 미응답 텍스트 큐를 폐기해 재연결 후 입력이 영구 대기 상태로 남지 않도록 했습니다.
+* **적응형 idle 품질 제한**
+  * Viewer 입력이 일정 시간 없으면 idle 상태로 전환해 해상도/FPS/bitrate를 낮추고, 새 입력이 들어오면 active 프로필로 복귀합니다.
+  * `STATUS.streamQuality.activityState`와 Mac Viewer 화질 패널에 active/idle 상태를 표시합니다.
+* **검증**
+  * `node --check android/app/src/main/resources/files/viewer.js`, `node --check android/app/src/main/resources/files/viewer-keyboard.js`, `node android/app/src/test/js/viewer-keyboard.test.mjs`, `cd android && ./gradlew app:testDebugUnitTest --no-daemon` 통과.
+
+### 2026-05-27 (재연결 stale 이벤트 가드)
+* **원인 분석**
+  * 코드 리뷰에서 viewer 재연결이나 세션 교체 중 이전 WebSocket `onclose`, 이전 DataChannel `onclose`, 이전 `MediaProjection.Callback.onStop()`이 늦게 도착하면 새 세션의 `peerConnection`, text ACK 큐, capture-ready 상태를 닫을 수 있는 레이스를 확인했습니다.
+* **수정**
+  * Android `MirrorSessionState.projectionStopped(sessionId)`가 현재 활성 session id와 일치할 때만 reauth 상태로 전환하도록 바꿨습니다.
+  * `ScreenCapturerAndroid.startCapture()` 실패를 즉시 `SCREEN_CAPTURE_REAUTH_REQUIRED`로 연결해 single-use/expired projection token 상태가 stale하게 남지 않도록 했습니다.
+  * Mac Viewer는 WebSocket/PeerConnection/DataChannel 인스턴스가 현재 활성 인스턴스일 때만 close/message/offer 후속 처리를 수행하도록 guard를 추가했습니다.
+* **검증**
+  * stale MediaProjection callback, stale WebSocket close, stale DataChannel close 회귀 테스트를 추가했습니다.
+  * `node --check android/app/src/main/resources/files/viewer.js`, `node --check android/app/src/main/resources/files/viewer-keyboard.js`, `node android/app/src/test/js/viewer-keyboard.test.mjs`, `cd android && ./gradlew app:testDebugUnitTest assembleDebug app:lintDebug app:compileDebugAndroidTestKotlin --no-daemon`, `git diff --check` 통과.
 
 ---
 

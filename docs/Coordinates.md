@@ -120,6 +120,14 @@ val gesture = GestureDescription.Builder().addStroke(stroke).build()
 dispatchGesture(gesture, null, null)
 ```
 
+### 3.2 텍스트 입력 주입 (Keyboard Text Injection)
+
+텍스트 입력은 좌표 변환을 거치지 않습니다. 브라우저는 비디오 화면 클릭 후 숨은 keyboard sink에 포커스를 유지하고, 일반 키 입력을 `text` commit/deleteBackward 이벤트로 전송합니다. 한글 IME처럼 조합이 필요한 입력은 `keydown`의 중간 자모를 버리고 `compositionend`에서 완성된 문자열만 전송합니다. 빠른 타이핑은 35ms 또는 최대 64자 단위로 짧게 묶어 AccessibilityService가 stale한 기존 문자열을 연속으로 덮어쓰는 위험을 줄입니다. Android AccessibilityService는 `rootInActiveWindow.findFocus(FOCUS_INPUT)`으로 현재 입력창을 찾습니다.
+
+입력창이 editable이면 기존 문자열과 `textSelectionStart`/`textSelectionEnd` 범위 기준으로 다음 문자열을 만든 뒤 `ACTION_SET_TEXT`를 수행합니다. 같은 입력창에 대한 연속 입력은 Android Host가 마지막 적용 텍스트/커서를 내부 버퍼에 보관해 이어 붙입니다. 이는 `ACTION_SET_TEXT` 성공 직후 일부 앱의 AccessibilityNodeInfo가 이전 문자열을 잠시 반환하면서 빠른 한글 입력을 덮어쓰는 현상을 줄이기 위한 보정입니다. selection 정보를 얻을 수 없는 앱에서는 문자열 끝 기준으로 입력하거나 삭제합니다. 이 기능 때문에 접근성 설정은 gesture 권한뿐 아니라 `canRetrieveWindowContent`도 필요합니다.
+
+Mac Viewer 하단의 `최근 앱`, `홈`, `뒤로` 버튼은 좌표 변환을 거치지 않고 DataChannel `key` 이벤트만 전송합니다. 각각 Android `KEYCODE_APP_SWITCH(187)`, `KEYCODE_HOME(3)`, `KEYCODE_BACK(4)`로 매핑됩니다.
+
 ---
 
 ## 🔗 Related Documents

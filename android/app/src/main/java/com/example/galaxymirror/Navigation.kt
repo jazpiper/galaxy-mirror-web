@@ -11,7 +11,26 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.galaxymirror.ui.main.MainScreen
 
 @Composable
-fun MainNavigation() {
+fun MainNavigation(
+  accessibilityEnabled: Boolean,
+  viewerAccessToken: String = "",
+  favoriteApps: List<FavoriteApp>,
+  launchableApps: List<FavoriteApp>,
+  screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
+  canWriteSystemSettings: Boolean = false,
+  streamQualityMode: StreamQualityMode = StreamQualityMode.AUTO,
+  streamQualityNetwork: StreamNetworkTransport = StreamNetworkTransport.OTHER,
+  streamQualityProfile: StreamQualityProfile =
+    StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
+  onAddFavoriteApp: (FavoriteApp) -> Unit,
+  onRemoveFavoriteApp: (String) -> Unit,
+  onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
+  onStreamQualityModeChange: (StreamQualityMode) -> Unit = {},
+  onOpenAppInfoSettings: () -> Unit,
+  onOpenAccessibilitySettings: () -> Unit,
+  onOpenWriteSettings: () -> Unit = {},
+  onDisconnect: () -> Unit,
+) {
   val backStack = rememberNavBackStack(Main)
 
   NavDisplay(
@@ -20,7 +39,26 @@ fun MainNavigation() {
     entryProvider =
       entryProvider {
         entry<Main> {
-          MainScreen(onItemClick = { navKey -> backStack.add(navKey) }, modifier = Modifier.safeDrawingPadding().padding(16.dp))
+          MainScreen(
+            modifier = Modifier.safeDrawingPadding().padding(16.dp),
+            accessibilityEnabled = accessibilityEnabled,
+            viewerAccessToken = viewerAccessToken,
+            favoriteApps = favoriteApps,
+            launchableApps = launchableApps,
+            screenAwakeSettings = screenAwakeSettings,
+            canWriteSystemSettings = canWriteSystemSettings,
+            streamQualityMode = streamQualityMode,
+            streamQualityNetwork = streamQualityNetwork,
+            streamQualityProfile = streamQualityProfile,
+            onAddFavoriteApp = onAddFavoriteApp,
+            onRemoveFavoriteApp = onRemoveFavoriteApp,
+            onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
+            onStreamQualityModeChange = onStreamQualityModeChange,
+            onOpenAppInfoSettings = onOpenAppInfoSettings,
+            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+            onOpenWriteSettings = onOpenWriteSettings,
+            onDisconnect = onDisconnect,
+          )
         }
       },
   )

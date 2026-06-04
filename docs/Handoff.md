@@ -2,10 +2,10 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-05-26
+updated: 2026-05-27
 ---
 
-# 📋 Galaxy Mirror Web Handoff & Task Board
+# 📋 Android Mirror Web Handoff & Task Board
 
 이 문서는 현재 활성화된 마일스톤의 세부 태스크 보드 및 백로그를 가볍고 효율적으로 추적하며, 개발 세션 전환 시 작업 맥락을 끊김 없이 보존하기 위한 핸드오프 정보입니다.
 
@@ -27,13 +27,57 @@ updated: 2026-05-26
 - [x] **T2.1: Kotlin Android 프로젝트 뼈대 생성** (`android-cli` 이용)
 - [x] **T2.2: Ktor 모듈 내장 및 HTTP 서버 포트 8080 구동** (CIO 엔진 연동)
 - [x] **T2.3: 웹 뷰어 클라이언트 정적 리소스 서빙 구현** (GitHub Actions 빌드 완료)
+- [x] **T2.4: Android Host 메인 화면 조작 안내 및 설정 진입 버튼 구현**
+  - [x] Hello World 샘플 화면을 한국어 설정/연결/조작 안내 화면으로 교체
+  - [x] 접근성 설정 화면 열기 버튼과 미러링 연결 해제 버튼 추가
+  - [x] 앱 정보 화면 딥링크와 제한된 설정 허용 안내 추가
+  - [x] 접근성 서비스가 이미 활성화되어 있으면 설정 관련 버튼 비활성화
 
 ### 🚀 Milestone 3: WebRTC 스트리밍 및 시그널링 구현 (Active)
 - [ ] **T3.1: Android MediaProjection 화면 실시간 캡처 프로토타이핑**
   - [x] Android 14+ single-use consent 규칙에 맞춰 foreground service와 `ScreenCapturerAndroid`의 projection token 소유권 정리
+  - [x] ADB 없이 현장 크래시를 회수할 수 있도록 `/debug/crash` 진단 엔드포인트와 프로세스 종료 이력 저장 추가
 - [ ] **T3.2: Ktor WebSocket 기반 1:1 시그널링 채널 개설**
   - [x] 1개 활성 viewer session 제한, ICE candidate 대기열, `control` DataChannel 검증 추가
-- [ ] **T3.3: WebRTC PeerConnection 화질 및 초당 프레임 수 최적화**
+  - [x] 브라우저 Offer가 화면 캡처 준비보다 먼저 도착해도 pending offer로 보류하고 Android 승인 후 자동 협상 재개
+  - [x] viewer WebSocket 종료/교체 시 Android 14+ single-use MediaProjection consent를 재사용하지 않도록 projection service와 저장 Intent 정리
+  - [x] viewer 재연결 중 이전 WebSocket close와 이전 MediaProjection callback이 새 세션을 닫지 않도록 stale session guard 추가
+  - [x] Android 메인 화면에 viewer 접근 토큰 포함 접속 주소를 표시하고, `/signaling` 및 제어용 HTTP API에 토큰 검증 추가
+  - [x] 브라우저에 `STATUS` 패킷을 보내 화면 캡처, 접근성 입력, 제어 채널 상태를 분리 표시
+- [x] **T3.3: WebRTC PeerConnection 화질 및 초당 프레임 수 최적화**
+  - [x] `AUTO` 품질 모드를 추가해 Wi-Fi/Ethernet에서는 `HIGH`, 4G/5G cellular와 기타 네트워크에서는 `STANDARD`를 기본 적용
+  - [x] `DATA_SAVER`, `STANDARD`, `HIGH` 프로필을 해상도/FPS/bitrate cap으로 정의하고 Android 앱/Viewer UI에서 수동 전환 가능
+  - [x] 세션 시작 시 `ScreenCapturerAndroid.startCapture()`와 `RtpSender` encoding parameter에 선택 프로필 적용
+  - [x] Viewer 입력이 일정 시간 없으면 idle 품질 제한으로 전환하고 새 입력이 오면 active 품질로 복귀
+  - [x] `GET/POST /stream/quality` API와 `STATUS.streamQuality` payload로 Mac Viewer 상태 동기화
+- [ ] **T3.4: AccessibilityService 기반 원격 입력 고도화**
+  - [x] tap/swipe dispatch 결과와 key/text 입력 처리 breadcrumb를 `/debug/crash` 최근 이벤트에 기록
+  - [x] Mac 키보드 일반 문자/Enter/Backspace를 DataChannel `text` 이벤트로 보내 Android focused editable node에 `ACTION_SET_TEXT` 수행
+  - [x] 접근성 서비스 package filter 제거 및 window content 조회 활성화
+  - [x] 텍스트 입력 처리를 메인 스레드에서 수행하고, 포커스가 컨테이너에 잡힌 경우 focused editable descendant를 찾아 적용
+  - [x] `AccessibilityNodeInfo.setText()` sealed-node 예외를 피하도록 텍스트 적용을 `ACTION_SET_TEXT` accessibility action으로 고정
+  - [x] `/signaling` 연결 중 `STATUS_TICK`을 주기 전송해 접근성 활성화 후 뷰어 상태가 stale하게 남지 않도록 보정
+  - [x] Mac Chrome 한글 IME 조합 중 `keydown` 자모를 전송하지 않고, 조합 완료 문자열만 `text` commit으로 전송
+  - [x] 빠른 타이핑 누락을 줄이기 위해 text commit을 짧게 배치 처리하고 DataChannel을 reliable 설정으로 변경
+  - [x] Android 접근성 스냅샷이 stale한 경우에도 같은 입력창의 연속 텍스트를 내부 버퍼 기준으로 이어 붙이도록 보정
+  - [x] 빠른 텍스트 입력은 `seq`와 `CONTROL_ACK`로 직렬화하고, DataChannel 종료 시 미응답 큐를 폐기해 재연결 후 입력이 막히지 않도록 보정
+  - [x] Mac Viewer 하단에 `최근 앱`/`홈`/`뒤로` 버튼을 추가해 제스처 내비게이션 없이 Android 전역 액션을 보낼 수 있게 함
+  - [ ] Galaxy S26 Android 16 실기기 fresh APK 설치 후 연결 순서, 터치, 스와이프, 텍스트 입력 smoke test
+- [x] **T3.5: 자주 쓰는 앱 바로가기**
+  - [x] Android 앱에서 런처 앱 목록 조회 후 즐겨찾기 추가/삭제
+  - [x] 즐겨찾기 앱을 로컬 저장소에 보관하고 `/apps/favorites`로 Mac 뷰어에 제공
+  - [x] Mac 뷰어 바로가기 클릭 시 `/apps/launch`로 Android 앱 실행
+  - [x] Android 11+ package visibility 대응을 위해 launcher intent query 선언
+- [x] **T3.6: 화면 켜짐 유지, 밝기 최소화, Android Mirror 리브랜딩**
+  - [x] Android 앱 메인 화면에 미러링 중 화면 켜짐 유지/밝기 최소화 모드 토글 추가
+  - [x] 화면 설정을 로컬 SharedPreferences에 저장하고, 미러링 세션 중 window keep-screen-on 및 foreground service wake lock 정책에 연결
+  - [x] `WRITE_SETTINGS` 권한 이동 버튼을 추가하고, 미러링 중 밝기를 최저값으로 낮춘 뒤 연결 해제 시 이전 밝기/모드를 복원
+  - [x] MediaProjection이 중단되면 Mac Viewer에 `SCREEN_CAPTURE_REAUTH_REQUIRED` 상태를 보내 재승인이 필요하다고 표시
+  - [x] Mac Viewer와 앱 표시 문자열을 `Android Mirror` 중심으로 정리
+  - [x] Viewer가 `SCREEN_CAPTURE_REAUTH_REQUIRED`, `PROJECTION_STOPPED_LOCKED` 상태를 한국어로 표시
+  - [x] Mac Viewer 상태 패널 아래에 WebRTC 업로드/다운로드 누적 사용량을 MB 단위로 표시
+  - [x] `Protocols.md`에 keep-awake 토글, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 밝기 최소화 권한 조건 문서화
+  - [ ] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
 
 ---
 
@@ -48,6 +92,15 @@ updated: 2026-05-26
 1. **MediaProjection 디스플레이 캡처**: Android 화면 미디어 프로젝션 API를 기동하여 화면 스트림을 가로채고, WebRTC 송출을 위해 프레임을 인코딩(VP8/H.264)할 수 있는 모듈 실장.
 2. **시그널링 채널 실구현**: Ktor WebSocket(`/signaling`)을 통하여 `Protocols.md` 규격의 Offer/Answer SDP 및 ICE Candidate를 교환하는 1:1 브로드캐스트 라우팅 코드 작성.
 3. **WebRTC PeerConnection 완성**: 맥 브라우저 뷰어 HTML5 코드와 단말기 간의 1:1 초저지연 비디오 스트리밍 채널 최종 연결.
+
+### 3. 화면 켜짐/밝기 최소화 확인 포인트
+* 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.
+* Android Host는 projection 중단 시 `SCREEN_CAPTURE_REAUTH_REQUIRED`를 송신합니다. Mac Viewer는 호환성 차원에서 `PROJECTION_STOPPED_LOCKED`도 복구 가능한 상태로 보고, Android 잠금 해제와 화면 공유 재승인 후 재연결하라는 안내를 표시합니다.
+* 밝기 최소화 모드는 로컬 Android 화면 보호 목적입니다. `WRITE_SETTINGS` 권한이 없으면 Android 설정의 시스템 설정 수정 화면에서 Android Mirror를 허용해야 하며, 연결 해제 시 이전 밝기와 밝기 모드 복원 여부를 Galaxy S26 Android 16 등 실기기에서 확인해야 합니다.
+* 스트림 화질 `AUTO` 모드는 현재 Android 네트워크를 보고 Wi-Fi/Ethernet이면 고화질, 4G/5G cellular이면 표준 화질을 적용합니다. Mac Viewer와 Android 앱 양쪽 버튼에서 수동으로 저데이터/표준/고화질을 고정할 수 있습니다.
+* viewer 접속 주소는 Android 앱 메인 화면의 토큰 포함 URL을 사용해야 합니다. 정적 화면은 열려도 토큰이 없으면 `/signaling`, `/debug/crash`, 앱 바로가기, 화질 변경 API가 거부됩니다.
+* viewer 연결 종료나 세션 교체 후에는 Android 14+ projection token 재사용 예외를 피하기 위해 화면 공유 권한을 다시 승인해야 할 수 있습니다.
+* 재연결 중 이전 viewer session의 WebSocket/DataChannel/MediaProjection callback이 늦게 도착해도 현재 session state와 입력 ACK 큐를 건드리지 않도록 인스턴스/세션 id guard가 들어가 있습니다.
 
 ---
 

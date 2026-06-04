@@ -2,7 +2,9 @@ package com.example.galaxymirror.ui.main
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
+import com.example.galaxymirror.FavoriteApp
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -14,13 +16,45 @@ class MainScreenTest {
 
   @Before
   fun setup() {
-    composeTestRule.setContent { MainScreen(FAKE_DATA) }
+    composeTestRule.setContent { MirrorHomeScreen() }
   }
 
   @Test
-  fun firstItem_exists() {
-    FAKE_DATA.forEach { composeTestRule.onNodeWithText("Hello $it!").assertExists() }
+  fun setupInstructionsAndActions_exist() {
+    composeTestRule.onNodeWithText(MainScreenContent.title).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.viewerAddressHint("")).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.appInfoButtonLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.accessibilityButtonLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.disconnectButtonLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.screenAwakeSettingsTitle).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.keepScreenAwakeLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.brightnessMinimizeLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.writeSettingsButtonLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.streamQualityTitle).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.streamQualityAutoLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.streamQualityHighLabel).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.favoriteAppsTitle).assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.addFavoriteAppButtonLabel).assertExists()
+  }
+
+  @Test
+  fun setupButtonsAreDisabledWhenAccessibilityIsEnabled() {
+    composeTestRule.setContent { MirrorHomeScreen(accessibilityEnabled = true) }
+
+    composeTestRule.onNodeWithText(MainScreenContent.appInfoButtonLabel).assertIsNotEnabled()
+    composeTestRule.onNodeWithText(MainScreenContent.accessibilityEnabledLabel).assertIsNotEnabled()
+  }
+
+  @Test
+  fun favoriteAppsAreShownWithDeleteAction() {
+    composeTestRule.setContent {
+      MirrorHomeScreen(
+        favoriteApps = listOf(FavoriteApp("com.chat", "Chat")),
+        launchableApps = listOf(FavoriteApp("com.mail", "Mail")),
+      )
+    }
+
+    composeTestRule.onNodeWithText("Chat").assertExists()
+    composeTestRule.onNodeWithText(MainScreenContent.removeFavoriteAppButtonLabel).assertExists()
   }
 }
-
-private val FAKE_DATA = listOf("Sample1", "Sample2", "Sample3")
