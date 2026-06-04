@@ -53,10 +53,15 @@ class FavoriteAppsRepository(
     }
 
     fun launchFavorite(packageName: String): Boolean {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(launchIntent)
-        return true
+        return try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launchIntent)
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("FavoriteAppsRepository", "Failed to launch package: $packageName", e)
+            false
+        }
     }
 
     private fun saveFavorites(favorites: List<FavoriteApp>) {

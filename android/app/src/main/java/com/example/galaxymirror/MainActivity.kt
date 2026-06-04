@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
   // WebRTC Components
   private var peerConnectionFactory: PeerConnectionFactory? = null
   private var peerConnection: PeerConnection? = null
+  private var videoSource: org.webrtc.VideoSource? = null
   private var videoTrack: VideoTrack? = null
   private var videoSender: RtpSender? = null
   private var surfaceTextureHelper: SurfaceTextureHelper? = null
@@ -1064,8 +1065,9 @@ class MainActivity : ComponentActivity() {
 
       // 4. 화면 미디어 캡처 소스 & 비디오 트랙 생성
       surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
-      val videoSource = peerConnectionFactory?.createVideoSource(true)
-      videoTrack = peerConnectionFactory?.createVideoTrack("video_track_id", videoSource)
+      val vSource = peerConnectionFactory?.createVideoSource(true)
+      videoSource = vSource
+      videoTrack = peerConnectionFactory?.createVideoTrack("video_track_id", vSource)
 
       // 미디어 프로젝션 시스템 연동
       val projectionIntent = mediaProjectionResultData
@@ -1087,7 +1089,7 @@ class MainActivity : ComponentActivity() {
         }
       })
 
-      videoCapturer?.initialize(surfaceTextureHelper, this, videoSource?.capturerObserver)
+      videoCapturer?.initialize(surfaceTextureHelper, this, vSource?.capturerObserver)
 
       val streamNetwork = currentStreamNetworkTransport()
       val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
@@ -1244,6 +1246,8 @@ class MainActivity : ComponentActivity() {
           },
           CleanupStep("video capturer dispose") { videoCapturer?.dispose() },
           CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() },
+          CleanupStep("video track dispose") { videoTrack?.dispose() },
+          CleanupStep("video source dispose") { videoSource?.dispose() },
           CleanupStep("peer connection close") { peerConnection?.close() },
           CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() },
           CleanupStep("egl release") { eglBase?.release() },
@@ -1262,6 +1266,7 @@ class MainActivity : ComponentActivity() {
     videoSender = null
     videoCapturer = null
     videoTrack = null
+    videoSource = null
     surfaceTextureHelper = null
     peerConnection = null
     peerConnectionFactory = null

@@ -53,6 +53,14 @@ class MediaProjectionService : Service() {
         CrashDiagnostics.recordEvent(this, "MediaProjectionService.onStartCommand startId=$startId.")
         Log.d(TAG, "onStartCommand called.")
         
+        // Immediately enter foreground state to satisfy the OS contract (prevent RemoteServiceException)
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        
         val resultCode = intent?.getIntExtra("resultCode", RESULT_CODE_MISSING) ?: RESULT_CODE_MISSING
         keepScreenAwake = intent?.getBooleanExtra(EXTRA_KEEP_SCREEN_AWAKE, false) ?: false
         val resultData =
@@ -64,30 +72,17 @@ class MediaProjectionService : Service() {
             }
 
         if (isValidStartData(resultCode, resultData != null)) {
-            try {
-                // Foreground Service 시작 (안드로이드 10+ 미디어 프로젝션 타입 명시)
-                val notification = createNotification()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
-
-                isRunning = true
-                updateWakeLock()
-                CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
-                Log.d(TAG, "MediaProjection foreground service is ready.")
-            } catch (e: Exception) {
-                CrashDiagnostics.recordCaughtException(filesDir, "MediaProjection foreground service startup", e)
-                Log.e(TAG, "Error starting MediaProjection foreground service: ${e.message}", e)
-                stopSelf()
-            }
+            isRunning = true
+            updateWakeLock()
+            CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
+            Log.d(TAG, "MediaProjection foreground service is ready.")
         } else {
             CrashDiagnostics.recordEvent(
                 this,
                 "Invalid MediaProjectionService start data: resultCode=$resultCode, hasResultData=${resultData != null}."
             )
             Log.e(TAG, "Invalid intent data provided to start command. resultCode=$resultCode, hasResultData=${resultData != null}")
+            stopForeground(true)
             stopSelf()
         }
 
