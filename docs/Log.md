@@ -191,8 +191,8 @@ updated: 2026-05-27
 * **Mac Viewer 리소스 누수 해제 및 편의성 튜닝**
   - 재연결 및 끊김 감지 시 PeerConnection과 WebSocket의 중복 리스너 소멸 로직을 반영해 메모리 누수를 원천 차단했습니다.
   - WebRTC connection stats API를 파싱하여 live RTT(ping) 지연율 통계를 대시보드 사이드바에 실시간 렌더링하고, 화면 폭 850px 이하 장치에서 비디오 영역이 잘리지 않는 반응형 CSS 룰을 매핑했습니다.
-* **로컬 빌드 검증**
-  - Android 로컬 SDK가 지정되지 않은 워크스테이션 특성상 단위 테스트 및 APK 컴파일은 GitHub Actions 클라우드 CI 파이프라인에서 빌드 통과로 위임 검증합니다.
+* **로컬 및 CI 빌드 검증**
+  - standard JVM 환경(GitHub Actions CI 등)에서 `android.os.SystemClock`이 모킹되지 않아 `RemoteTextInputBufferTest`가 `RuntimeException`으로 실패하던 문제를 해결하기 위해, 플랫폼 독립적인 `System.currentTimeMillis()`로 측정 방식을 마이그레이션했습니다.
 
 ---
 
