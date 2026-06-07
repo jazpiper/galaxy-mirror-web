@@ -41,7 +41,7 @@ class ControlEventValidatorTest {
 
     @Test
     fun isValid_rejectsUnsupportedKeyAndUnknownType() {
-        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":66}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":99}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"TOUCH_DOWN","x":0.5,"y":0.25}""")))
     }
 

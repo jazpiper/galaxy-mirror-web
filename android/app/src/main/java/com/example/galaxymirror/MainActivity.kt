@@ -84,15 +84,15 @@ class MainActivity : ComponentActivity() {
   private var idleQualityJob: Job? = null
 
   // WebRTC Components
-  private var peerConnectionFactory: PeerConnectionFactory? = null
-  private var peerConnection: PeerConnection? = null
-  private var videoSource: org.webrtc.VideoSource? = null
-  private var videoTrack: VideoTrack? = null
-  private var videoSender: RtpSender? = null
-  private var surfaceTextureHelper: SurfaceTextureHelper? = null
-  private var videoCapturer: VideoCapturer? = null
-  private var controlChannel: DataChannel? = null
-  private var eglBase: org.webrtc.EglBase? = null
+  @Volatile private var peerConnectionFactory: PeerConnectionFactory? = null
+  @Volatile private var peerConnection: PeerConnection? = null
+  @Volatile private var videoSource: org.webrtc.VideoSource? = null
+  @Volatile private var videoTrack: VideoTrack? = null
+  @Volatile private var videoSender: RtpSender? = null
+  @Volatile private var surfaceTextureHelper: SurfaceTextureHelper? = null
+  @Volatile private var videoCapturer: VideoCapturer? = null
+  @Volatile private var controlChannel: DataChannel? = null
+  @Volatile private var eglBase: org.webrtc.EglBase? = null
   private val sessionCounter = AtomicInteger(0)
   private val sessionLock = Any()
   @Volatile private var mirrorSessionState = MirrorSessionState()
@@ -690,8 +690,11 @@ class MainActivity : ComponentActivity() {
 
             get("/stream/quality") {
               if (!requireViewerAuthorization(call)) return@get
+              val statusJson = withContext(Dispatchers.Main) {
+                buildStreamQualityStatusJson().toString()
+              }
               call.respondText(
-                buildStreamQualityStatusJson().toString(),
+                statusJson,
                 ContentType.Application.Json,
               )
             }
@@ -711,8 +714,11 @@ class MainActivity : ComponentActivity() {
               withContext(Dispatchers.Main) {
                 updateStreamQualityMode(mode)
               }
+              val statusJson = withContext(Dispatchers.Main) {
+                buildStreamQualityStatusJson().toString()
+              }
               call.respondText(
-                buildStreamQualityStatusJson().toString(),
+                statusJson,
                 ContentType.Application.Json,
               )
             }
@@ -760,7 +766,10 @@ class MainActivity : ComponentActivity() {
                 while (isActiveSession(sessionId)) {
                   delay(2_000)
                   try {
-                    send(Frame.Text(buildStatusMessage(message = "STATUS_TICK")))
+                    val statusMsg = withContext(Dispatchers.Main) {
+                      buildStatusMessage(message = "STATUS_TICK")
+                    }
+                    send(Frame.Text(statusMsg))
                   } catch (e: Throwable) {
                     CrashDiagnostics.recordCaughtException(this@MainActivity.filesDir, "signaling status tick", e)
                     return@launch
@@ -768,7 +777,10 @@ class MainActivity : ComponentActivity() {
                 }
               }
               try {
-                send(Frame.Text(buildStatusMessage(message = "SIGNALING_CONNECTED")))
+                val connectedMsg = withContext(Dispatchers.Main) {
+                  buildStatusMessage(message = "SIGNALING_CONNECTED")
+                }
+                send(Frame.Text(connectedMsg))
                 for (frame in incoming) {
                   if (frame is Frame.Text) {
                     val text = frame.readText()
@@ -1209,34 +1221,36 @@ class MainActivity : ComponentActivity() {
     diagnosticReason: String,
     stopCapturer: Boolean,
   ) {
-    val shouldHandle =
-      synchronized(sessionLock) {
-        if (!mirrorSessionState.isActive(sessionId)) {
-          false
-        } else {
-          pendingOffer = null
-          mirrorSessionState = mirrorSessionState.projectionStopped(sessionId)
-          activeSessionId = mirrorSessionState.activeSessionId
-          true
+    runOnUiThread {
+      val shouldHandle =
+        synchronized(sessionLock) {
+          if (!mirrorSessionState.isActive(sessionId)) {
+            false
+          } else {
+            pendingOffer = null
+            mirrorSessionState = mirrorSessionState.projectionStopped(sessionId)
+            activeSessionId = mirrorSessionState.activeSessionId
+            true
+          }
         }
+
+      if (!shouldHandle) {
+        CrashDiagnostics.recordEvent(
+          this,
+          "Ignoring stale MediaProjection reauthorization event for sessionId=$sessionId reason=$diagnosticReason.",
+        )
+        return@runOnUiThread
       }
 
-    if (!shouldHandle) {
-      CrashDiagnostics.recordEvent(
-        this,
-        "Ignoring stale MediaProjection reauthorization event for sessionId=$sessionId reason=$diagnosticReason.",
+      mediaProjectionResultData = null
+      sendResponse(
+        buildStatusMessage(
+          captureReady = false,
+          message = "SCREEN_CAPTURE_REAUTH_REQUIRED",
+        ),
       )
-      return
+      cleanupWebRTCResources(stopProjectionService = true, stopCapturer = stopCapturer)
     }
-
-    mediaProjectionResultData = null
-    sendResponse(
-      buildStatusMessage(
-        captureReady = false,
-        message = "SCREEN_CAPTURE_REAUTH_REQUIRED",
-      ),
-    )
-    cleanupWebRTCResources(stopProjectionService = true, stopCapturer = stopCapturer)
   }
 
   private fun sendControlAck(channel: DataChannel, result: ControlEventResult) {
@@ -1266,16 +1280,18 @@ class MainActivity : ComponentActivity() {
       CleanupStepRunner.run(
         listOf(
           CleanupStep("control channel close") { controlChannel?.close() },
+          CleanupStep("control channel dispose") { controlChannel?.dispose() },
           CleanupStep("video capturer stop") {
             if (stopCapturer) {
               videoCapturer?.stopCapture()
             }
           },
           CleanupStep("video capturer dispose") { videoCapturer?.dispose() },
-          CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() },
+          CleanupStep("peer connection close") { peerConnection?.close() },
+          CleanupStep("peer connection dispose") { peerConnection?.dispose() },
           CleanupStep("video track dispose") { videoTrack?.dispose() },
           CleanupStep("video source dispose") { videoSource?.dispose() },
-          CleanupStep("peer connection close") { peerConnection?.close() },
+          CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() },
           CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() },
           CleanupStep("egl release") { eglBase?.release() },
         )

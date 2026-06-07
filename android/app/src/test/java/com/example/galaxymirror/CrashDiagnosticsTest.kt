@@ -29,6 +29,7 @@ class CrashDiagnosticsTest {
         val dir = Files.createTempDirectory("galaxy-crash-clear-test").toFile()
 
         CrashDiagnostics.recordEvent(dir, "before startCapture")
+        CrashDiagnostics.flushExecutorForTesting()
         CrashDiagnostics.recordUnhandledException(
             dir = dir,
             threadName = "main",

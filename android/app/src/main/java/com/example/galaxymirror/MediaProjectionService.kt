@@ -100,6 +100,16 @@ class MediaProjectionService : Service() {
         if (instance === this) {
             instance = null
         }
+        try {
+            val store = ScreenAwakeSettingsStore(ScreenAwakeSettingsStore.SharedPreferencesStore(applicationContext))
+            val controller = ScreenBrightnessController(applicationContext)
+            controller.applyForMirroring(
+                settings = store.read(),
+                isMirroringActive = false
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring brightness in onDestroy: ${e.message}", e)
+        }
         CrashDiagnostics.recordEvent(this, "MediaProjectionService.onDestroy")
         Log.d(TAG, "MediaProjectionService stopped.")
     }

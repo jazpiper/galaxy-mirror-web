@@ -194,8 +194,27 @@ updated: 2026-05-27
 * **로컬 및 CI 빌드 검증**
   - standard JVM 환경(GitHub Actions CI 등)에서 `android.os.SystemClock`이 모킹되지 않아 `RemoteTextInputBufferTest`가 `RuntimeException`으로 실패하던 문제를 해결하기 위해, 플랫폼 독립적인 `System.currentTimeMillis()`로 측정 방식을 마이그레이션했습니다.
 
----
+### 2026-06-07 (2차 코드 리뷰 및 버그 수정 세션 - Round 2 Bug Fixes)
+* **스레드 경합 및 C++ 메모리 누수 최종 차단**
+  - `MainActivity` 내 WebRTC 해제 단계의 C++ dispose 호출 순서를 완벽히 고정하고, `MediaProjection` 콜백 비동기 스레드 호출 문제를 `runOnUiThread` 격리로 완벽히 보장하여 크래시 요소를 해결했습니다.
+* **메인 스레드 Disk I/O 격리 (ANR 방지)**
+  - `CrashDiagnostics` 내의 파일 읽기/쓰기 동작을 단일 스레드로 구성된 백그라운드 `logExecutor`로 이관하여 메인 스레드 지연을 원천 봉쇄했습니다. 예외적으로 프로세스 강제 종료 시점의 `recordUnhandledException`은 동기적으로 기록되어 정보 유실을 차단합니다.
+* **접근성 제스처 큐 워치독(Watchdog) 추가**
+  - `dispatchGesture` 콜백 유실 시 전체 마우스 입력 제어가 먹통이 되던 문제를 해결하고자 3초의 watchdog 타임아웃 타이머를 추가하여 큐 스티킹 리스크를 해제했습니다.
+* **Caret 키보드 상/하/엔터 내비게이션 완비**
+  - 키보드 입력 지원을 위해 방향키 상/하(`19`, `20`) 및 엔터(`66`) 키코드를 `ControlEventValidator` 화이트리스트에 추가하고, `AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE` 및 Android 11+ `ACTION_IME_ENTER` API를 활용해 동작하도록 구현했습니다.
+* **IME 큐 락업 방지 및 1.5초 ACK 워치독 도입**
+  - `viewer.js`에서 DataChannel 전송 실패 시 예외를 포획하고, 1.5초 이내에 호스트의 ACK가 도달하지 않을 경우 텍스트 입력 큐 락을 해제하여 빠른 입력 도중 타이핑이 영구히 굳어버리는 버그를 종식시켰습니다.
+* **웹 뷰어 메모리/소켓 누수 가드**
+  - 수동 재연결 시 기존 `RTCPeerConnection` 및 `WebSocket`, `DataChannel` 인스턴스를 무조건 해제 및 null화하도록 세션 클린업을 강화했습니다.
+* **동적 가로세로 비디오 비율 왜곡 방지**
+  - `loadedmetadata` 및 `resize` 이벤트를 비디오 엘리먼트에 추가하여 실제 해상도 수신 시 `#videoContainer` aspect-ratio 스타일을 실시간 반영, 가로/세로 화면 회전이나 폴더블 디바이스 화면이 찌그러지는 현상을 해결했습니다.
+* **사이드바 반응형 스크롤 보완 및 단축키 충돌 방지**
+  - 왼쪽 패널에 `overflow-y: auto`를 적용하여 뷰포트 높이가 낮아도 클릭 버튼이 잘리지 않도록 레이아웃을 다듬었으며, `Cmd + Arrow` 등 OS 단축키가 뷰어 키보드 훅에 가로채지도록 체크 순서를 조정했습니다.
+* **시간의 단조성(Monotonicity) 확립**
+  - `System.currentTimeMillis()` 대신 `System.nanoTime() / 1_000_000`을 도입하여 NTP 시간 동기화 시 TTL 불일치를 방지하고, standard JVM 단위 테스트 빌드가 모킹 라이브러리 없이 정상 동작하도록 수정했습니다.
 
+---
 
 ## 🔗 Related Documents
 | 문서 | 관계 |

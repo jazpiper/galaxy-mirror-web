@@ -39,6 +39,16 @@ let accumulatedNetworkBytes = { sent: 0, received: 0 };
 let nextTextSeq = 1;
 let inFlightTextSeq = null;
 let queuedTextPayloads = [];
+let ackTimeoutId = null;
+
+function updateVideoAspectRatio() {
+    const videoContainer = document.getElementById('videoContainer');
+    if (!videoContainer || !remoteVideo || !remoteVideo.videoWidth || !remoteVideo.videoHeight) return;
+    videoContainer.style.aspectRatio = `${remoteVideo.videoWidth} / ${remoteVideo.videoHeight}`;
+    log(`비디오 컨테이너 aspect-ratio 갱신: ${remoteVideo.videoWidth}x${remoteVideo.videoHeight}`);
+}
+remoteVideo.addEventListener('loadedmetadata', updateVideoAspectRatio);
+remoteVideo.addEventListener('resize', updateVideoAspectRatio);
 
 const viewerAccessToken = new URLSearchParams(window.location.search).get('token') || '';
 
@@ -278,8 +288,13 @@ function sendControlPayload(payload) {
         log("제어 채널이 아직 열리지 않았습니다.");
         return false;
     }
-    dataChannel.send(JSON.stringify(payload));
-    return true;
+    try {
+        dataChannel.send(JSON.stringify(payload));
+        return true;
+    } catch (e) {
+        log(`제어 채널 전송 중 예외 발생: ${e.message}`);
+        return false;
+    }
 }
 
 function sendAndroidKey(keyCode) {
@@ -297,11 +312,34 @@ function sendSequencedTextPayload(payload) {
     const seq = nextTextSeq;
     nextTextSeq += 1;
     inFlightTextSeq = seq;
-    const sent = sendControlPayload({ ...payload, seq });
+    
+    if (ackTimeoutId !== null) {
+        clearTimeout(ackTimeoutId);
+        ackTimeoutId = null;
+    }
+
+    let sent = false;
+    try {
+        sent = sendControlPayload({ ...payload, seq });
+    } catch (e) {
+        log(`DataChannel send error: ${e.message}`);
+        sent = false;
+    }
+
     if (!sent) {
         inFlightTextSeq = null;
         return false;
     }
+
+    ackTimeoutId = setTimeout(() => {
+        if (inFlightTextSeq === seq) {
+            log(`Text control ACK timeout for seq=${seq}`);
+            inFlightTextSeq = null;
+            ackTimeoutId = null;
+            flushNextQueuedTextPayload();
+        }
+    }, 1500);
+
     return true;
 }
 
@@ -309,6 +347,10 @@ function resetTextControlState() {
     inFlightTextSeq = null;
     queuedTextPayloads = [];
     nextTextSeq = 1;
+    if (ackTimeoutId !== null) {
+        clearTimeout(ackTimeoutId);
+        ackTimeoutId = null;
+    }
 }
 
 function flushNextQueuedTextPayload() {
@@ -319,6 +361,10 @@ function flushNextQueuedTextPayload() {
 
 function handleControlAck(payload = {}) {
     if (payload.seq !== inFlightTextSeq) return;
+    if (ackTimeoutId !== null) {
+        clearTimeout(ackTimeoutId);
+        ackTimeoutId = null;
+    }
     inFlightTextSeq = null;
     if (payload.applied === false) {
         log(`Text control ACK failed: ${payload.message || 'UNKNOWN'}`);
@@ -342,6 +388,20 @@ function connectSignaling() {
         socket.onerror = null;
         socket.onmessage = null;
         socket.close();
+        socket = null;
+    }
+    if (peerConnection) {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.close();
+        peerConnection = null;
+    }
+    if (dataChannel) {
+        dataChannel.onopen = null;
+        dataChannel.onclose = null;
+        dataChannel.onmessage = null;
+        dataChannel.close();
+        dataChannel = null;
     }
     
     const signalingSocket = new WebSocket(wsUrl);
@@ -369,6 +429,13 @@ function connectSignaling() {
             peerConnection.close();
             peerConnection = null;
         }
+        if (dataChannel) {
+            dataChannel.onopen = null;
+            dataChannel.onclose = null;
+            dataChannel.onmessage = null;
+            dataChannel.close();
+            dataChannel = null;
+        }
         
         wsIndicator.classList.remove('online');
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
@@ -377,8 +444,6 @@ function connectSignaling() {
         accessibilityStatus.innerText = "확인 중";
         showStatusDetail("Android Mirror 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.");
         accessibilityReady = false;
-        dataChannel = null;
-        socket = null;
         resetTextControlState();
         resetDataUsageStats();
         
@@ -497,8 +562,8 @@ function renderFavoriteApps(apps) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'shortcut-btn';
-        button.textContent = app.label || app.packageName;
-        button.addEventListener('click', () => launchFavoriteApp(app.packageName, app.label));
+        button.textContent = app?.label || app?.packageName || '알 수 없는 앱';
+        button.addEventListener('click', () => launchFavoriteApp(app?.packageName, app?.label));
         return button;
     });
     favoriteAppsList.replaceChildren(...buttons);

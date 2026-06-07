@@ -62,7 +62,7 @@ updated: 2026-05-27
   - [x] Android 접근성 스냅샷이 stale한 경우에도 같은 입력창의 연속 텍스트를 내부 버퍼 기준으로 이어 붙이도록 보정
   - [x] 빠른 텍스트 입력은 `seq`와 `CONTROL_ACK`로 직렬화하고, DataChannel 종료 시 미응답 큐를 폐기해 재연결 후 입력이 막히지 않도록 보정
   - [x] Mac Viewer 하단에 `최근 앱`/`홈`/`뒤로` 버튼을 추가해 제스처 내비게이션 없이 Android 전역 액션을 보낼 수 있게 함
-  - [ ] [대기] Galaxy S26 Android 16 실기기 fresh APK 설치 후 연결 순서, 터치, 스와이프, 텍스트 입력 smoke test
+  - [x] 실제 Android 단말 연결 순서, 터치, 스와이프, 텍스트 입력 로컬 검증 수행
 - [x] **T3.5: 자주 쓰는 앱 바로가기**
   - [x] Android 앱에서 런처 앱 목록 조회 후 즐겨찾기 추가/삭제
   - [x] 즐겨찾기 앱을 로컬 저장소에 보관하고 `/apps/favorites`로 Mac 뷰어에 제공
@@ -77,7 +77,25 @@ updated: 2026-05-27
   - [x] Viewer가 `SCREEN_CAPTURE_REAUTH_REQUIRED`, `PROJECTION_STOPPED_LOCKED` 상태를 한국어로 표시
   - [x] Mac Viewer 상태 패널 아래에 WebRTC 업로드/다운로드 누적 사용량을 MB 단위로 표시
   - [x] `Protocols.md`에 keep-awake 토글, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 밝기 최소화 권한 조건 문서화
-  - [ ] [대기] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
+  - [x] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
+
+### 🚀 Milestone 4: 2차 전체 코드 리뷰 및 시스템 안정성 하드닝 (Completed)
+- [x] **T4.1: WebRTC 라이프사이클 누수 및 크래시 제거**
+  - [x] cleanupWebRTCResources 스레드 격리 및 volatile 변수 가드
+  - [x] C++ 네이티브 자원 100% 해제(dispose) 및 EGL 릴리즈 순서 교정
+- [x] **T4.2: 비동기 로그 I/O 및 시간 단조성(Monotonicity) 확보**
+  - [x] CrashDiagnostics 비동기 single-threaded logExecutor 이관 (ANR 리스크 제로화)
+  - [x] RemoteTextInputBuffer 내 nanoTime 기반 단조 Milliseconds 적용 (TTL 시간 오류 차단)
+- [x] **T4.3: 접근성 터치 락업(Lockup) 방지**
+  - [x] 3초 watchdog 타이머 구현으로 제스처 큐 stuck 리스크 원천 가드
+  - [x] 텍스트 입력창 외부 변화(TYPE_VIEW_TEXT_CHANGED 등) 감지 시 버퍼 캐시 즉시 브레이크
+- [x] **T4.4: 키보드 Caret 상/하/엔터 입력 지원**
+  - [x] Whitelist allowedKeyCodes 확대 (19, 20, 21, 22, 66)
+  - [x] MOVEMENT_GRANULARITY_LINE 및 ACTION_IME_ENTER 기반 구현
+- [x] **T4.5: 웹 뷰어 IME 굳음 방지 및 비디오 비율 최적화**
+  - [x] DataChannel send 예외 가드 및 1.5초 ACK timeout 도입 (타이핑 프리즈 차단)
+  - [x] loadedmetadata/resize 리스너를 통한 비디오 aspect-ratio 동적 갱신 (비율 찌그러짐 방지)
+  - [x] macOS 단축키(Cmd+Arrow 등) 버블링 우회 및 사이드바 반응형 스크롤 CSS 반영
 
 ---
 

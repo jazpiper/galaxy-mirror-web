@@ -30,6 +30,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
     // Gesture Queueing structures to ensure serialized execution
     private val gestureQueue = mutableListOf<PendingGesture>()
     private var gestureDispatchInProgress = false
+    private var gestureWatchdogRunnable: Runnable? = null
 
     private data class PendingGesture(
         val gesture: GestureDescription,
@@ -55,23 +56,57 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             gestureDispatchInProgress = true
             val pending = gestureQueue.removeAt(0)
             
+            // Cancel any previous watchdog
+            gestureWatchdogRunnable?.let { mainHandler.removeCallbacks(it) }
+
+            val watchdog = object : Runnable {
+                override fun run() {
+                    synchronized(gestureQueue) {
+                        if (gestureWatchdogRunnable === this) {
+                            gestureWatchdogRunnable = null
+                            Log.w(TAG, "Gesture dispatch watchdog timeout for: ${pending.xDesc}")
+                            pending.onResult(false)
+                            dispatchNextGesture()
+                        }
+                    }
+                }
+            }
+            gestureWatchdogRunnable = watchdog
+            mainHandler.postDelayed(watchdog, 3000)
+
             Log.d(TAG, "Dispatching gesture from queue: ${pending.xDesc}")
             val dispatched = dispatchGesture(pending.gesture, object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription) {
-                    Log.d(TAG, "Gesture completed: ${pending.xDesc}")
-                    pending.onResult(true)
-                    dispatchNextGesture()
+                    synchronized(gestureQueue) {
+                        if (gestureWatchdogRunnable === watchdog) {
+                            mainHandler.removeCallbacks(watchdog)
+                            gestureWatchdogRunnable = null
+                            Log.d(TAG, "Gesture completed: ${pending.xDesc}")
+                            pending.onResult(true)
+                            dispatchNextGesture()
+                        }
+                    }
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription) {
-                    Log.w(TAG, "Gesture cancelled: ${pending.xDesc}")
-                    pending.onResult(false)
-                    dispatchNextGesture()
+                    synchronized(gestureQueue) {
+                        if (gestureWatchdogRunnable === watchdog) {
+                            mainHandler.removeCallbacks(watchdog)
+                            gestureWatchdogRunnable = null
+                            Log.w(TAG, "Gesture cancelled: ${pending.xDesc}")
+                            pending.onResult(false)
+                            dispatchNextGesture()
+                        }
+                    }
                 }
             }, null)
 
             if (!dispatched) {
                 Log.w(TAG, "Gesture dispatch failed immediately: ${pending.xDesc}")
+                if (gestureWatchdogRunnable === watchdog) {
+                    mainHandler.removeCallbacks(watchdog)
+                    gestureWatchdogRunnable = null
+                }
                 pending.onResult(false)
                 mainHandler.post { dispatchNextGesture() }
             }
@@ -84,7 +119,17 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         Log.d(TAG, "AccessibilityService connected. Screen: ${getScreenWidth()}x${getScreenHeight()}")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+                textInputBuffer.invalidate()
+            }
+        }
+    }
+
     override fun onInterrupt() {}
 
     override fun onDestroy() {
@@ -93,6 +138,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         synchronized(gestureQueue) {
             gestureQueue.clear()
             gestureDispatchInProgress = false
+            gestureWatchdogRunnable?.let { mainHandler.removeCallbacks(it) }
+            gestureWatchdogRunnable = null
         }
     }
 
@@ -208,6 +255,9 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             187 -> performGlobalAction(GLOBAL_ACTION_RECENTS) // KEYCODE_APP_SWITCH
             21 -> moveCursorPrevious()                        // KEYCODE_DPAD_LEFT
             22 -> moveCursorNext()                            // KEYCODE_DPAD_RIGHT
+            19 -> moveCursorUp()                              // KEYCODE_DPAD_UP
+            20 -> moveCursorDown()                            // KEYCODE_DPAD_DOWN
+            66 -> triggerEnterAction()                        // KEYCODE_ENTER
             else -> {
                 Log.w(TAG, "Unhandled keyCode: $keyCode")
                 false
@@ -255,15 +305,87 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         return applied
     }
 
+    private fun moveCursorUp(): Boolean {
+        val node = findTextInputTarget("cursor_up") ?: return false
+        val arguments = Bundle().apply {
+            putInt(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
+            )
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
+        }
+        val applied = node.performAction(
+            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
+            arguments
+        )
+        if (applied) {
+            textInputBuffer.invalidate()
+        }
+        return applied
+    }
+
+    private fun moveCursorDown(): Boolean {
+        val node = findTextInputTarget("cursor_down") ?: return false
+        val arguments = Bundle().apply {
+            putInt(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
+                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
+            )
+            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
+        }
+        val applied = node.performAction(
+            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
+            arguments
+        )
+        if (applied) {
+            textInputBuffer.invalidate()
+        }
+        return applied
+    }
+
+    private fun triggerEnterAction(): Boolean {
+        val node = findTextInputTarget("enter") ?: return false
+        
+        // Try Android 11+ IME Enter action first
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val actions = node.actionList
+            val hasImeEnter = actions.any { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id }
+            if (hasImeEnter) {
+                val applied = node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                if (applied) {
+                    textInputBuffer.invalidate()
+                    return true
+                }
+            }
+        }
+        
+        // Fallback: Perform commit of newline character
+        val edit = textInputBuffer.planCommit(node.toRemoteTextSnapshot(), "\n")
+        val applied = node.performSetTextAction(edit.nextText)
+        if (applied) {
+            node.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
+            textInputBuffer.markApplied(edit)
+        } else {
+            textInputBuffer.invalidate()
+        }
+        return applied
+    }
+
     private fun commitTextInput(text: String): Boolean {
         val focusedNode = findTextInputTarget("commit") ?: return false
 
+        if (focusedNode.isPassword) {
+            textInputBuffer.invalidate()
+        }
         val edit = textInputBuffer.planCommit(focusedNode.toRemoteTextSnapshot(), text)
         val applied = focusedNode.performSetTextAction(edit.nextText)
         if (applied) {
             focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
             textInputBuffer.markApplied(edit)
         } else {
+            textInputBuffer.invalidate()
+        }
+        if (focusedNode.isPassword) {
             textInputBuffer.invalidate()
         }
         CrashDiagnostics.recordEvent(this, "Accessibility text commit applied=$applied nextLength=${edit.nextText.length}.")
@@ -274,12 +396,18 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
     private fun deleteTextBackward(count: Int): Boolean {
         val focusedNode = findTextInputTarget("delete") ?: return false
 
+        if (focusedNode.isPassword) {
+            textInputBuffer.invalidate()
+        }
         val edit = textInputBuffer.planDelete(focusedNode.toRemoteTextSnapshot(), count)
         val applied = focusedNode.performSetTextAction(edit.nextText)
         if (applied) {
             focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
             textInputBuffer.markApplied(edit)
         } else {
+            textInputBuffer.invalidate()
+        }
+        if (focusedNode.isPassword) {
             textInputBuffer.invalidate()
         }
         CrashDiagnostics.recordEvent(this, "Accessibility text delete applied=$applied nextLength=${edit.nextText.length}.")

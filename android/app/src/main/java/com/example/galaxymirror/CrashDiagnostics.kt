@@ -22,6 +22,7 @@ object CrashDiagnostics {
     private const val MAX_TRACE_CHARS = 48_000
     private val installed = AtomicBoolean(false)
     private val lock = Any()
+    private val logExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     fun install(context: Context) {
         if (!installed.compareAndSet(false, true)) return
@@ -49,32 +50,42 @@ object CrashDiagnostics {
         recordEvent(context.filesDir, message)
     }
 
+    private fun recordEventSync(dir: File, message: String) {
+        val file = File(dir, RECENT_EVENTS_FILE)
+        val existing = if (file.exists()) file.readLines() else emptyList()
+        val nextLines = (existing + "${timestamp()} $message").takeLast(MAX_EVENT_LINES)
+        file.writeText(nextLines.joinToString(separator = "\n", postfix = "\n"))
+    }
+
     fun recordEvent(dir: File, message: String) {
-        synchronized(lock) {
-            val file = File(dir, RECENT_EVENTS_FILE)
-            val existing = if (file.exists()) file.readLines() else emptyList()
-            val nextLines = (existing + "${timestamp()} $message").takeLast(MAX_EVENT_LINES)
-            file.writeText(nextLines.joinToString(separator = "\n", postfix = "\n"))
+        logExecutor.submit {
+            synchronized(lock) {
+                recordEventSync(dir, message)
+            }
         }
     }
 
     fun recordCaughtException(dir: File, label: String, throwable: Throwable) {
-        synchronized(lock) {
-            recordEvent(dir, "$label caught ${throwable.javaClass.name}: ${throwable.message.orEmpty()}")
-            File(dir, LAST_CAUGHT_EXCEPTION_FILE).writeText(
-                buildExceptionReport(
-                    title = "LAST CAUGHT EXCEPTION",
-                    threadName = Thread.currentThread().name ?: "unknown",
-                    throwable = throwable,
-                    label = label
+        val threadName = Thread.currentThread().name ?: "unknown"
+        logExecutor.submit {
+            synchronized(lock) {
+                val message = "$label caught ${throwable.javaClass.name}: ${throwable.message.orEmpty()}"
+                recordEventSync(dir, message)
+                File(dir, LAST_CAUGHT_EXCEPTION_FILE).writeText(
+                    buildExceptionReport(
+                        title = "LAST CAUGHT EXCEPTION",
+                        threadName = threadName,
+                        throwable = throwable,
+                        label = label
+                    )
                 )
-            )
+            }
         }
     }
 
     fun recordUnhandledException(dir: File, threadName: String, throwable: Throwable) {
         synchronized(lock) {
-            recordEvent(dir, "Unhandled exception on $threadName: ${throwable.javaClass.name}: ${throwable.message.orEmpty()}")
+            recordEventSync(dir, "Unhandled exception on $threadName: ${throwable.javaClass.name}: ${throwable.message.orEmpty()}")
             File(dir, LAST_CRASH_FILE).writeText(
                 buildExceptionReport(
                     title = "LAST UNHANDLED EXCEPTION",
@@ -93,28 +104,33 @@ object CrashDiagnostics {
         val exitReasons = activityManager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
         if (exitReasons.isEmpty()) return
 
-        synchronized(lock) {
-            val report = buildString {
-                appendLine("=== PROCESS EXIT HISTORY ===")
-                appendLine("Captured at: ${timestamp()}")
-                appendLine("Package: ${context.packageName}")
-                appendLine()
-                exitReasons.forEachIndexed { index, info ->
-                    appendLine("#${index + 1}")
-                    appendLine("timestamp=${timestamp(info.timestamp)}")
-                    appendLine("processName=${info.processName}")
-                    appendLine("reason=${reasonName(info.reason)} (${info.reason})")
-                    appendLine("status=${info.status}")
-                    appendLine("importance=${info.importance}")
-                    appendLine("description=${info.description.orEmpty()}")
-                    readTrace(info)?.let { trace ->
-                        appendLine("trace:")
-                        appendLine(trace.take(MAX_TRACE_CHARS))
-                    }
+        val dir = context.filesDir
+        val packageName = context.packageName
+
+        logExecutor.submit {
+            synchronized(lock) {
+                val report = buildString {
+                    appendLine("=== PROCESS EXIT HISTORY ===")
+                    appendLine("Captured at: ${timestamp()}")
+                    appendLine("Package: $packageName")
                     appendLine()
+                    exitReasons.forEachIndexed { index, info ->
+                        appendLine("#${index + 1}")
+                        appendLine("timestamp=${timestamp(info.timestamp)}")
+                        appendLine("processName=${info.processName}")
+                        appendLine("reason=${reasonName(info.reason)} (${info.reason})")
+                        appendLine("status=${info.status}")
+                        appendLine("importance=${info.importance}")
+                        appendLine("description=${info.description.orEmpty()}")
+                        readTrace(info)?.let { trace ->
+                            appendLine("trace:")
+                            appendLine(trace.take(MAX_TRACE_CHARS))
+                        }
+                        appendLine()
+                    }
                 }
+                File(dir, PROCESS_EXIT_FILE).writeText(report)
             }
-            File(context.filesDir, PROCESS_EXIT_FILE).writeText(report)
         }
     }
 
@@ -137,6 +153,10 @@ object CrashDiagnostics {
             File(dir, LAST_CRASH_FILE).delete()
             File(dir, LAST_CAUGHT_EXCEPTION_FILE).delete()
         }
+    }
+
+    fun flushExecutorForTesting() {
+        logExecutor.submit { }.get()
     }
 
     private fun StringBuilder.appendSection(file: File, emptyMessage: String) {

@@ -91,6 +91,7 @@
 
         function handleKeydown(event) {
             if (!isKeyboardActive()) return;
+            if (event.metaKey || event.ctrlKey || event.altKey) return;
 
             if (isComposing || event.isComposing) {
                 return;
@@ -120,7 +121,8 @@
                     return;
                 case 'Enter':
                     event.preventDefault();
-                    commitText('\n');
+                    flushPendingText();
+                    sendKey(66);
                     resetSink();
                     return;
                 case 'Escape':
@@ -139,9 +141,18 @@
                     sendKey(22);
                     resetSink();
                     return;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    sendKey(19);
+                    resetSink();
+                    return;
+                case 'ArrowDown':
+                    event.preventDefault();
+                    sendKey(20);
+                    resetSink();
+                    return;
             }
 
-            if (event.metaKey || event.ctrlKey || event.altKey) return;
             if (documentRef.activeElement !== keyboardSink) {
                 focusKeyboardSink();
             }

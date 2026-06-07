@@ -12,7 +12,7 @@ object ControlEventValidator {
     private const val MAX_DELETE_COUNT = 64
     private const val CONTROL_CHANNEL_LABEL = "control"
 
-    private val allowedKeyCodes = setOf(4, 3, 187)
+    private val allowedKeyCodes = setOf(3, 4, 19, 20, 21, 22, 66, 187)
 
     fun isControlChannel(label: String?): Boolean = label == CONTROL_CHANNEL_LABEL
 

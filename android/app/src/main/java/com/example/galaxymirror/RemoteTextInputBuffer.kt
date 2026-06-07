@@ -57,7 +57,7 @@ class RemoteTextInputBuffer {
         selectionStart = edit.nextSelectionStart,
         selectionEnd = edit.nextSelectionEnd,
       )
-    cachedAt = System.currentTimeMillis()
+    cachedAt = System.nanoTime() / 1_000_000
   }
 
   fun invalidate() {
@@ -67,7 +67,7 @@ class RemoteTextInputBuffer {
 
   private fun currentSnapshot(snapshot: RemoteTextSnapshot): RemoteTextSnapshot {
     val cachedSnapshot = cached
-    val now = System.currentTimeMillis()
+    val now = System.nanoTime() / 1_000_000
     return if (cachedSnapshot?.targetKey == snapshot.targetKey && (now - cachedAt) < CACHE_TTL_MS) {
       cachedSnapshot
     } else {
