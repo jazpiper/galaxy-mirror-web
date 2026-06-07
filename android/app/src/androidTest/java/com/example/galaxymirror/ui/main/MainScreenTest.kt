@@ -1,26 +1,21 @@
 package com.example.galaxymirror.ui.main
 
-import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import com.example.galaxymirror.FavoriteApp
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
 /** UI tests for [com.example.galaxymirror.ui.main.MainScreen]. */
 class MainScreenTest {
 
-  @get:Rule val composeTestRule = createAndroidComposeRule<ComponentActivity>()
-
-  @Before
-  fun setup() {
-    composeTestRule.setContent { MirrorHomeScreen() }
-  }
+  @get:Rule val composeTestRule = createComposeRule()
 
   @Test
   fun setupInstructionsAndActions_exist() {
+    composeTestRule.setContent { MirrorHomeScreen() }
+
     composeTestRule.onNodeWithText(MainScreenContent.title).assertExists()
     composeTestRule.onNodeWithText(MainScreenContent.viewerAddressHint("")).assertExists()
     composeTestRule.onNodeWithText(MainScreenContent.appInfoButtonLabel).assertExists()
