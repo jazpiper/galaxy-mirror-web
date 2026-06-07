@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-05-27
+updated: 2026-06-07
 ---
 
 # 📝 Android Mirror Web Development Log
@@ -213,6 +213,16 @@ updated: 2026-05-27
   - 왼쪽 패널에 `overflow-y: auto`를 적용하여 뷰포트 높이가 낮아도 클릭 버튼이 잘리지 않도록 레이아웃을 다듬었으며, `Cmd + Arrow` 등 OS 단축키가 뷰어 키보드 훅에 가로채지도록 체크 순서를 조정했습니다.
 * **시간의 단조성(Monotonicity) 확립**
   - `System.currentTimeMillis()` 대신 `System.nanoTime() / 1_000_000`을 도입하여 NTP 시간 동기화 시 TTL 불일치를 방지하고, standard JVM 단위 테스트 빌드가 모킹 라이브러리 없이 정상 동작하도록 수정했습니다.
+
+### 2026-06-07 (로컬 에뮬레이터 통합 테스트 및 UI 테스트 검증 세션)
+* **로컬 AVD 에뮬레이터 기동 및 연동**
+  - Mac 머신에 `cmdline-tools`를 구축하고 `test_mirror` 가상 디바이스를 생성한 뒤, CLI 샌드박스 제약에 맞춰 headless 모드로 원격 에뮬레이터를 백그라운드 구동에 성공했습니다.
+* **ComponentActivity setContent 중복 호출 예외 해결**
+  - Compose UI 계측 테스트(`connectedDebugAndroidTest`) 실행 시 `MainScreenTest.kt`에서 `createAndroidComposeRule<ComponentActivity>()`와 `@Before` / `@Test`의 중복 `setContent` 실행으로 인해 발생하던 `IllegalStateException`을 해결했습니다.
+  - 테스트 룰을 Composable 고립 테스트가 용이한 `createComposeRule()`로 개선하고, 테스트 메서드별로 독립적인 `setContent` 호출을 갖추도록 리팩토링했습니다.
+* **전체 테스트 통과 및 최종 빌드 검증 완료**
+  - 수정 이후 3개의 Compose UI 계측 테스트가 로컬 에뮬레이터 위에서 29초 만에 모두 정상적으로 빌드 및 통과되었습니다.
+  - 이로써 64개의 JVM 단위 테스트와 더불어 모바일 에뮬레이터 계측 테스트까지 통합 테스트 100% 성공을 확보했습니다.
 
 ---
 

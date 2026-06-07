@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-05-27
+updated: 2026-06-07
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -96,6 +96,9 @@ updated: 2026-05-27
   - [x] DataChannel send 예외 가드 및 1.5초 ACK timeout 도입 (타이핑 프리즈 차단)
   - [x] loadedmetadata/resize 리스너를 통한 비디오 aspect-ratio 동적 갱신 (비율 찌그러짐 방지)
   - [x] macOS 단축키(Cmd+Arrow 등) 버블링 우회 및 사이드바 반응형 스크롤 CSS 반영
+- [x] **T4.6: 로컬 AVD 기반 계측 테스트 및 UI 테스트 검증 완료**
+  - [x] `MainScreenTest.kt`의 `ComponentActivity` `setContent` 중복 호출 문제를 `createComposeRule()` 적용으로 개선
+  - [x] 로컬 Android AVD 기동 및 3개 UI 테스트 통과 검증 완료
 
 ---
 
