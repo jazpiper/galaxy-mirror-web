@@ -23,6 +23,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val textInputBuffer = RemoteTextInputBuffer()
+    private var clipboardListener: android.content.ClipboardManager.OnPrimaryClipChangedListener? = null
+    private var lastInjectedClipboardText: String? = null
 
     private fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
     private fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
@@ -117,6 +119,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.d(TAG, "AccessibilityService connected. Screen: ${getScreenWidth()}x${getScreenHeight()}")
+        registerClipboardListener()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -141,6 +144,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             gestureWatchdogRunnable?.let { mainHandler.removeCallbacks(it) }
             gestureWatchdogRunnable = null
         }
+        unregisterClipboardListener()
     }
 
     /**
@@ -547,6 +551,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         return try {
             val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
             if (clipboard != null) {
+                lastInjectedClipboardText = text
                 val clip = android.content.ClipData.newPlainText("GalaxyMirrorRemoteClipboard", text)
                 clipboard.setPrimaryClip(clip)
                 Log.d(TAG, "Clipboard text successfully updated remotely: length=${text.length}")
@@ -558,5 +563,43 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Failed to set clipboard text: ${e.message}", e)
             false
         }
+    }
+
+    private fun registerClipboardListener() {
+        if (clipboardListener != null) return
+        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val text = clip.getItemAt(0).text?.toString()
+                if (!text.isNullOrEmpty() && text != lastInjectedClipboardText) {
+                    val service = MediaProjectionService.instance
+                    val channel = service?.controlChannel
+                    if (service != null && channel != null && channel.state() == org.webrtc.DataChannel.State.OPEN) {
+                        try {
+                            val json = org.json.JSONObject().apply {
+                                put("type", "clipboard")
+                                put("text", text)
+                            }
+                            channel.send(org.webrtc.DataChannel.Buffer(java.nio.ByteBuffer.wrap(json.toString().toByteArray(Charsets.UTF_8)), false))
+                            Log.d(TAG, "Outbound clipboard text sent from accessibility: length=${text.length}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error sending clipboard text: ${e.message}", e)
+                        }
+                    }
+                }
+            }
+        }
+        clipboardListener = listener
+        clipboard.addPrimaryClipChangedListener(listener)
+        Log.d(TAG, "Primary clip changed listener registered inside AccessibilityService.")
+    }
+
+    private fun unregisterClipboardListener() {
+        val listener = clipboardListener ?: return
+        clipboardListener = null
+        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        clipboard.removePrimaryClipChangedListener(listener)
+        Log.d(TAG, "Primary clip changed listener unregistered from AccessibilityService.")
     }
 }
