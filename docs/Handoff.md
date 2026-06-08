@@ -123,7 +123,7 @@ updated: 2026-06-08
 ### 🏁 Milestone 6: 양방향 클립보드 동기화 및 고급 제어 기능 구현 (Completed)
 - [x] **T6.1: 양방향 클립보드 실시간 동기화**
   - [x] 맥 브라우저 뷰어 포커스 시 `copy` 단축키 이벤트를 후킹하여 DataChannel로 복사 텍스트 자동 전송
-  - [x] 안드로이드 Host에서 클립보드 변경 이벤트(`OnPrimaryClipChangedListener`) 감시 및 뷰어로 실시간 브로드캐스트
+  - [x] 안드로이드 Host 내 `GalaxyMirrorAccessibilityService`에서 클립보드 변경 이벤트(`OnPrimaryClipChangedListener`) 감시 및 뷰어로 실시간 브로드캐스트 (Android 10+ 백그라운드 샌드박스 제한 우회)
   - [x] 수신 시 `navigator.clipboard.writeText` 주입 및 고급스러운 Glow Toast 푸시 알림 피드백 연동
 - [x] **T6.2: 물리 하드웨어 원격 제어 조작계 구축**
   - [x] 볼륨 크게(🔊), 볼륨 작게(🔉), 음소거(🔇), 화면 잠금(🔒) UI 레이아웃 및 스타일 매핑

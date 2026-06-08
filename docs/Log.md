@@ -255,7 +255,7 @@ updated: 2026-06-08
 ### 2026-06-08 (Milestone 6: 양방향 클립보드 동기화 및 고급 제어 기능 구현)
 * **맥-안드로이드 양방향 클립보드 실시간 동기화**
   - 맥 브라우저 뷰어 포커스 시 `copy` 단축키 이벤트를 인터셉트하여, 클립보드 내 복사 텍스트를 WebRTC DataChannel을 통해 원격 주입하는 흐름을 연동했습니다.
-  - 안드로이드 Host 내 `MediaProjectionService`에서 디바이스 클립보드가 변경될 때 `OnPrimaryClipChangedListener`를 기동하여 변경 텍스트를 실시간으로 브라우저 뷰어로 역브로드캐스트하는 리스너 등록/해제 관리 로직을 구축했습니다.
+  - 안드로이드 Host 내 `GalaxyMirrorAccessibilityService`에서 디바이스 클립보드가 변경될 때 `OnPrimaryClipChangedListener`를 기동하여 변경 텍스트를 실시간으로 브라우저 뷰어로 역브로드캐스트하는 리스너 등록/해제 관리 로직을 구축했습니다. (Android 10+ 백그라운드 샌드박스 제한을 우회하기 위해 `MediaProjectionService`에서 `AccessibilityService`로 리스너를 이관)
   - 브라우저 수신 시 `navigator.clipboard.writeText`를 호출해 자동 주입하고, 보안 제약 시 토스트 카드를 클릭해 복사할 수 있는 fallback 로직을 구현했으며, 동기화 알림용 Glow Toast 컴포넌트를 설계했습니다.
 * **물리 하드웨어 키(볼륨, 음소거, 잠금) 제어 주입**
   - Mac 뷰어 하단 네비게이션바 위에 볼륨조절(+ / - / 음소거) 및 화면 잠금(Power) 버튼 조작계를 추가하고, 클릭 시 DataChannel로 Android KeyEvent(24, 25, 164, 26)를 전송하게 바인딩했습니다.
