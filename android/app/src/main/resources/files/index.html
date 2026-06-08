@@ -515,6 +515,114 @@
                 max-height: 200px;
             }
         }
+
+        /* Milestone 6 UI Extensions */
+        .system-controls {
+            width: min(420px, 100%);
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            flex: 0 0 50px;
+            margin-bottom: 10px;
+        }
+        .system-btn {
+            height: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .system-btn:hover {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.3);
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+        .system-btn:active {
+            transform: scale(0.96);
+        }
+        .capture-controls {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 8px;
+            z-index: 15;
+        }
+        .capture-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .capture-btn:hover {
+            background: rgba(15, 23, 42, 0.75);
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: scale(1.08);
+        }
+        .capture-btn:active {
+            transform: scale(0.95);
+        }
+        .capture-btn.recording {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+            animation: recordPulse 1.5s infinite ease-in-out;
+        }
+        @keyframes recordPulse {
+            0% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.08); }
+            100% { opacity: 0.7; transform: scale(1); }
+        }
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+        }
+        .toast {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: #ffffff;
+            padding: 14px 20px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.2);
+            transform: translateY(-20px);
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -613,6 +721,12 @@
                     <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
                     <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
                     
+                    <!-- 플로팅 캡처 컨트롤 -->
+                    <div class="capture-controls">
+                        <button class="capture-btn" id="screenshotBtn" type="button" title="스크린샷 저장">📸</button>
+                        <button class="capture-btn" id="recordBtn" type="button" title="화면 녹화 시작">⏺️</button>
+                    </div>
+
                     <!-- 재연결 안내 오버레이 -->
                     <div id="reconnectOverlay" class="reconnect-overlay hidden">
                         <div class="reconnect-card">
@@ -623,6 +737,15 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- 하드웨어 전원/볼륨 원격 제어 -->
+                <div class="system-controls" aria-label="Android system controls">
+                    <button class="system-btn" id="volUpBtn" type="button" title="볼륨 크게">🔊</button>
+                    <button class="system-btn" id="volDownBtn" type="button" title="볼륨 작게">🔉</button>
+                    <button class="system-btn" id="muteBtn" type="button" title="음소거 토글">🔇</button>
+                    <button class="system-btn" id="powerBtn" type="button" title="화면 잠금">🔒</button>
+                </div>
+
                 <div class="nav-controls" aria-label="Android navigation controls">
                     <button class="nav-btn" id="navRecentsBtn" type="button">최근 앱</button>
                     <button class="nav-btn" id="navHomeBtn" type="button">홈</button>
@@ -631,6 +754,9 @@
             </div>
         </div>
     </div>
+
+    <!-- 토스트 알림 컨테이너 -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <!-- WebRTC 뷰어 자바스크립트 모듈 로드 -->
     <script src="/viewer-keyboard.js"></script>

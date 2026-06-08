@@ -216,6 +216,12 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
                         }
                     }
                 }
+                "clipboard" -> {
+                    val text = json.getString("text")
+                    CrashDiagnostics.recordEvent(this, "Accessibility clipboard injection requested.")
+                    val applied = setClipboardText(text)
+                    resultCallback(ControlEventResult(seq, type, applied, "CLIPBOARD_APPLIED"))
+                }
                 else -> {
                     Log.w(TAG, "Unknown control event type: $type")
                     resultCallback(ControlEventResult(seq, type, false, "UNKNOWN_CONTROL_EVENT"))
@@ -258,6 +264,24 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             19 -> moveCursorUp()                              // KEYCODE_DPAD_UP
             20 -> moveCursorDown()                            // KEYCODE_DPAD_DOWN
             66 -> triggerEnterAction()                        // KEYCODE_ENTER
+            24 -> performGlobalAction(10) // KEYCODE_VOLUME_UP -> GLOBAL_ACTION_VOLUME_UP (API 24)
+            25 -> performGlobalAction(11) // KEYCODE_VOLUME_DOWN -> GLOBAL_ACTION_VOLUME_DOWN (API 24)
+            164 -> { // KEYCODE_VOLUME_MUTE
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    performGlobalAction(12) // GLOBAL_ACTION_VOLUME_MUTE (API 30)
+                } else {
+                    val audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+                    audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0)
+                    true
+                }
+            }
+            26 -> { // KEYCODE_POWER -> Lock screen
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    performGlobalAction(8) // GLOBAL_ACTION_LOCK_SCREEN (API 28)
+                } else {
+                    false
+                }
+            }
             else -> {
                 Log.w(TAG, "Unhandled keyCode: $keyCode")
                 false
@@ -517,5 +541,22 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
     private fun AccessibilityNodeInfo?.describeForDiagnostics(): String {
         if (this == null) return "null"
         return "class=${className ?: "unknown"}, package=${packageName ?: "unknown"}, editable=$isEditable, focused=$isFocused, enabled=$isEnabled"
+    }
+
+    private fun setClipboardText(text: String): Boolean {
+        return try {
+            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            if (clipboard != null) {
+                val clip = android.content.ClipData.newPlainText("GalaxyMirrorRemoteClipboard", text)
+                clipboard.setPrimaryClip(clip)
+                Log.d(TAG, "Clipboard text successfully updated remotely: length=${text.length}")
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set clipboard text: ${e.message}", e)
+            false
+        }
     }
 }

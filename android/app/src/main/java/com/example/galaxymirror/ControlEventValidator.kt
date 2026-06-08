@@ -12,7 +12,7 @@ object ControlEventValidator {
     private const val MAX_DELETE_COUNT = 64
     private const val CONTROL_CHANNEL_LABEL = "control"
 
-    private val allowedKeyCodes = setOf(3, 4, 19, 20, 21, 22, 66, 187)
+    private val allowedKeyCodes = setOf(3, 4, 19, 20, 21, 22, 24, 25, 26, 66, 164, 187)
 
     fun isControlChannel(label: String?): Boolean = label == CONTROL_CHANNEL_LABEL
 
@@ -24,6 +24,7 @@ object ControlEventValidator {
                     isDurationValid(json)
             "key" -> allowedKeyCodes.contains(json.optInt("keyCode", Int.MIN_VALUE))
             "text" -> isTextValid(json)
+            "clipboard" -> isClipboardValid(json)
             else -> false
         }
     }
@@ -55,5 +56,11 @@ object ControlEventValidator {
             }
             else -> false
         }
+    }
+
+    private fun isClipboardValid(json: JSONObject): Boolean {
+        if (!json.has("text")) return false
+        val text = json.optString("text", "")
+        return text.length <= 8192
     }
 }

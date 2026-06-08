@@ -60,4 +60,24 @@ class ControlEventValidatorTest {
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","text":"hello"}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"replace","text":"hello"}""")))
     }
+
+    @Test
+    fun isValid_acceptsNewVolumeAndPowerKeys() {
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":24}"""))) // Volume Up
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":25}"""))) // Volume Down
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":164}"""))) // Volume Mute
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":26}"""))) // Power / Lock Screen
+    }
+
+    @Test
+    fun isValid_acceptsAndValidatesClipboardEvents() {
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"clipboard","text":"hello clipboard"}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"clipboard","text":""}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"clipboard"}""")))
+        assertFalse(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(8193))}}""")
+            )
+        )
+    }
 }

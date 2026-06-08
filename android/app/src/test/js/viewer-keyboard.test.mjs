@@ -554,3 +554,46 @@ await test('stream quality buttons post selected mode to Android host', async ()
     assert.equal(qualityCall.options.headers['Content-Type'], 'application/json');
     assert.equal(qualityCall.options.body, JSON.stringify({ mode: 'STANDARD' }));
 });
+
+await test('system control buttons send volume and power key events', () => {
+    const { document, messages } = loadViewer();
+
+    document.getElementById('volUpBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+    document.getElementById('volDownBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+    document.getElementById('muteBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+    document.getElementById('powerBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+
+    assert.deepEqual(messages, [
+        { type: 'key', keyCode: 24 },
+        { type: 'key', keyCode: 25 },
+        { type: 'key', keyCode: 164 },
+        { type: 'key', keyCode: 26 }
+    ]);
+});
+
+await test('copy event sends clipboard payload through dataChannel', async () => {
+    const { context, messages, clock } = loadViewer();
+
+    // Mock navigator.clipboard API
+    context.navigator = {
+        clipboard: {
+            readText: async () => 'copied-from-mac',
+            writeText: async (text) => {}
+        }
+    };
+
+    // Initialize clipboard listener
+    vm.runInContext('setupClipboardSync();', context);
+
+    // Trigger copy event
+    const copyEvent = { type: 'copy', preventDefault() {} };
+    context.document.dispatchEvent(copyEvent);
+
+    // Advance clock to let the setTimeout(..., 100) run
+    clock.runAll();
+    await flushAsyncWork();
+
+    assert.deepEqual(messages, [
+        { type: 'clipboard', text: 'copied-from-mac' }
+    ]);
+});

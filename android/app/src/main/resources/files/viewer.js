@@ -758,6 +758,27 @@ function setupDataChannelHandlers(channel) {
             const message = JSON.parse(event.data);
             if (message.type === 'CONTROL_ACK') {
                 handleControlAck(message.payload || {});
+            } else if (message.type === 'clipboard') {
+                const text = message.text;
+                if (text) {
+                    navigator.clipboard.writeText(text)
+                        .then(() => {
+                            showGlowToast("갤럭시 클립보드와 동기화되었습니다.");
+                        })
+                        .catch((e) => {
+                            log(`브라우저 클립보드 쓰기 실패(보안 제약): ${e.message}`);
+                            const toast = showGlowToast("클립보드 수신 (클릭하여 복사)");
+                            if (toast) {
+                                toast.style.pointerEvents = 'auto';
+                                toast.style.cursor = 'pointer';
+                                toast.onclick = () => {
+                                    navigator.clipboard.writeText(text).then(() => {
+                                        showGlowToast("복사 완료!");
+                                    });
+                                };
+                            }
+                        });
+                }
             }
         } catch (error) {
             log(`DataChannel 메시지 처리 실패: ${error.message}`);
@@ -1115,7 +1136,155 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+function showGlowToast(message) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return null;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `<span>🔔</span><span>${message}</span>`;
+    container.appendChild(toast);
+    
+    // Force a reflow to trigger CSS transitions
+    toast.offsetHeight;
+    toast.classList.add('show');
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
+    return toast;
+}
+
+function setupSystemControls() {
+    const volUpBtn = document.getElementById('volUpBtn');
+    const volDownBtn = document.getElementById('volDownBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const powerBtn = document.getElementById('powerBtn');
+
+    if (volUpBtn) volUpBtn.addEventListener('click', () => sendAndroidKey(24));
+    if (volDownBtn) volDownBtn.addEventListener('click', () => sendAndroidKey(25));
+    if (muteBtn) muteBtn.addEventListener('click', () => sendAndroidKey(164));
+    if (powerBtn) powerBtn.addEventListener('click', () => sendAndroidKey(26));
+}
+
+function setupClipboardSync() {
+    document.addEventListener('copy', () => {
+        setTimeout(async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text && dataChannel && dataChannel.readyState === 'open') {
+                    const sent = sendControlPayload({ type: 'clipboard', text: text });
+                    if (sent) {
+                        log(`맥 클립보드 원격 전송 성공: length=${text.length}`);
+                    }
+                }
+            } catch (e) {
+                log(`맥 클립보드 읽기/전송 실패: ${e.message}`);
+            }
+        }, 100);
+    });
+}
+
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+
+function setupMediaCapture() {
+    const screenshotBtn = document.getElementById('screenshotBtn');
+    const recordBtn = document.getElementById('recordBtn');
+
+    if (screenshotBtn) {
+        screenshotBtn.addEventListener('click', () => {
+            const video = document.getElementById('remoteVideo');
+            if (!video || !video.videoWidth) {
+                showGlowToast("비디오 스트림이 아직 활성화되지 않았습니다.");
+                return;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const link = document.createElement('a');
+            const date = new Date().toISOString().replace(/[:.]/g, '-');
+            link.download = `screenshot_${date}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            showGlowToast("스크린샷이 저장되었습니다.");
+        });
+    }
+
+    if (recordBtn) {
+        recordBtn.addEventListener('click', () => {
+            const video = document.getElementById('remoteVideo');
+            if (!video || !video.srcObject) {
+                showGlowToast("녹화 가능한 활성 비디오 스트림이 없습니다.");
+                return;
+            }
+
+            if (isRecording) {
+                if (mediaRecorder) {
+                    mediaRecorder.stop();
+                }
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.title = "화면 녹화 시작";
+                recordBtn.textContent = "⏺️";
+                showGlowToast("녹화를 중지하고 파일을 생성하는 중입니다...");
+            } else {
+                const stream = video.srcObject;
+                recordedChunks = [];
+                
+                let options = { mimeType: 'video/webm;codecs=vp9' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm;codecs=vp8' };
+                }
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm' };
+                }
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = {};
+                }
+
+                try {
+                    mediaRecorder = new MediaRecorder(stream, options);
+                    mediaRecorder.ondataavailable = (e) => {
+                         if (e.data && e.data.size > 0) {
+                              recordedChunks.push(e.data);
+                         }
+                    };
+                    mediaRecorder.onstop = () => {
+                         const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                         const url = URL.createObjectURL(blob);
+                         const link = document.createElement('a');
+                         const date = new Date().toISOString().replace(/[:.]/g, '-');
+                         link.download = `recording_${date}.webm`;
+                         link.href = url;
+                         link.click();
+                         setTimeout(() => URL.revokeObjectURL(url), 1000);
+                         showGlowToast("화면 녹화본이 저장되었습니다.");
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.classList.add('recording');
+                    recordBtn.title = "화면 녹화 중지";
+                    recordBtn.textContent = "⏹️";
+                    showGlowToast("화면 녹화를 시작했습니다.");
+                } catch (err) {
+                    log(`녹화 초기화 실패: ${err.message}`);
+                    showGlowToast("화면 녹화를 시작할 수 없습니다.");
+                }
+            }
+        });
+    }
+}
+
 setupStreamQualityControls();
 setupNavigationControls();
 loadFavoriteApps();
 loadStreamQualityStatus();
+setupSystemControls();
+setupClipboardSync();
+setupMediaCapture();

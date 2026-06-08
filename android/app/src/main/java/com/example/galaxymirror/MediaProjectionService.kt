@@ -119,6 +119,7 @@ class MediaProjectionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var idleQualityJob: Job? = null
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private var clipboardListener: android.content.ClipboardManager.OnPrimaryClipChangedListener? = null
 
     // WebRTC and Capturer cache (Cached for Android 14+ token preservation)
     @Volatile private var peerConnectionFactory: PeerConnectionFactory? = null
@@ -923,6 +924,7 @@ class MediaProjectionService : Service() {
                             return
                         }
                         controlChannel = dc
+                        registerClipboardListener(dc)
                         sendResponse(buildStatusMessage(message = "CONTROL_CHANNEL_ACCEPTED"))
                         Log.d("WebRTC", "DataChannel received: ${dc.label()}")
                         dc.registerObserver(object : DataChannel.Observer {
@@ -1166,6 +1168,7 @@ class MediaProjectionService : Service() {
         synchronized(pendingRemoteIceCandidates) {
             pendingRemoteIceCandidates.clear()
         }
+        unregisterClipboardListener()
         controlChannel = null
         videoSender = null
         peerConnection = null
@@ -1245,6 +1248,44 @@ class MediaProjectionService : Service() {
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun registerClipboardListener(channel: DataChannel) {
+        if (clipboardListener != null) return
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val text = clip.getItemAt(0).text?.toString()
+                if (!text.isNullOrEmpty() && channel.state() == DataChannel.State.OPEN) {
+                    try {
+                        val json = org.json.JSONObject().apply {
+                            put("type", "clipboard")
+                            put("text", text)
+                        }
+                        channel.send(DataChannel.Buffer(ByteBuffer.wrap(json.toString().toByteArray(Charsets.UTF_8)), false))
+                        Log.d(TAG, "Outbound clipboard text sent to viewer: length=${text.length}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error sending clipboard text: ${e.message}", e)
+                    }
+                }
+            }
+        }
+        clipboardListener = listener
+        mainHandler.post {
+            clipboard.addPrimaryClipChangedListener(listener)
+            Log.d(TAG, "Primary clip changed listener registered on main thread.")
+        }
+    }
+
+    private fun unregisterClipboardListener() {
+        val listener = clipboardListener ?: return
+        clipboardListener = null
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+        mainHandler.post {
+            clipboard.removePrimaryClipChangedListener(listener)
+            Log.d(TAG, "Primary clip changed listener unregistered on main thread.")
         }
     }
 }
