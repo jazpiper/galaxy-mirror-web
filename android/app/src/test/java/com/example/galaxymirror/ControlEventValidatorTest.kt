@@ -4,6 +4,8 @@ import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
 import org.json.JSONObject
 import org.junit.Test
+import java.nio.file.Files
+import java.nio.file.Path
 
 class ControlEventValidatorTest {
     @Test
@@ -62,11 +64,11 @@ class ControlEventValidatorTest {
     }
 
     @Test
-    fun isValid_acceptsNewVolumeAndPowerKeys() {
+    fun isValid_acceptsNewVolumeMuteAndPowerKeyPayloads() {
         assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":24}"""))) // Volume Up
         assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":25}"""))) // Volume Down
         assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":164}"""))) // Volume Mute
-        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":26}"""))) // Power / Lock Screen
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"key","keyCode":26}"""))) // Lock Screen
     }
 
     @Test
@@ -79,5 +81,33 @@ class ControlEventValidatorTest {
                 JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(8193))}}""")
             )
         )
+    }
+
+    @Test
+    fun outboundClipboardListenerAllowsEmptyTextButSkipsNullText() {
+        val source = readAccessibilityServiceSource()
+
+        assertTrue(
+            "Clipboard listener should coerce clip text and keep null as the only missing-text value.",
+            source.contains("val text = clip.getItemAt(0).coerceToText(this)?.toString()")
+        )
+        assertTrue(
+            "Empty clipboard strings should propagate as clear commands unless they are self-injected repeats.",
+            source.contains("if (text != null && text != lastInjectedClipboardText)")
+        )
+        assertFalse(
+            "Empty clipboard text must not be filtered out by isNullOrEmpty().",
+            source.contains("!text.isNullOrEmpty()")
+        )
+    }
+
+    private fun readAccessibilityServiceSource(): String {
+        val candidates = listOf(
+            Path.of("src/main/java/com/example/galaxymirror/GalaxyMirrorAccessibilityService.kt"),
+            Path.of("app/src/main/java/com/example/galaxymirror/GalaxyMirrorAccessibilityService.kt")
+        )
+        val path = candidates.firstOrNull { Files.exists(it) }
+            ?: error("GalaxyMirrorAccessibilityService.kt source not found")
+        return path.toFile().readText()
     }
 }

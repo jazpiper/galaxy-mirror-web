@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Specification
 related: [Dashboard.md, Coordinates.md, Handoff.md]
-updated: 2026-05-27
+updated: 2026-06-08
 ---
 
 # 🔌 Android Mirror Web: 시그널링 & 제어 입력 프로토콜 상세 명세서
@@ -150,7 +150,11 @@ Android 전역 액션에 매핑되는 제한된 키코드만 전송합니다. �
 }
 ```
 
-허용 키코드는 `4`(Back), `3`(Home), `187`(Recent apps)입니다.
+허용 키코드는 `4`(Back), `3`(Home), `187`(Recent apps), `24`(Volume Up),
+`25`(Volume Down), `164`(Mute toggle), `26`(Lock Screen)입니다. Android Host는
+Back/Home/Recent/Lock Screen은 접근성 전역 액션으로 처리하고, Volume Up/Down/Mute는
+`AudioManager.adjustStreamVolume()`로 처리합니다. 볼륨 키는 raw Accessibility global action
+ID를 사용하지 않습니다.
 
 ### 2.3 텍스트 입력 (`text`)
 Mac 키보드에서 입력한 일반 문자는 DataChannel `text` 이벤트로 Android Host에 전달됩니다. 브라우저 뷰어는 숨은 `textarea`를 keyboard sink로 사용해 macOS/Chrome IME 조합을 먼저 완료하고, 한글처럼 조합형 입력은 `compositionend` 이후 완성된 문자열만 전송합니다. 빠른 타이핑 중 Accessibility text tree가 stale해지는 것을 줄이기 위해 일반 텍스트는 짧은 35ms 윈도우 또는 최대 64자 단위로 묶어서 전송합니다. Android Host는 현재 포커스된 editable AccessibilityNode를 찾고, selection 범위 기준으로 `ACTION_SET_TEXT`를 수행합니다. 같은 입력창에 연속 텍스트 이벤트가 들어오면 방금 적용한 텍스트와 커서 위치를 내부 버퍼로 이어받아, Android 접근성 스냅샷이 한 박자 늦게 갱신되어도 이전 글자 위에 덮어쓰지 않습니다. selection 정보를 얻을 수 없는 앱에서는 문자열 끝 기준으로 입력/삭제합니다.
@@ -177,7 +181,32 @@ Mac 키보드에서 입력한 일반 문자는 DataChannel `text` 이벤트로 A
 
 브라우저 비디오 화면을 클릭하면 keyboard sink가 포커스를 받아 일반 문자와 Enter는 `commit`, Backspace는 `deleteBackward`로 전송됩니다. IME 조합 중 Backspace와 조합 중간 자모는 Mac 로컬 IME에 맡기고 Android로 전송하지 않습니다. 텍스트 payload에는 `seq`를 붙이며, 브라우저는 Android Host의 ACK를 받은 뒤 다음 텍스트 payload를 전송합니다. 연결이 끊기면 미응답 텍스트 큐는 폐기하고 새 DataChannel에서 새 sequence로 다시 시작합니다.
 
-### 2.4 제어 입력 ACK (`CONTROL_ACK`)
+### 2.4 클립보드 동기화 (`clipboard`)
+Mac Viewer와 Android Host는 `control` DataChannel의 `clipboard` payload로 평문 클립보드
+텍스트를 동기화합니다. 빈 문자열은 "원격 클립보드 비우기" 명령으로 취급하므로, 구현체는
+`text` 필드가 존재하는지 확인하고 truthy 여부로 버리면 안 됩니다.
+
+* **클립보드 전송 예시:**
+```json
+{
+  "type": "clipboard",
+  "text": "copied text"
+}
+```
+
+* **클립보드 비우기 예시:**
+```json
+{
+  "type": "clipboard",
+  "text": ""
+}
+```
+
+브라우저 Clipboard API는 `http://<MagicDNS-host>:8080` 같은 일반 HTTP origin에서 브라우저
+정책에 따라 제한될 수 있습니다. Viewer는 `navigator.clipboard`를 feature-detect하고, 자동
+쓰기 실패 시 수동 복사 fallback toast를 표시합니다.
+
+### 2.5 제어 입력 ACK (`CONTROL_ACK`)
 Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChannel로 ACK를 반환합니다. 현재 브라우저는 텍스트 입력에만 ACK 기반 직렬화를 적용하고, tap/swipe/key는 기존처럼 즉시 전송합니다.
 
 * **응답 예시:**
@@ -281,7 +310,17 @@ Android Host는 WebRTC 세션 시작 시 선택된 프로필의 해상도/FPS로
 
 ## 5. MediaProjection 재연결 정책
 
-Android 14+ 계열에서는 화면 공유 승인 결과 Intent를 같은 projection 세션 재생성에 재사용할 수 없습니다. 따라서 viewer WebSocket이 닫히거나 새 viewer 세션이 기존 세션을 교체하면 Android Host는 WebRTC capturer와 MediaProjection foreground service를 정리하고 저장된 projection Intent를 폐기합니다. 이후 새 Offer가 들어오면 `WAITING_FOR_SCREEN_CAPTURE` 상태를 보내고 Android 기기에서 화면 공유 권한을 다시 승인받은 뒤 pending offer를 재개합니다.
+Android 14+ 계열에서는 화면 공유 승인 결과 Intent를 같은 projection 세션 재생성에 재사용할
+수 없습니다. Galaxy Mirror는 보수적인 개인정보 보호 정책을 따릅니다. viewer WebSocket이
+닫히거나 새 viewer 세션이 기존 세션을 교체하면 Android Host는 WebRTC peer connection,
+DataChannel, ScreenCapturerAndroid, VideoSource/VideoTrack, EGL/PeerConnectionFactory, 저장된
+projection Intent를 정리합니다.
+
+이후 새 Offer가 들어오면 Android Host는 `WAITING_FOR_SCREEN_CAPTURE` 상태를 보내고,
+바인딩된 `MainActivity`에 화면 공유 권한 요청을 트리거합니다. Android 사용자가 화면 공유를
+승인하면 pending offer를 재개하고 새 projection token으로 WebRTC 협상을 시작합니다. 화면
+잠금, 화면 꺼짐, 시스템 projection 중단, `startCapture()` 실패는 모두
+`SCREEN_CAPTURE_REAUTH_REQUIRED` 상태로 귀결되며, 기존 capturer는 재사용하지 않습니다.
 
 ---
 

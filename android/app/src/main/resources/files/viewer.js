@@ -48,6 +48,7 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 8;
 let reconnectTimeoutId = null;
 let isReconnecting = false;
+let reconnectCloseInProgress = false;
 
 function updateVideoAspectRatio() {
     const videoContainer = document.getElementById('videoContainer');
@@ -80,12 +81,12 @@ function log(msg) {
     const entry = document.createElement('div');
     entry.textContent = `[${time}] ${msg}`;
     logBox.appendChild(entry);
-    
+
     // Evict old entries to prevent DOM bloat
     while (logBox.childElementCount > 200) {
         logBox.removeChild(logBox.firstChild);
     }
-    
+
     logBox.scrollTop = logBox.scrollHeight;
 }
 
@@ -177,7 +178,7 @@ async function sampleWebRtcStats() {
     try {
         const stats = await peerConnection.getStats();
         const current = extractNetworkBytes(stats);
-        
+
         // Extract round-trip latency time (RTT)
         let rtt = null;
         stats.forEach((report) => {
@@ -187,7 +188,7 @@ async function sampleWebRtcStats() {
                 }
             }
         });
-        
+
         const latencyEl = document.getElementById('rtcLatency');
         if (latencyEl) {
             if (typeof rtt === 'number') {
@@ -320,7 +321,7 @@ function sendSequencedTextPayload(payload) {
     const seq = nextTextSeq;
     nextTextSeq += 1;
     inFlightTextSeq = seq;
-    
+
     if (ackTimeoutId !== null) {
         clearTimeout(ackTimeoutId);
         ackTimeoutId = null;
@@ -388,7 +389,7 @@ function connectSignaling() {
 
     resetTextControlState();
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
-    
+
     // Clean up socket and PeerConnection to prevent resource leaks
     if (socket) {
         socket.onopen = null;
@@ -399,7 +400,7 @@ function connectSignaling() {
         socket = null;
     }
     cleanupPeerConnection();
-    
+
     const signalingSocket = new WebSocket(wsUrl);
     socket = signalingSocket;
 
@@ -408,10 +409,11 @@ function connectSignaling() {
         log("Signaling WebSocket 연결 성공!");
         wsIndicator.classList.add('online');
         wsStatus.innerHTML = `<span class="indicator online" id="wsIndicator"></span>Online`;
-        
+
         // Reset reconnect states on success
         isReconnecting = false;
         reconnectAttempts = 0;
+        reconnectCloseInProgress = false;
         if (reconnectTimeoutId) {
             clearTimeout(reconnectTimeoutId);
             reconnectTimeoutId = null;
@@ -427,25 +429,31 @@ function connectSignaling() {
         if (socket !== signalingSocket) return;
         log(`Signaling WebSocket 연결이 종료되었습니다. Code: ${event.code}, Reason: ${event.reason || '없음'}`);
         stopDataUsagePolling();
-        
+
         cleanupPeerConnection();
-        
+
         wsIndicator.classList.remove('online');
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
         rtcStatus.innerText = "Offline";
         controlStatus.innerText = "비활성";
         accessibilityStatus.innerText = "확인 중";
-        
+
         accessibilityReady = false;
         resetTextControlState();
         resetDataUsageStats();
-        
+
         const latencyEl = document.getElementById('rtcLatency');
         if (latencyEl) latencyEl.textContent = 'Offline';
 
         // Check if the connection was intentionally closed by the user or due to authorization issues
-        const isExplicitClose = event.code === 1000 || event.code === 1008 || !shouldAutoReconnect;
-        
+        const isExplicitClose = event.code === 1008 || !shouldAutoReconnect;
+
+        if (reconnectCloseInProgress) {
+            reconnectCloseInProgress = false;
+            startReconnectSequence();
+            return;
+        }
+
         if (isExplicitClose) {
             log("명시적 세션 종료 또는 재인증이 요구되어 자동 재연결을 가동하지 않습니다.");
             showStatusDetail(statusDetailMessage || "Android Mirror 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.");
@@ -626,7 +634,7 @@ async function setupWebRTC(signalingSocket = socket) {
     peerConnection = currentPeerConnection;
     remoteDescriptionSet = false;
     pendingRemoteCandidates = [];
-    
+
     // Bind connection states for failure detection
     currentPeerConnection.oniceconnectionstatechange = () => {
         if (peerConnection !== currentPeerConnection) return;
@@ -734,6 +742,70 @@ async function flushPendingRemoteCandidates() {
     }
 }
 
+function hasClipboardWriteApi() {
+    return Boolean(
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function'
+    );
+}
+
+function hasClipboardReadApi() {
+    return Boolean(
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.readText === 'function'
+    );
+}
+
+function showManualClipboardFallback(text) {
+    const toast = showGlowToast("클립보드 수신 (클릭하여 복사)");
+    if (!toast) return;
+    toast.style.pointerEvents = 'auto';
+    toast.style.cursor = 'pointer';
+    toast.onclick = () => {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.setAttribute('readonly', 'readonly');
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body?.appendChild?.(textArea);
+        textArea.focus();
+        textArea.select?.();
+        try {
+            document.execCommand?.('copy');
+            showGlowToast("복사 완료!");
+        } catch (error) {
+            log(`수동 클립보드 복사 실패: ${error.message}`);
+        } finally {
+            textArea.remove?.();
+        }
+    };
+}
+
+async function writeClipboardFromAndroid(text) {
+    if (!hasClipboardWriteApi()) {
+        showManualClipboardFallback(text);
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(text);
+        showGlowToast(text === "" ? "갤럭시 클립보드 비우기와 동기화되었습니다." : "갤럭시 클립보드와 동기화되었습니다.");
+    } catch (error) {
+        log(`브라우저 클립보드 쓰기 실패(보안 제약): ${error.message}`);
+        showManualClipboardFallback(text);
+    }
+}
+
+async function readClipboardForAndroid() {
+    if (!hasClipboardReadApi()) {
+        log("브라우저 클립보드 읽기 API를 사용할 수 없습니다.");
+        return null;
+    }
+    return navigator.clipboard.readText();
+}
+
 // 3. DataChannel 이벤트 핸들러 세팅
 function setupDataChannelHandlers(channel) {
     channel.onopen = () => {
@@ -760,24 +832,8 @@ function setupDataChannelHandlers(channel) {
                 handleControlAck(message.payload || {});
             } else if (message.type === 'clipboard') {
                 const text = message.text;
-                if (text) {
-                    navigator.clipboard.writeText(text)
-                        .then(() => {
-                            showGlowToast("갤럭시 클립보드와 동기화되었습니다.");
-                        })
-                        .catch((e) => {
-                            log(`브라우저 클립보드 쓰기 실패(보안 제약): ${e.message}`);
-                            const toast = showGlowToast("클립보드 수신 (클릭하여 복사)");
-                            if (toast) {
-                                toast.style.pointerEvents = 'auto';
-                                toast.style.cursor = 'pointer';
-                                toast.onclick = () => {
-                                    navigator.clipboard.writeText(text).then(() => {
-                                        showGlowToast("복사 완료!");
-                                    });
-                                };
-                            }
-                        });
+                if (typeof text === 'string') {
+                    writeClipboardFromAndroid(text);
                 }
             }
         } catch (error) {
@@ -1003,11 +1059,11 @@ function setupStreamQualityControls() {
 
 // 6. 연결하기 버튼 이벤트
 connectBtn.addEventListener('click', () => {
-    // Reset manual reconnection states
     shouldAutoReconnect = true;
     statusDetailMessage = "";
     reconnectAttempts = 0;
     isReconnecting = false;
+    reconnectCloseInProgress = false;
     if (reconnectTimeoutId) {
         clearTimeout(reconnectTimeoutId);
         reconnectTimeoutId = null;
@@ -1016,7 +1072,12 @@ connectBtn.addEventListener('click', () => {
 
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         log("기존 연결이 감지되어 세션을 갱신합니다.");
-        socket.close();
+        const oldSocket = socket;
+        oldSocket.onclose = null;
+        oldSocket.close();
+        socket = null;
+        cleanupPeerConnection();
+        connectSignaling();
     } else {
         connectSignaling();
     }
@@ -1055,6 +1116,7 @@ function triggerAutoReconnect() {
     log("네트워크 단절 감지 - 자동 재연결 복원을 시작합니다.");
     isReconnecting = true;
     if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+        reconnectCloseInProgress = true;
         socket.close(); // Triggers signalingSocket.onclose
     } else {
         startReconnectSequence();
@@ -1092,7 +1154,7 @@ function showReconnectOverlayProgress(seconds, attempt) {
     if (overlay) overlay.classList.remove('hidden');
     if (sub) sub.textContent = "네트워크 일시 단절로 인해 재연결을 시도하고 있습니다.";
     if (attempts) attempts.textContent = `재시도 대기: ${seconds.toFixed(0)}초 (시도 ${attempt}/${MAX_RECONNECT_ATTEMPTS})`;
-    
+
     const pulseRing = overlay?.querySelector('.pulse-ring');
     if (pulseRing) {
         pulseRing.style.animation = 'pulse 1.5s infinite ease-in-out';
@@ -1107,7 +1169,7 @@ function showReconnectOverlayFailed() {
     if (overlay) overlay.classList.remove('hidden');
     if (sub) sub.textContent = "자동 재연결에 실패했습니다. 네트워크 연결을 확인하고 다시 연결해주세요.";
     if (attempts) attempts.textContent = "연결 단절 상태";
-    
+
     const pulseRing = overlay?.querySelector('.pulse-ring');
     if (pulseRing) {
         pulseRing.style.animation = 'none';
@@ -1143,11 +1205,11 @@ function showGlowToast(message) {
     toast.className = 'toast';
     toast.innerHTML = `<span>🔔</span><span>${message}</span>`;
     container.appendChild(toast);
-    
+
     // Force a reflow to trigger CSS transitions
     toast.offsetHeight;
     toast.classList.add('show');
-    
+
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 400);
@@ -1171,9 +1233,9 @@ function setupClipboardSync() {
     document.addEventListener('copy', () => {
         setTimeout(async () => {
             try {
-                const text = await navigator.clipboard.readText();
-                if (text && dataChannel && dataChannel.readyState === 'open') {
-                    const sent = sendControlPayload({ type: 'clipboard', text: text });
+                const text = await readClipboardForAndroid();
+                if (text !== null && dataChannel && dataChannel.readyState === 'open') {
+                    const sent = sendControlPayload({ type: 'clipboard', text });
                     if (sent) {
                         log(`맥 클립보드 원격 전송 성공: length=${text.length}`);
                     }
@@ -1188,6 +1250,28 @@ function setupClipboardSync() {
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
+
+function selectRecordingOptions() {
+    if (typeof MediaRecorder === 'undefined') return null;
+    if (typeof MediaRecorder.isTypeSupported !== 'function') return {};
+
+    const candidates = [
+        { mimeType: 'video/webm;codecs=vp9' },
+        { mimeType: 'video/webm;codecs=vp8' },
+        { mimeType: 'video/webm' }
+    ];
+    return candidates.find(option => MediaRecorder.isTypeSupported(option.mimeType)) || {};
+}
+
+function resetRecordingState(recordBtn) {
+    isRecording = false;
+    mediaRecorder = null;
+    if (recordBtn) {
+        recordBtn.classList.remove('recording');
+        recordBtn.title = "화면 녹화 시작";
+        recordBtn.textContent = "⏺️";
+    }
+}
 
 function setupMediaCapture() {
     const screenshotBtn = document.getElementById('screenshotBtn');
@@ -1205,7 +1289,7 @@ function setupMediaCapture() {
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
+
             const link = document.createElement('a');
             const date = new Date().toISOString().replace(/[:.]/g, '-');
             link.download = `screenshot_${date}.png`;
@@ -1226,25 +1310,17 @@ function setupMediaCapture() {
             if (isRecording) {
                 if (mediaRecorder) {
                     mediaRecorder.stop();
+                } else {
+                    resetRecordingState(recordBtn);
                 }
-                isRecording = false;
-                recordBtn.classList.remove('recording');
-                recordBtn.title = "화면 녹화 시작";
-                recordBtn.textContent = "⏺️";
                 showGlowToast("녹화를 중지하고 파일을 생성하는 중입니다...");
             } else {
                 const stream = video.srcObject;
                 recordedChunks = [];
-                
-                let options = { mimeType: 'video/webm;codecs=vp9' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'video/webm;codecs=vp8' };
-                }
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'video/webm' };
-                }
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = {};
+                const options = selectRecordingOptions();
+                if (options === null) {
+                    showGlowToast("이 브라우저는 화면 녹화를 지원하지 않습니다.");
+                    return;
                 }
 
                 try {
@@ -1254,16 +1330,24 @@ function setupMediaCapture() {
                               recordedChunks.push(e.data);
                          }
                     };
+                    mediaRecorder.onerror = (event) => {
+                         log(`녹화 중 오류 발생: ${event?.error?.message || 'unknown'}`);
+                         resetRecordingState(recordBtn);
+                         showGlowToast("화면 녹화 중 오류가 발생했습니다.");
+                    };
                     mediaRecorder.onstop = () => {
-                         const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                         const url = URL.createObjectURL(blob);
-                         const link = document.createElement('a');
-                         const date = new Date().toISOString().replace(/[:.]/g, '-');
-                         link.download = `recording_${date}.webm`;
-                         link.href = url;
-                         link.click();
-                         setTimeout(() => URL.revokeObjectURL(url), 1000);
-                         showGlowToast("화면 녹화본이 저장되었습니다.");
+                         if (recordedChunks.length > 0) {
+                             const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                             const url = URL.createObjectURL(blob);
+                             const link = document.createElement('a');
+                             const date = new Date().toISOString().replace(/[:.]/g, '-');
+                             link.download = `recording_${date}.webm`;
+                             link.href = url;
+                             link.click();
+                             setTimeout(() => URL.revokeObjectURL(url), 1000);
+                             showGlowToast("화면 녹화본이 저장되었습니다.");
+                         }
+                         resetRecordingState(recordBtn);
                     };
 
                     mediaRecorder.start();
@@ -1273,6 +1357,7 @@ function setupMediaCapture() {
                     recordBtn.textContent = "⏹️";
                     showGlowToast("화면 녹화를 시작했습니다.");
                 } catch (err) {
+                    resetRecordingState(recordBtn);
                     log(`녹화 초기화 실패: ${err.message}`);
                     showGlowToast("화면 녹화를 시작할 수 없습니다.");
                 }

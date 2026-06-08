@@ -60,6 +60,7 @@ updated: 2026-06-08
   - [x] 양방향 클립보드 데이터 전송 및 디바이스 연동
   - [x] 물리 하드웨어 키(볼륨, 잠금) 제어 주입
   - [x] 브라우저 내 스크린샷 및 미디어 레코더 녹화 기능 구현
+  - [x] 코드 리뷰 후속 하드닝: HTTP origin 클립보드 fallback, 볼륨 AudioManager 라우팅, MediaProjection privacy-first 재승인 정책 반영
 
 ---
 

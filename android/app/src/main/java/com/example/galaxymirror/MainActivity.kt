@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var favoriteAppsRepository: FavoriteAppsRepository
     private var favoriteApps by mutableStateOf<List<FavoriteApp>>(emptyList())
     private var launchableApps by mutableStateOf<List<FavoriteApp>>(emptyList())
-    
+
     private var viewerAccessToken by mutableStateOf("")
     private var screenAwakeSettings by mutableStateOf(ScreenAwakeSettings())
     private var canWriteSystemSettings by mutableStateOf(false)
@@ -85,6 +85,13 @@ class MainActivity : ComponentActivity() {
             accessibilityEnabled = AccessibilitySettingsState.isGalaxyMirrorServiceEnabled(this@MainActivity)
             canWriteSystemSettings = s.screenBrightnessController.canWriteSystemSettings()
             applyScreenAwakeWindowFlag()
+            if (s.screenCapturePermissionRequired && !screenCaptureRequestInFlight) {
+                requestScreenCapturePermission()
+            }
+        }
+
+        override fun onScreenCapturePermissionRequired() {
+            requestScreenCapturePermission()
         }
     }
 

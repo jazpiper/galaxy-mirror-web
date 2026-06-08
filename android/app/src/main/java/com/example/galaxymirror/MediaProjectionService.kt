@@ -61,7 +61,7 @@ class MediaProjectionService : Service() {
         private const val TAG = "MediaProjectionService"
         const val EXTRA_KEEP_SCREEN_AWAKE = "keepScreenAwake"
         const val RESULT_CODE_MISSING = Int.MIN_VALUE
-        
+
         var isRunning = false
             private set
         var instance: MediaProjectionService? = null
@@ -79,8 +79,12 @@ class MediaProjectionService : Service() {
     // Binder interface for UI communication
     interface StateListener {
         fun onStateChanged()
+        fun onScreenCapturePermissionRequired() {}
     }
     private val listeners = mutableListOf<StateListener>()
+
+    var screenCapturePermissionRequired = false
+        private set
 
     // Service Managed States
     var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
@@ -169,7 +173,7 @@ class MediaProjectionService : Service() {
         streamQualitySettingsStore = StreamQualitySettingsStore(StreamQualitySettingsStore.SharedPreferencesStore(applicationContext))
         networkTransportDetector = NetworkTransportDetector(applicationContext)
         streamQualityMode = streamQualitySettingsStore.readMode()
-        
+
         refreshStreamQualityState()
 
         // 1. Start Ktor Embedded Server
@@ -198,7 +202,7 @@ class MediaProjectionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         CrashDiagnostics.recordEvent(this, "MediaProjectionService.onStartCommand startId=$startId.")
         Log.d(TAG, "onStartCommand called.")
-        
+
         val resultCode = intent?.getIntExtra("resultCode", RESULT_CODE_MISSING) ?: RESULT_CODE_MISSING
         keepScreenAwake = intent?.getBooleanExtra(EXTRA_KEEP_SCREEN_AWAKE, false) ?: false
         val resultData =
@@ -217,12 +221,14 @@ class MediaProjectionService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-            
+
+            cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
             mediaProjectionResultData = resultData
+            screenCapturePermissionRequired = false
             isRunning = true
             updateWakeLock()
             CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
-            
+
             // Resume any waiting Offer
             mainHandler.post {
                 resumePendingOfferIfReady()
@@ -244,7 +250,7 @@ class MediaProjectionService : Service() {
         super.onDestroy()
         isRunning = false
         releaseWakeLock()
-        
+
         // Stop Ktor server in a non-activity lifecycle scope
         val serverToStop = server
         if (serverToStop != null) {
@@ -284,7 +290,7 @@ class MediaProjectionService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring brightness in onDestroy: ${e.message}", e)
         }
-        
+
         listeners.clear()
         CrashDiagnostics.recordEvent(this, "MediaProjectionService.onDestroy")
         Log.d(TAG, "MediaProjectionService stopped.")
@@ -310,6 +316,20 @@ class MediaProjectionService : Service() {
         mainHandler.post {
             targets.forEach { it.onStateChanged() }
         }
+    }
+
+    private fun notifyScreenCapturePermissionRequired() {
+        val targets = synchronized(listeners) { listeners.toList() }
+        mainHandler.post {
+            targets.forEach { it.onScreenCapturePermissionRequired() }
+        }
+    }
+
+    private fun requestScreenCapturePermissionFromActivity(reason: String) {
+        screenCapturePermissionRequired = true
+        CrashDiagnostics.recordEvent(this, "Screen capture permission request required: $reason.")
+        notifyScreenCapturePermissionRequired()
+        notifyStateChanged()
     }
 
     // ─── Public Control API for MainActivity ─────────────────────────────────────
@@ -341,10 +361,22 @@ class MediaProjectionService : Service() {
         stopForeground(true)
         cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
         mediaProjectionResultData = null
+        screenCapturePermissionRequired = false
         isRunning = false
         updateWakeLock()
         applyBrightnessMinimizationForCurrentState()
         notifyStateChanged()
+    }
+
+    private fun stopProjectionCaptureForPolicy(reason: CleanupReason) {
+        if (!CleanupPolicy.shouldStopProjection(reason)) return
+        CrashDiagnostics.recordEvent(this, "Stopping projection capture for cleanup reason: $reason.")
+        stopForeground(true)
+        cleanupWebRTCResources(stopProjectionService = true, stopCapturer = true)
+        isRunning = false
+        screenCapturePermissionRequired = false
+        updateWakeLock()
+        applyBrightnessMinimizationForCurrentState()
     }
 
     fun isMirroringActive(): Boolean {
@@ -524,7 +556,7 @@ class MediaProjectionService : Service() {
                     install(WebSockets)
                     routing {
                         staticResources("/", "files")
-                        
+
                         get("/status") {
                             call.respondText("Android Mirror Web Server is active. Port: 8080")
                         }
@@ -611,7 +643,7 @@ class MediaProjectionService : Service() {
                                 )
                             }
                         }
-                        
+
                         webSocket("/signaling") {
                             if (!isViewerAuthorized(call)) {
                                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "UNAUTHORIZED_VIEWER"))
@@ -620,7 +652,7 @@ class MediaProjectionService : Service() {
                             val sessionId = beginViewerSession()
                             CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling WebSocket connected: sessionId=$sessionId.")
                             Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
-                            
+
                             val statusJob = launch {
                                 while (isActiveSession(sessionId)) {
                                     delay(2_000)
@@ -635,7 +667,7 @@ class MediaProjectionService : Service() {
                                     }
                                 }
                             }
-                            
+
                             try {
                                 val connectedMsg = withContext(Dispatchers.Main) {
                                     buildStatusMessage(message = "SIGNALING_CONNECTED")
@@ -686,8 +718,7 @@ class MediaProjectionService : Service() {
             if (replacingSessionId != 0) {
                 CrashDiagnostics.recordEvent(this@MediaProjectionService, "Replacing active viewer session: $replacingSessionId -> $sessionId.")
                 Log.w("WebRTC", "Replacing active viewer session: $replacingSessionId -> $sessionId")
-                // Cleanup connection resources but keep Capturer & VideoTrack cached
-                cleanupWebRTCResources(stopProjectionService = false, stopCapturer = false)
+                stopProjectionCaptureForPolicy(CleanupReason.VIEWER_REPLACED)
             }
             applyBrightnessMinimizationForCurrentState()
             notifyStateChanged()
@@ -697,16 +728,21 @@ class MediaProjectionService : Service() {
 
     private suspend fun endViewerSession(sessionId: Int) {
         withContext(Dispatchers.Main) {
-            synchronized(sessionLock) {
+            val shouldStopProjection = synchronized(sessionLock) {
                 if (isActiveSession(sessionId)) {
                     CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ending viewer session: $sessionId.")
                     mirrorSessionState = mirrorSessionState.endSession(sessionId)
                     activeSessionId = mirrorSessionState.activeSessionId
                     pendingOffer = null
-                    // Keep capturer alive so next session reconnects immediately
-                    cleanupWebRTCResources(stopProjectionService = false, stopCapturer = false)
-                    notifyStateChanged()
+                    true
+                } else {
+                    false
                 }
+            }
+
+            if (shouldStopProjection) {
+                stopProjectionCaptureForPolicy(CleanupReason.VIEWER_SOCKET_CLOSED)
+                notifyStateChanged()
             }
         }
     }
@@ -760,7 +796,7 @@ class MediaProjectionService : Service() {
             try {
                 val json = org.json.JSONObject(message)
                 val type = json.getString("type")
-            
+
                 when (type) {
                     "OFFER" -> {
                         CrashDiagnostics.recordEvent(this, "Offer received for sessionId=$sessionId.")
@@ -781,6 +817,7 @@ class MediaProjectionService : Service() {
                             SignalingDecision.START_NEGOTIATION -> initializeWebRTC(sessionId, sdpDescription, sendResponse)
                             SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
                                 queuePendingOffer(sessionId, sdpDescription, sendResponse)
+                                requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
                                 sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
                             }
                             SignalingDecision.QUEUE_AND_SEND_STATUS -> {
@@ -850,13 +887,16 @@ class MediaProjectionService : Service() {
         if (readiness != ProjectionReadiness.READY) {
             CrashDiagnostics.recordEvent(this, "Capture not ready; deferring offer for sessionId=$sessionId.")
             queuePendingOffer(sessionId, remoteSdp, sendResponse)
+            if (readiness == ProjectionReadiness.MISSING_PERMISSION) {
+                requestScreenCapturePermissionFromActivity("Negotiation attempted without active MediaProjection grant")
+            }
             sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
             return
         }
 
         try {
             CrashDiagnostics.recordEvent(this, "Initializing WebRTC for sessionId=$sessionId.")
-            
+
             // 1. Initialize PeerConnectionFactory if needed
             if (peerConnectionFactory == null) {
                 val initOptions = PeerConnectionFactory.InitializationOptions.builder(this)
@@ -869,7 +909,7 @@ class MediaProjectionService : Service() {
                 val factoryOptions = PeerConnectionFactory.Options()
                 val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
                 val decoderFactory = DefaultVideoDecoderFactory(eglContext)
-                
+
                 peerConnectionFactory = PeerConnectionFactory.builder()
                     .setOptions(factoryOptions)
                     .setVideoEncoderFactory(encoderFactory)
@@ -997,18 +1037,29 @@ class MediaProjectionService : Service() {
                             sessionId = sessionId,
                             sendResponse = sendResponse,
                             diagnosticReason = "ScreenCapturerAndroid callback",
-                            stopCapturer = false,
+                            stopCapturer = true,
                         )
                     }
                 })
                 videoCapturer?.initialize(surfaceTextureHelper, applicationContext, videoSource?.capturerObserver)
-                
+
                 val streamNetwork = currentStreamNetworkTransport()
                 val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
-                
+
                 videoCapturerLastWidth = streamProfile.width
                 videoCapturerLastHeight = streamProfile.height
-                videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
+                try {
+                    videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
+                } catch (e: Exception) {
+                    CrashDiagnostics.recordCaughtException(filesDir, "ScreenCapturerAndroid.startCapture", e)
+                    handleScreenCaptureReauthorizationRequired(
+                        sessionId = sessionId,
+                        sendResponse = sendResponse,
+                        diagnosticReason = "ScreenCapturerAndroid.startCapture failure",
+                        stopCapturer = true,
+                    )
+                    return
+                }
                 videoTrack = peerConnectionFactory?.createVideoTrack("video_track_id", videoSource)
             }
 
@@ -1031,7 +1082,7 @@ class MediaProjectionService : Service() {
                 override fun onSetSuccess() {
                     remoteDescriptionSet = true
                     flushPendingRemoteIceCandidates()
-                    
+
                     // Create local SDP Answer
                     peerConnection?.createAnswer(object : SdpObserver {
                         override fun onCreateSuccess(desc: SessionDescription?) {
@@ -1081,14 +1132,7 @@ class MediaProjectionService : Service() {
     ) {
         mainHandler.post {
             val shouldHandle = synchronized(sessionLock) {
-                if (!mirrorSessionState.isActive(sessionId)) {
-                    false
-                } else {
-                    pendingOffer = null
-                    mirrorSessionState = mirrorSessionState.projectionStopped(sessionId)
-                    activeSessionId = mirrorSessionState.activeSessionId
-                    true
-                }
+                mirrorSessionState.isActive(sessionId)
             }
 
             if (!shouldHandle) {
@@ -1100,13 +1144,20 @@ class MediaProjectionService : Service() {
             }
 
             mediaProjectionResultData = null
+            screenCapturePermissionRequired = true
             sendResponse(
                 buildStatusMessage(
                     captureReady = false,
                     message = "SCREEN_CAPTURE_REAUTH_REQUIRED",
                 ),
             )
+            synchronized(sessionLock) {
+                pendingOffer = null
+                mirrorSessionState = mirrorSessionState.projectionStopped(sessionId)
+                activeSessionId = mirrorSessionState.activeSessionId
+            }
             cleanupWebRTCResources(stopProjectionService = false, stopCapturer = stopCapturer)
+            requestScreenCapturePermissionFromActivity(diagnosticReason)
             isRunning = false
             updateWakeLock()
             applyBrightnessMinimizationForCurrentState()
@@ -1140,7 +1191,7 @@ class MediaProjectionService : Service() {
         val steps = mutableListOf<CleanupStep>()
         steps.add(CleanupStep("control channel close") { controlChannel?.close() })
         steps.add(CleanupStep("control channel dispose") { controlChannel?.dispose() })
-        
+
         if (stopCapturer) {
             steps.add(CleanupStep("video capturer stop") { videoCapturer?.stopCapture() })
             steps.add(CleanupStep("video capturer dispose") { videoCapturer?.dispose() })
@@ -1148,10 +1199,10 @@ class MediaProjectionService : Service() {
             steps.add(CleanupStep("video source dispose") { videoSource?.dispose() })
             steps.add(CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() })
         }
-        
+
         steps.add(CleanupStep("peer connection close") { peerConnection?.close() })
         steps.add(CleanupStep("peer connection dispose") { peerConnection?.dispose() })
-        
+
         if (stopCapturer) {
             steps.add(CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() })
             steps.add(CleanupStep("egl release") { eglBase?.release() })
@@ -1185,7 +1236,7 @@ class MediaProjectionService : Service() {
         if (stopProjectionService) {
             mediaProjectionResultData = null
         }
-        
+
         Log.d("WebRTC", "WebRTC session clean up completed with ${failures.size} failures. stopCapturer=$stopCapturer")
     }
 

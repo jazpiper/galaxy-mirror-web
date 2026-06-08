@@ -30,6 +30,9 @@ jobs:
         cd android
         ./gradlew app:testDebugUnitTest --no-daemon
 
+    - name: Run viewer JavaScript tests
+      run: node --test android/app/src/test/js/viewer-keyboard.test.mjs
+
     - name: Run lint
       run: |
         cd android

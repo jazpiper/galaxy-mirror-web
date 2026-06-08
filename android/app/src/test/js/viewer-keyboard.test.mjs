@@ -15,12 +15,21 @@ class FakeEventTarget {
         this.style = {};
         this.textContent = '';
         this.innerText = '';
-        this.innerHTML = '';
+        this._innerHTML = '';
         this.scrollTop = 0;
         this.scrollHeight = 0;
         this.value = '';
         this.className = '';
         this.disabled = false;
+    }
+
+    get innerHTML() {
+        return this._innerHTML;
+    }
+
+    set innerHTML(value) {
+        this._innerHTML = value;
+        this.textContent = String(value).replace(/<[^>]+>/g, '');
     }
 
     addEventListener(type, listener) {
@@ -38,10 +47,23 @@ class FakeEventTarget {
 
     appendChild(child) {
         this.children.push(child);
+        child.parentNode = this;
+    }
+
+    removeChild(child) {
+        this.children = this.children.filter(item => item !== child);
+        child.parentNode = null;
     }
 
     replaceChildren(...children) {
         this.children = [...children];
+        for (const child of this.children) {
+            child.parentNode = this;
+        }
+    }
+
+    remove() {
+        this.parentNode?.removeChild(this);
     }
 
     focus() {
@@ -50,10 +72,28 @@ class FakeEventTarget {
         }
     }
 
+    select() {}
+
+    setAttribute(name, value) {
+        this[name] = value;
+    }
+
     setSelectionRange() {}
+
+    querySelector() {
+        return null;
+    }
 
     getBoundingClientRect() {
         return { left: 0, top: 0, width: 360, height: 800 };
+    }
+
+    get childElementCount() {
+        return this.children.length;
+    }
+
+    get firstChild() {
+        return this.children[0] || null;
     }
 }
 
@@ -62,6 +102,8 @@ class FakeDocument extends FakeEventTarget {
         super('document');
         this.elements = new Map();
         this.activeElement = null;
+        this.body = new FakeEventTarget('body');
+        this.body.ownerDocument = this;
     }
 
     getElementById(id) {
@@ -105,24 +147,27 @@ class FakeClock {
     }
 
     tick(ms) {
-        let executedAny = true;
-        while (executedAny && ms > 0) {
-            executedAny = false;
+        let remaining = ms;
+        while (true) {
             this.tasks.sort((a, b) => a.remaining - b.remaining);
-            const next = this.tasks.find(t => t.remaining <= ms);
-            if (next) {
-                const consumed = next.remaining;
-                this.tasks = this.tasks.filter(t => t.id !== next.id);
-                for (const t of this.tasks) {
-                    t.remaining -= consumed;
-                }
-                ms -= consumed;
-                next.callback();
-                executedAny = true;
+            const next = this.tasks[0];
+            if (!next || next.remaining > remaining) break;
+
+            const elapsed = next.remaining;
+            for (const task of this.tasks) {
+                task.remaining -= elapsed;
+            }
+            remaining -= elapsed;
+
+            const due = this.tasks.filter(task => task.remaining <= 0);
+            this.tasks = this.tasks.filter(task => task.remaining > 0);
+            for (const task of due) {
+                task.callback();
             }
         }
-        for (const t of this.tasks) {
-            t.remaining -= ms;
+
+        for (const task of this.tasks) {
+            task.remaining -= remaining;
         }
     }
 
@@ -163,7 +208,7 @@ function textInputEvent(type, data, extra = {}) {
     };
 }
 
-function loadViewer() {
+function loadViewer(options = {}) {
     const appRoot = path.resolve(import.meta.dirname, '../../..');
     const filesDir = path.join(appRoot, 'src/main/resources/files');
     const contextDocument = new FakeDocument();
@@ -172,6 +217,7 @@ function loadViewer() {
     const webSockets = [];
     const peerConnections = [];
     class FakeWebSocket {
+        static CONNECTING = 0;
         static OPEN = 1;
         static CLOSING = 2;
         static CLOSED = 3;
@@ -187,8 +233,9 @@ function loadViewer() {
             this.sent.push(JSON.parse(payload));
         }
 
-        close() {
-            this.readyState = FakeWebSocket.CLOSING;
+        close(code = 1000, reason = '') {
+            this.readyState = FakeWebSocket.CLOSED;
+            this.onclose?.({ code, reason });
         }
     }
     class FakeRTCPeerConnection {
@@ -251,6 +298,8 @@ function loadViewer() {
         RTCPeerConnection: FakeRTCPeerConnection,
         RTCSessionDescription: class {},
         RTCIceCandidate: class {},
+        navigator: options.navigator || {},
+        MediaRecorder: options.MediaRecorder,
         Date,
         JSON,
         URLSearchParams,
@@ -271,6 +320,8 @@ function loadViewer() {
     };
     context.window.document = contextDocument;
     context.window.fetch = context.fetch;
+    context.window.navigator = context.navigator;
+    context.window.MediaRecorder = context.MediaRecorder;
     vm.createContext(context);
 
     const keyboardHelperPath = path.join(filesDir, 'viewer-keyboard.js');
@@ -290,7 +341,7 @@ function loadViewer() {
             messages.push(JSON.parse(payload));
         }
     };
-    vm.runInContext('dataChannel = channel; keyControlInitialized = false; setupKeyControl();', context);
+    vm.runInContext('dataChannel = channel; setupDataChannelHandlers(channel); keyControlInitialized = false; setupKeyControl();', context);
 
     return {
         context,
@@ -571,29 +622,92 @@ await test('system control buttons send volume and power key events', () => {
     ]);
 });
 
-await test('copy event sends clipboard payload through dataChannel', async () => {
-    const { context, messages, clock } = loadViewer();
-
-    // Mock navigator.clipboard API
-    context.navigator = {
-        clipboard: {
-            readText: async () => 'copied-from-mac',
-            writeText: async (text) => {}
+await test('copy event sends clipboard payload through dataChannel once', async () => {
+    const { context, messages, clock } = loadViewer({
+        navigator: {
+            clipboard: {
+                readText: async () => 'copied-from-mac',
+                writeText: async () => {}
+            }
         }
-    };
+    });
 
-    // Initialize clipboard listener
-    vm.runInContext('setupClipboardSync();', context);
-
-    // Trigger copy event
     const copyEvent = { type: 'copy', preventDefault() {} };
     context.document.dispatchEvent(copyEvent);
 
-    // Advance clock to let the setTimeout(..., 100) run
     clock.runAll();
     await flushAsyncWork();
 
     assert.deepEqual(messages, [
         { type: 'clipboard', text: 'copied-from-mac' }
     ]);
+});
+
+await test('copy event propagates empty clipboard text as clear command', async () => {
+    const { context, messages, clock } = loadViewer({
+        navigator: {
+            clipboard: {
+                readText: async () => '',
+                writeText: async () => {}
+            }
+        }
+    });
+
+    context.document.dispatchEvent({ type: 'copy', preventDefault() {} });
+
+    clock.runAll();
+    await flushAsyncWork();
+
+    assert.deepEqual(messages, [
+        { type: 'clipboard', text: '' }
+    ]);
+});
+
+await test('received clipboard text uses manual fallback when Clipboard API is unavailable', async () => {
+    const { context, document } = loadViewer({ navigator: {} });
+
+    vm.runInContext(
+        'dataChannel.onmessage({ data: JSON.stringify({ type: "clipboard", text: "from-android" }) });',
+        context
+    );
+
+    const toastContainer = document.getElementById('toastContainer');
+    assert.equal(toastContainer.children.length, 1);
+    assert.match(toastContainer.children[0].textContent, /클립보드 수신/);
+});
+
+await test('manual connect click refreshes an existing signaling session immediately', async () => {
+    const { context, document, webSockets } = loadViewer();
+
+    vm.runInContext('connectSignaling();', context);
+    webSockets[0].onopen();
+    await flushAsyncWork();
+
+    document.getElementById('connectBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+
+    assert.equal(webSockets.length, 2);
+});
+
+await test('auto reconnect schedules backoff after closing an open signaling socket', async () => {
+    const { context, webSockets, clock } = loadViewer();
+
+    vm.runInContext('connectSignaling();', context);
+    webSockets[0].onopen();
+    await flushAsyncWork();
+
+    vm.runInContext('triggerAutoReconnect();', context);
+
+    assert.equal(webSockets.length, 1);
+    clock.tick(1000);
+
+    assert.equal(webSockets.length, 2);
+});
+
+await test('record button handles missing MediaRecorder without throwing', () => {
+    const { document, remoteVideo } = loadViewer({ MediaRecorder: undefined });
+    remoteVideo.srcObject = {};
+
+    assert.doesNotThrow(() => {
+        document.getElementById('recordBtn').dispatchEvent({ type: 'click', preventDefault() {} });
+    });
 });

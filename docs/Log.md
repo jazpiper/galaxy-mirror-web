@@ -269,6 +269,16 @@ updated: 2026-06-08
   - [ControlEventValidatorTest.kt](file:///Users/kojuhwan/Library/CloudStorage/GoogleDrive-jazpiper1@gmail.com/My%20Drive/Personal%20Develop/galaxy-mirror-web/android/app/src/test/java/com/example/galaxymirror/ControlEventValidatorTest.kt)에 볼륨/잠금 키코드 및 clipboard 타입에 대한 JUnit 검사 케이스 2개를 추가하여 빌드가 BUILD SUCCESSFUL (38초) 통과함을 확인했습니다.
   - [viewer-keyboard.test.mjs](file:///Users/kojuhwan/Library/CloudStorage/GoogleDrive-jazpiper1@gmail.com/My%20Drive/Personal%20Develop/galaxy-mirror-web/android/app/src/test/js/viewer-keyboard.test.mjs)에 볼륨/전원 버튼 동작 및 복사 이벤트 시 DataChannel clipboard 페이로드 송신 정합성을 검증하는 2개의 Mock 테스트를 추가하여 전체 16개 테스트를 통과시켰습니다.
 
+### 2026-06-08 (Post-review hardening plan and fixes)
+* `docs/CodeReview-2026-06-08.md`의 병렬 리뷰 결과를 기준으로 MediaProjection 생명주기,
+  원격 볼륨 키, 클립보드 fallback/empty-string, `CONTROL_ACK` JSON escaping, Viewer 재연결,
+  녹화 API guard, JS 테스트 CI 누락을 순차 수정 대상으로 확정했습니다.
+* MediaProjection 정책은 viewer 종료/교체 시 화면 캡처를 정리하고 새 Offer에서 Android
+  화면 공유 권한을 다시 요청하는 privacy-first 방식으로 맞춥니다.
+* 로컬 검증으로 `app:testDebugUnitTest`, `app:lintDebug`, `assembleDebug`,
+  `node --test android/app/src/test/js/viewer-keyboard.test.mjs`, `git diff --check`가 통과했습니다.
+  실제 Galaxy 단말 smoke test는 별도 체크리스트로 남겨 두었습니다.
+
 ---
 
 ## 🔗 Related Documents

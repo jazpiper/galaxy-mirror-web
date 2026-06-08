@@ -2,8 +2,10 @@ package com.example.galaxymirror
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.graphics.Path
 import android.graphics.Rect
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
@@ -268,24 +270,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
             19 -> moveCursorUp()                              // KEYCODE_DPAD_UP
             20 -> moveCursorDown()                            // KEYCODE_DPAD_DOWN
             66 -> triggerEnterAction()                        // KEYCODE_ENTER
-            24 -> performGlobalAction(10) // KEYCODE_VOLUME_UP -> GLOBAL_ACTION_VOLUME_UP (API 24)
-            25 -> performGlobalAction(11) // KEYCODE_VOLUME_DOWN -> GLOBAL_ACTION_VOLUME_DOWN (API 24)
-            164 -> { // KEYCODE_VOLUME_MUTE
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    performGlobalAction(12) // GLOBAL_ACTION_VOLUME_MUTE (API 30)
-                } else {
-                    val audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
-                    audioManager?.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0)
-                    true
-                }
-            }
-            26 -> { // KEYCODE_POWER -> Lock screen
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    performGlobalAction(8) // GLOBAL_ACTION_LOCK_SCREEN (API 28)
-                } else {
-                    false
-                }
-            }
+            24, 25, 164, 26 -> handleHardwareKeyAction(keyCode)
             else -> {
                 Log.w(TAG, "Unhandled keyCode: $keyCode")
                 false
@@ -293,6 +278,32 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         }
         CrashDiagnostics.recordEvent(this, "Accessibility key applied=$applied.")
         return applied
+    }
+
+    private fun handleHardwareKeyAction(keyCode: Int): Boolean {
+        return when (HardwareKeyAction.fromKeyCode(keyCode)) {
+            HardwareKeyAction.VolumeUp -> adjustMusicVolume(AudioManager.ADJUST_RAISE)
+            HardwareKeyAction.VolumeDown -> adjustMusicVolume(AudioManager.ADJUST_LOWER)
+            HardwareKeyAction.ToggleMute -> adjustMusicVolume(AudioManager.ADJUST_TOGGLE_MUTE)
+            HardwareKeyAction.LockScreen -> {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                } else {
+                    false
+                }
+            }
+            null -> false
+        }
+    }
+
+    private fun adjustMusicVolume(direction: Int): Boolean {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        audioManager.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            direction,
+            AudioManager.FLAG_SHOW_UI
+        )
+        return true
     }
 
     private fun moveCursorPrevious(): Boolean {
@@ -571,8 +582,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
         val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
             val clip = clipboard.primaryClip
             if (clip != null && clip.itemCount > 0) {
-                val text = clip.getItemAt(0).text?.toString()
-                if (!text.isNullOrEmpty() && text != lastInjectedClipboardText) {
+                val text = clip.getItemAt(0).coerceToText(this)?.toString()
+                if (text != null && text != lastInjectedClipboardText) {
                     val service = MediaProjectionService.instance
                     val channel = service?.controlChannel
                     if (service != null && channel != null && channel.state() == org.webrtc.DataChannel.State.OPEN) {

@@ -132,6 +132,16 @@ updated: 2026-06-08
   - [x] 비디오 우상단 📸 버튼 클릭 시 Canvas 렌더러 기반 실시간 이미지 PNG 다운로드 구현
   - [x] ⏺️ 버튼 클릭 시 `MediaRecorder` API 기반 실시간 WebRTC 미디어 스트림 캡처 및 레코딩 녹화본 WebM 파일 다운로드 연동
 
+> 2026-06-08 코드 리뷰 후속 하드닝: 볼륨 키는 `AudioManager` 기반으로 보정했고,
+> clipboard empty-string 동기화와 HTTP origin fallback을 보강했습니다. MediaProjection은
+> viewer 종료/교체 시 캡처를 정리하고 다음 Offer에서 새 화면 공유 승인을 요청하는
+> privacy-first 정책으로 확정했습니다.
+
+### 🧯 Post-review hardening
+- [ ] MediaProjection viewer close/replacement cleanup verified on device
+- [ ] Clipboard sync verified on actual `http://<MagicDNS-host>:8080` viewer origin
+- [ ] Volume up/down/mute verified on physical device
+
 ### 2. 다음 개발 단계 핵심 미션 (Backlog / Future Enhancements)
 1. **오디오 스트리밍 미러링**: Android 10+ MediaProjection 오디오 캡처 파이프라인 및 WebRTC 오디오 트랙 뷰어 연동.
 2. **원격 클립보드 히스토리 뷰어**: 뷰어 사이드바에 수신된 클립보드 텍스트 히스토리를 간직하는 목록 UI 구현.
