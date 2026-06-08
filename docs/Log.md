@@ -252,6 +252,23 @@ updated: 2026-06-08
 * **테스트 러너 타임아웃 픽스**
   - 1.5초 ACK 워치독 타이머 도입에 따른 `viewer-keyboard.test.mjs` 내 `FakeClock` 충돌을 시간 기반의 `tick(ms)` 시뮬레이션 방식으로 리팩토링하여 Node.js 텍스트 입력 테스트의 100% 정합성과 성공을 확보했습니다.
 
+### 2026-06-08 (Milestone 6: 양방향 클립보드 동기화 및 고급 제어 기능 구현)
+* **맥-안드로이드 양방향 클립보드 실시간 동기화**
+  - 맥 브라우저 뷰어 포커스 시 `copy` 단축키 이벤트를 인터셉트하여, 클립보드 내 복사 텍스트를 WebRTC DataChannel을 통해 원격 주입하는 흐름을 연동했습니다.
+  - 안드로이드 Host 내 `MediaProjectionService`에서 디바이스 클립보드가 변경될 때 `OnPrimaryClipChangedListener`를 기동하여 변경 텍스트를 실시간으로 브라우저 뷰어로 역브로드캐스트하는 리스너 등록/해제 관리 로직을 구축했습니다.
+  - 브라우저 수신 시 `navigator.clipboard.writeText`를 호출해 자동 주입하고, 보안 제약 시 토스트 카드를 클릭해 복사할 수 있는 fallback 로직을 구현했으며, 동기화 알림용 Glow Toast 컴포넌트를 설계했습니다.
+* **물리 하드웨어 키(볼륨, 음소거, 잠금) 제어 주입**
+  - Mac 뷰어 하단 네비게이션바 위에 볼륨조절(+ / - / 음소거) 및 화면 잠금(Power) 버튼 조작계를 추가하고, 클릭 시 DataChannel로 Android KeyEvent(24, 25, 164, 26)를 전송하게 바인딩했습니다.
+  - 안드로이드 접근성 서비스(`GalaxyMirrorAccessibilityService`)에서 수신된 키코드를 기반으로 `performGlobalAction` API 및 `AudioManager` fallback을 활용해 볼륨 크기 변경, 음소거 및 화면 잠금(8/GLOBAL_ACTION_LOCK_SCREEN) 동작이 원격 수행되도록 구현했습니다.
+  - `ControlEventValidator`에서 신규 추가된 키코드들의 화이트리스트 검증 조건과 `clipboard` 타입의 JSON 유효성(텍스트 키 검사 및 최대 8192자 한도) 검사기를 완비했습니다.
+* **브라우저 스크린샷 캡처 및 화면 동영상 레코더 내장**
+  - 비디오 우상단에 📸(스크린샷) 및 ⏺️(녹화) 플로팅 글래스모피즘 아이콘 카드를 추가했습니다.
+  - Canvas 렌더러를 이용하여 현재 뷰어 해상도 기준 픽셀 이미지를 PNG로 생성하여 즉시 자동 다운로드하는 로직을 연동했습니다.
+  - `MediaRecorder` API를 이용해 실시간 WebRTC MediaStream을 캡처하고, 녹화 중 상태 피드백을 주는 레코딩 깜빡임 애니메이션 상태와 녹화 종료 시 `.webm` 파일 자동 내보내기를 구현했습니다.
+* **통합 테스트 강화**
+  - [ControlEventValidatorTest.kt](file:///Users/kojuhwan/Library/CloudStorage/GoogleDrive-jazpiper1@gmail.com/My%20Drive/Personal%20Develop/galaxy-mirror-web/android/app/src/test/java/com/example/galaxymirror/ControlEventValidatorTest.kt)에 볼륨/잠금 키코드 및 clipboard 타입에 대한 JUnit 검사 케이스 2개를 추가하여 빌드가 BUILD SUCCESSFUL (38초) 통과함을 확인했습니다.
+  - [viewer-keyboard.test.mjs](file:///Users/kojuhwan/Library/CloudStorage/GoogleDrive-jazpiper1@gmail.com/My%20Drive/Personal%20Develop/galaxy-mirror-web/android/app/src/test/js/viewer-keyboard.test.mjs)에 볼륨/전원 버튼 동작 및 복사 이벤트 시 DataChannel clipboard 페이로드 송신 정합성을 검증하는 2개의 Mock 테스트를 추가하여 전체 16개 테스트를 통과시켰습니다.
+
 ---
 
 ## 🔗 Related Documents

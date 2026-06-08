@@ -120,10 +120,21 @@ updated: 2026-06-08
   - [x] Page Visibility API (`visibilitychange`) 연동을 통한 브라우저 탭 활성화 시 지연 없는 즉각 세션 동기화 및 복원 적용
   - [x] 재연결 세션 갱신 시 기존 WebSocket/DataChannel/RTCPeerConnection의 비동기 리스너 정리(cleanup) 및 메모리 누수 방지
 
-### 2. 다음 개발 단계 핵심 미션 (Milestone 6)
-1. **양방향 클립보드 동기화**: 맥북 브라우저와 안드로이드 기기간 Primary Clip 양방향 동기화 및 Glow Toast 피드백.
-2. **물리 하드웨어 제어**: 볼륨 제어(Up/Down/Mute), 잠금 화면(GLOBAL_ACTION_LOCK_SCREEN) 기능 인젝션.
-3. **브라우저 스크린샷 & 화면 녹화**: HTML5 Canvas 이미지 캡처 다운로드 및 MediaRecorder API 기반 스트림 레코딩 다운로드.
+### 🏁 Milestone 6: 양방향 클립보드 동기화 및 고급 제어 기능 구현 (Completed)
+- [x] **T6.1: 양방향 클립보드 실시간 동기화**
+  - [x] 맥 브라우저 뷰어 포커스 시 `copy` 단축키 이벤트를 후킹하여 DataChannel로 복사 텍스트 자동 전송
+  - [x] 안드로이드 Host에서 클립보드 변경 이벤트(`OnPrimaryClipChangedListener`) 감시 및 뷰어로 실시간 브로드캐스트
+  - [x] 수신 시 `navigator.clipboard.writeText` 주입 및 고급스러운 Glow Toast 푸시 알림 피드백 연동
+- [x] **T6.2: 물리 하드웨어 원격 제어 조작계 구축**
+  - [x] 볼륨 크게(🔊), 볼륨 작게(🔉), 음소거(🔇), 화면 잠금(🔒) UI 레이아웃 및 스타일 매핑
+  - [x] 클릭 시 DataChannel로 Android KeyEvent(24, 25, 164, 26) 송신 및 접근성 글로벌 액션(Volume Up/Down/Mute, Lock Screen) 주입 연동
+- [x] **T6.3: 브라우저 내 스크린샷 및 화면 레코더 내장**
+  - [x] 비디오 우상단 📸 버튼 클릭 시 Canvas 렌더러 기반 실시간 이미지 PNG 다운로드 구현
+  - [x] ⏺️ 버튼 클릭 시 `MediaRecorder` API 기반 실시간 WebRTC 미디어 스트림 캡처 및 레코딩 녹화본 WebM 파일 다운로드 연동
+
+### 2. 다음 개발 단계 핵심 미션 (Backlog / Future Enhancements)
+1. **오디오 스트리밍 미러링**: Android 10+ MediaProjection 오디오 캡처 파이프라인 및 WebRTC 오디오 트랙 뷰어 연동.
+2. **원격 클립보드 히스토리 뷰어**: 뷰어 사이드바에 수신된 클립보드 텍스트 히스토리를 간직하는 목록 UI 구현.
 
 ### 3. 화면 켜짐/밝기 최소화 확인 포인트
 * 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.
