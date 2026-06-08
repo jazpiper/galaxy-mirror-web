@@ -83,35 +83,53 @@ class FakeDocument extends FakeEventTarget {
 class FakeClock {
     constructor() {
         this.nextId = 1;
-        this.tasks = new Map();
+        this.tasks = [];
     }
 
-    setTimeout(callback) {
+    setTimeout(callback, delay = 0) {
         const id = this.nextId++;
-        this.tasks.set(id, callback);
+        this.tasks.push({ id, callback, delay, remaining: delay });
         return id;
     }
 
     clearTimeout(id) {
-        this.tasks.delete(id);
+        this.tasks = this.tasks.filter(t => t.id !== id);
     }
 
-    setInterval(callback) {
-        return this.setTimeout(callback);
+    setInterval(callback, delay = 0) {
+        return this.setTimeout(callback, delay);
     }
 
     clearInterval(id) {
         this.clearTimeout(id);
     }
 
-    runAll() {
-        while (this.tasks.size > 0) {
-            const tasks = [...this.tasks.entries()];
-            this.tasks.clear();
-            for (const [, callback] of tasks) {
-                callback();
+    tick(ms) {
+        let executedAny = true;
+        while (executedAny && ms > 0) {
+            executedAny = false;
+            this.tasks.sort((a, b) => a.remaining - b.remaining);
+            const next = this.tasks.find(t => t.remaining <= ms);
+            if (next) {
+                const consumed = next.remaining;
+                this.tasks = this.tasks.filter(t => t.id !== next.id);
+                for (const t of this.tasks) {
+                    t.remaining -= consumed;
+                }
+                ms -= consumed;
+                next.callback();
+                executedAny = true;
             }
         }
+        for (const t of this.tasks) {
+            t.remaining -= ms;
+        }
+    }
+
+    runAll() {
+        // Advance time by 100ms to allow 35ms input buffering timers to execute,
+        // but prevent the 1500ms watchdog timer from executing prematurely.
+        this.tick(100);
     }
 }
 
@@ -404,13 +422,16 @@ await test('stale signaling socket close does not close the current peer connect
     webSockets[0].onopen();
     await flushAsyncWork();
     const firstSocket = webSockets[0];
+    const originalOnClose = firstSocket.onclose;
 
     vm.runInContext('connectSignaling();', context);
     webSockets[1].onopen();
     await flushAsyncWork();
     const currentPeerConnection = peerConnections.at(-1);
 
-    firstSocket.onclose();
+    if (originalOnClose) {
+        originalOnClose();
+    }
 
     assert.equal(currentPeerConnection.closed, false);
     assert.equal(vm.runInContext('peerConnection === null', context), false);

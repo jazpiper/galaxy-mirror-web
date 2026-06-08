@@ -7,13 +7,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0b0f19;
-            --panel-bg: rgba(255, 255, 255, 0.04);
-            --panel-border: rgba(255, 255, 255, 0.08);
-            --accent-glow: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+            --bg-color: #080c14;
+            --panel-bg: rgba(13, 20, 35, 0.45);
+            --panel-border: rgba(255, 255, 255, 0.06);
+            --accent-glow: linear-gradient(135deg, #38bdf8 0%, #0369a1 100%);
             --accent-color: #38bdf8;
             --text-main: #f8fafc;
             --text-sub: #94a3b8;
+            --card-bg: rgba(255, 255, 255, 0.02);
+            --card-border: rgba(255, 255, 255, 0.04);
         }
 
         * {
@@ -22,6 +24,7 @@
             padding: 0;
             font-family: 'Outfit', sans-serif;
             user-select: none;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
         }
 
         body {
@@ -30,9 +33,39 @@
             height: 100vh;
             display: flex;
             overflow: hidden;
-            background-image: 
-                radial-gradient(at 10% 20%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
-                radial-gradient(at 90% 80%, rgba(79, 172, 254, 0.08) 0px, transparent 50%);
+            position: relative;
+        }
+
+        /* Floating background glow spheres for depth */
+        .glow-sphere {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: 1;
+            opacity: 0.12;
+            pointer-events: none;
+            animation: float 20s infinite alternate ease-in-out;
+        }
+        .glow-sphere-1 {
+            width: 450px;
+            height: 450px;
+            background: #38bdf8;
+            top: -100px;
+            left: -100px;
+        }
+        .glow-sphere-2 {
+            width: 550px;
+            height: 550px;
+            background: #0369a1;
+            bottom: -150px;
+            right: -150px;
+            animation-delay: -6s;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(60px, 40px) scale(1.15); }
+            100% { transform: translate(-40px, -60px) scale(0.9); }
         }
 
         /* 메인 컨테이너 */
@@ -41,94 +74,104 @@
             width: 100%;
             height: 100%;
             position: relative;
+            z-index: 2;
         }
 
         /* 왼쪽 정보 패널 (글래스모피즘) */
         #infoPanel {
-            width: 320px;
+            width: 330px;
             height: calc(100% - 40px);
             margin: 20px;
             background: var(--panel-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(28px) saturate(160%);
+            -webkit-backdrop-filter: blur(28px) saturate(160%);
             border: 1px solid var(--panel-border);
-            border-radius: 24px;
+            border-radius: 28px;
             padding: 30px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             z-index: 10;
             overflow-y: auto;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Custom Scrollbar for Info Panel */
+        #infoPanel::-webkit-scrollbar {
+            width: 5px;
+        }
+        #infoPanel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #infoPanel::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+        }
+        #infoPanel::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.18);
         }
 
         h1 {
-            font-size: 24px;
+            font-size: 26px;
             font-weight: 800;
             background: var(--accent-glow);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
-            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+            letter-spacing: -0.7px;
         }
 
         .subtitle {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-sub);
             line-height: 1.5;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }
 
-        .status-container {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 20px;
+        .status-container,
+        .shortcut-container,
+        .quality-container,
+        .usage-container {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 18px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .status-detail {
             min-height: 54px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(56, 189, 248, 0.18);
-            border-radius: 16px;
-            background: rgba(56, 189, 248, 0.06);
+            margin-bottom: 16px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 18px;
+            background: rgba(56, 189, 248, 0.05);
             color: var(--text-main);
             font-size: 12px;
-            line-height: 1.5;
+            line-height: 1.6;
             padding: 14px 16px;
+            transition: all 0.3s ease;
         }
 
         .status-detail.warning {
-            border-color: rgba(251, 191, 36, 0.28);
-            background: rgba(251, 191, 36, 0.08);
+            border-color: rgba(245, 158, 11, 0.3);
+            background: rgba(245, 158, 11, 0.06);
         }
 
         .status-detail.success {
-            border-color: rgba(16, 185, 129, 0.26);
-            background: rgba(16, 185, 129, 0.08);
-        }
-
-        .shortcut-container,
-        .quality-container {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 20px;
-        }
-
-        .usage-container {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 20px;
+            border-color: rgba(16, 185, 129, 0.3);
+            background: rgba(16, 185, 129, 0.06);
         }
 
         .section-title {
             font-size: 13px;
             font-weight: 800;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            color: var(--text-main);
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            font-size: 11px;
+            opacity: 0.85;
         }
 
         .shortcut-list {
@@ -138,15 +181,26 @@
 
         .shortcut-btn {
             width: 100%;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
             color: var(--text-main);
             cursor: pointer;
             font-size: 13px;
-            font-weight: 700;
-            padding: 10px 12px;
+            font-weight: 600;
+            padding: 10px 14px;
             text-align: left;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .shortcut-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateX(3px);
+        }
+
+        .shortcut-btn:active {
+            transform: scale(0.98);
         }
 
         .shortcut-empty {
@@ -164,19 +218,26 @@
 
         .quality-btn {
             min-height: 38px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
             color: var(--text-main);
             cursor: pointer;
             font-size: 12px;
-            font-weight: 800;
+            font-weight: 700;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .quality-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.12);
         }
 
         .quality-btn.active {
-            background: rgba(56, 189, 248, 0.18);
-            border-color: rgba(56, 189, 248, 0.42);
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.4);
             color: #e0f2fe;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
         }
 
         .status-item {
@@ -234,21 +295,21 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 14px;
+            gap: 16px;
         }
 
         /* 비디오 컨테이너 (그림자 및 모서리 깎기) */
         #videoContainer {
             width: auto;
-            height: calc(100% - 62px);
+            height: calc(100% - 66px);
             max-width: 100%;
             aspect-ratio: 9 / 19.5; /* Android phone default render ratio */
             position: relative;
-            background: rgba(0, 0, 0, 0.4);
+            background: rgba(0, 0, 0, 0.6);
             border: 1px solid var(--panel-border);
-            border-radius: 36px;
+            border-radius: 38px;
             overflow: hidden;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -281,22 +342,23 @@
         /* 컨트롤 버튼 */
         .btn {
             background: var(--accent-glow);
-            color: #0b0f19;
+            color: #ffffff;
             border: none;
-            border-radius: 14px;
+            border-radius: 16px;
             padding: 14px;
             font-size: 14px;
             font-weight: 800;
             cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             width: 100%;
             text-align: center;
-            box-shadow: 0 4px 20px rgba(79, 172, 254, 0.25);
+            box-shadow: 0 4px 20px rgba(56, 189, 248, 0.25);
+            letter-spacing: 0.2px;
         }
 
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(79, 172, 254, 0.4);
+            box-shadow: 0 8px 25px rgba(56, 189, 248, 0.45);
         }
 
         .btn:active {
@@ -307,42 +369,120 @@
             width: min(420px, 100%);
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            flex: 0 0 48px;
+            gap: 12px;
+            flex: 0 0 50px;
         }
 
         .nav-btn {
-            height: 48px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.07);
+            height: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.04);
             color: var(--text-main);
             cursor: pointer;
             font-size: 13px;
-            font-weight: 800;
+            font-weight: 700;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .nav-btn:hover {
-            background: rgba(56, 189, 248, 0.16);
-            border-color: rgba(56, 189, 248, 0.32);
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.3);
+            color: #ffffff;
         }
 
         .nav-btn:active {
-            transform: translateY(1px);
+            transform: scale(0.96);
         }
 
         .log-box {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 12px;
-            padding: 12px;
+            background: rgba(0, 0, 0, 0.45);
+            border-radius: 16px;
+            padding: 14px;
             font-family: monospace;
             font-size: 11px;
             color: #38bdf8;
-            max-height: 120px;
+            max-height: 110px;
             overflow-y: auto;
             flex-grow: 1;
             margin-top: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        /* Reconnection Glass Overlay */
+        .reconnect-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 12, 20, 0.75);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            transition: opacity 0.3s ease;
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .reconnect-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .reconnect-card {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            padding: 30px 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            width: 85%;
+            max-width: 320px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .pulse-ring {
+            border: 4px solid var(--accent-color);
+            border-radius: 50%;
+            height: 48px;
+            width: 48px;
+            animation: pulse 1.5s infinite ease-in-out;
+            margin-bottom: 20px;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.5; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+            70% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 12px rgba(56, 189, 248, 0); }
+            100% { transform: scale(0.9); opacity: 0.5; box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+        .reconnect-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 8px;
+        }
+
+        .reconnect-sub {
+            font-size: 12px;
+            color: var(--text-sub);
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        .reconnect-attempts {
+            font-size: 11px;
+            color: var(--accent-color);
+            font-weight: 600;
         }
 
         @media (max-width: 850px) {
@@ -378,6 +518,8 @@
     </style>
 </head>
 <body>
+    <div class="glow-sphere glow-sphere-1"></div>
+    <div class="glow-sphere glow-sphere-2"></div>
     <div id="appContainer">
         <!-- 왼쪽 글래스모피즘 대시보드 -->
         <div id="infoPanel">
@@ -470,6 +612,16 @@
                 <div id="videoContainer">
                     <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
                     <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+                    
+                    <!-- 재연결 안내 오버레이 -->
+                    <div id="reconnectOverlay" class="reconnect-overlay hidden">
+                        <div class="reconnect-card">
+                            <div class="pulse-ring"></div>
+                            <div class="reconnect-title">연결 복원 중</div>
+                            <div class="reconnect-sub" id="reconnectSub">네트워크 일시 단절로 인해 재연결을 시도하고 있습니다.</div>
+                            <div class="reconnect-attempts" id="reconnectAttempts">재시도 대기: 1초</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="nav-controls" aria-label="Android navigation controls">
                     <button class="nav-btn" id="navRecentsBtn" type="button">최근 앱</button>

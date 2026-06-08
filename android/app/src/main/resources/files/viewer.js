@@ -41,6 +41,14 @@ let inFlightTextSeq = null;
 let queuedTextPayloads = [];
 let ackTimeoutId = null;
 
+// Reconnection States
+let shouldAutoReconnect = true;
+let statusDetailMessage = "";
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 8;
+let reconnectTimeoutId = null;
+let isReconnecting = false;
+
 function updateVideoAspectRatio() {
     const videoContainer = document.getElementById('videoContainer');
     if (!videoContainer || !remoteVideo || !remoteVideo.videoWidth || !remoteVideo.videoHeight) return;
@@ -381,7 +389,7 @@ function connectSignaling() {
     resetTextControlState();
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
     
-    // Explicit listener and socket cleanup before recreating socket
+    // Clean up socket and PeerConnection to prevent resource leaks
     if (socket) {
         socket.onopen = null;
         socket.onclose = null;
@@ -390,19 +398,7 @@ function connectSignaling() {
         socket.close();
         socket = null;
     }
-    if (peerConnection) {
-        peerConnection.ontrack = null;
-        peerConnection.onicecandidate = null;
-        peerConnection.close();
-        peerConnection = null;
-    }
-    if (dataChannel) {
-        dataChannel.onopen = null;
-        dataChannel.onclose = null;
-        dataChannel.onmessage = null;
-        dataChannel.close();
-        dataChannel = null;
-    }
+    cleanupPeerConnection();
     
     const signalingSocket = new WebSocket(wsUrl);
     socket = signalingSocket;
@@ -412,48 +408,58 @@ function connectSignaling() {
         log("Signaling WebSocket 연결 성공!");
         wsIndicator.classList.add('online');
         wsStatus.innerHTML = `<span class="indicator online" id="wsIndicator"></span>Online`;
+        
+        // Reset reconnect states on success
+        isReconnecting = false;
+        reconnectAttempts = 0;
+        if (reconnectTimeoutId) {
+            clearTimeout(reconnectTimeoutId);
+            reconnectTimeoutId = null;
+        }
+        hideReconnectOverlay();
+
         loadFavoriteApps();
         loadStreamQualityStatus();
         setupWebRTC(signalingSocket);
     };
 
-    signalingSocket.onclose = () => {
+    signalingSocket.onclose = (event) => {
         if (socket !== signalingSocket) return;
-        log("Signaling WebSocket 연결이 종료되었습니다.");
+        log(`Signaling WebSocket 연결이 종료되었습니다. Code: ${event.code}, Reason: ${event.reason || '없음'}`);
         stopDataUsagePolling();
         
-        // Detach listeners and close PeerConnection to resolve leaks
-        if (peerConnection) {
-            peerConnection.ontrack = null;
-            peerConnection.onicecandidate = null;
-            peerConnection.close();
-            peerConnection = null;
-        }
-        if (dataChannel) {
-            dataChannel.onopen = null;
-            dataChannel.onclose = null;
-            dataChannel.onmessage = null;
-            dataChannel.close();
-            dataChannel = null;
-        }
+        cleanupPeerConnection();
         
         wsIndicator.classList.remove('online');
         wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
         rtcStatus.innerText = "Offline";
         controlStatus.innerText = "비활성";
         accessibilityStatus.innerText = "확인 중";
-        showStatusDetail("Android Mirror 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.");
+        
         accessibilityReady = false;
         resetTextControlState();
         resetDataUsageStats();
         
         const latencyEl = document.getElementById('rtcLatency');
         if (latencyEl) latencyEl.textContent = 'Offline';
+
+        // Check if the connection was intentionally closed by the user or due to authorization issues
+        const isExplicitClose = event.code === 1000 || event.code === 1008 || !shouldAutoReconnect;
+        
+        if (isExplicitClose) {
+            log("명시적 세션 종료 또는 재인증이 요구되어 자동 재연결을 가동하지 않습니다.");
+            showStatusDetail(statusDetailMessage || "Android Mirror 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.");
+            hideReconnectOverlay();
+            isReconnecting = false;
+            reconnectAttempts = 0;
+        } else {
+            startReconnectSequence();
+        }
     };
 
     signalingSocket.onerror = (err) => {
         if (socket !== signalingSocket) return;
-        log(`WebSocket 에러 발생: ${err.message || '알 수 없는 오류'}`);
+        log(`WebSocket 에러 발생: ${err.message || '네트워크 오류'}`);
     };
 
     signalingSocket.onmessage = async (event) => {
@@ -528,12 +534,18 @@ function applyAndroidStatusMessage(message) {
         case 'SCREEN_CAPTURE_REAUTH_REQUIRED':
             rtcStatus.innerText = "재승인 필요";
             controlStatus.innerText = "대기";
-            showStatusDetail("Android 화면 공유 재승인이 필요합니다. Android 기기에서 화면 공유를 다시 승인한 뒤 미러링 연결하기를 누르세요.", "warning");
+            statusDetailMessage = "Android 화면 공유 재승인이 필요합니다. Android 기기에서 화면 공유를 다시 승인한 뒤 미러링 연결하기를 누르세요.";
+            showStatusDetail(statusDetailMessage, "warning");
+            shouldAutoReconnect = false;
+            triggerAutoReconnect();
             return;
         case 'PROJECTION_STOPPED_LOCKED':
             rtcStatus.innerText = "잠금으로 중단";
             controlStatus.innerText = "대기";
-            showStatusDetail("Android 화면 잠금 또는 화면 꺼짐으로 미러링이 중단되었습니다. 잠금을 해제하고 화면 공유를 다시 승인하세요.", "warning");
+            statusDetailMessage = "Android 화면 잠금 또는 화면 꺼짐으로 미러링이 중단되었습니다. 잠금을 해제하고 화면 공유를 다시 승인하세요.";
+            showStatusDetail(statusDetailMessage, "warning");
+            shouldAutoReconnect = false;
+            triggerAutoReconnect();
             return;
         case 'CONTROL_CHANNEL_ACCEPTED':
             controlStatus.innerText = "채널 승인됨";
@@ -614,6 +626,28 @@ async function setupWebRTC(signalingSocket = socket) {
     peerConnection = currentPeerConnection;
     remoteDescriptionSet = false;
     pendingRemoteCandidates = [];
+    
+    // Bind connection states for failure detection
+    currentPeerConnection.oniceconnectionstatechange = () => {
+        if (peerConnection !== currentPeerConnection) return;
+        const state = currentPeerConnection.iceConnectionState;
+        log(`WebRTC ICE Connection State: ${state}`);
+        if (state === 'failed' || state === 'disconnected') {
+            log("WebRTC ICE 연결 단절 감지 - 자동 재연결 트리거");
+            triggerAutoReconnect();
+        }
+    };
+
+    currentPeerConnection.onconnectionstatechange = () => {
+        if (peerConnection !== currentPeerConnection) return;
+        const state = currentPeerConnection.connectionState;
+        log(`WebRTC PeerConnection State: ${state}`);
+        if (state === 'failed' || state === 'closed') {
+            log("WebRTC PeerConnection 단절 감지 - 자동 재연결 트리거");
+            triggerAutoReconnect();
+        }
+    };
+
     currentPeerConnection.addTransceiver('video', { direction: 'recvonly' });
 
     // DataChannel 개설 (터치/키보드 제어 명령 전송용)
@@ -948,11 +982,137 @@ function setupStreamQualityControls() {
 
 // 6. 연결하기 버튼 이벤트
 connectBtn.addEventListener('click', () => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        log("이미 연결된 상태입니다. 재연결을 시도합니다.");
-        socket.close();
+    // Reset manual reconnection states
+    shouldAutoReconnect = true;
+    statusDetailMessage = "";
+    reconnectAttempts = 0;
+    isReconnecting = false;
+    if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = null;
     }
-    connectSignaling();
+    hideReconnectOverlay();
+
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        log("기존 연결이 감지되어 세션을 갱신합니다.");
+        socket.close();
+    } else {
+        connectSignaling();
+    }
+});
+
+// ─── Reconnection and Cleanup Helpers ────────────────────────────────────────
+
+function cleanupPeerConnection() {
+    if (peerConnection) {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.oniceconnectionstatechange = null;
+        peerConnection.onconnectionstatechange = null;
+        try {
+            peerConnection.close();
+        } catch (e) {
+            log(`PeerConnection close error: ${e.message}`);
+        }
+        peerConnection = null;
+    }
+    if (dataChannel) {
+        dataChannel.onopen = null;
+        dataChannel.onclose = null;
+        dataChannel.onmessage = null;
+        try {
+            dataChannel.close();
+        } catch (e) {
+            log(`DataChannel close error: ${e.message}`);
+        }
+        dataChannel = null;
+    }
+}
+
+function triggerAutoReconnect() {
+    if (isReconnecting || reconnectTimeoutId) return;
+    log("네트워크 단절 감지 - 자동 재연결 복원을 시작합니다.");
+    isReconnecting = true;
+    if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+        socket.close(); // Triggers signalingSocket.onclose
+    } else {
+        startReconnectSequence();
+    }
+}
+
+function startReconnectSequence() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        log("최대 자동 재연결 횟수를 초과했습니다.");
+        showStatusDetail("자동 재연결에 실패했습니다. 수동으로 다시 시도해주세요.", "warning");
+        showReconnectOverlayFailed();
+        isReconnecting = false;
+        return;
+    }
+
+    isReconnecting = true;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 16000);
+    log(`자동 재연결 복원 시도 (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS}) - ${delay / 1000}초 후 시도`);
+
+    showReconnectOverlayProgress(delay / 1000, reconnectAttempts + 1);
+
+    if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
+    reconnectTimeoutId = setTimeout(() => {
+        reconnectTimeoutId = null;
+        connectSignaling();
+    }, delay);
+
+    reconnectAttempts++;
+}
+
+function showReconnectOverlayProgress(seconds, attempt) {
+    const overlay = document.getElementById('reconnectOverlay');
+    const sub = document.getElementById('reconnectSub');
+    const attempts = document.getElementById('reconnectAttempts');
+    if (overlay) overlay.classList.remove('hidden');
+    if (sub) sub.textContent = "네트워크 일시 단절로 인해 재연결을 시도하고 있습니다.";
+    if (attempts) attempts.textContent = `재시도 대기: ${seconds.toFixed(0)}초 (시도 ${attempt}/${MAX_RECONNECT_ATTEMPTS})`;
+    
+    const pulseRing = overlay?.querySelector('.pulse-ring');
+    if (pulseRing) {
+        pulseRing.style.animation = 'pulse 1.5s infinite ease-in-out';
+        pulseRing.style.borderColor = 'var(--accent-color)';
+    }
+}
+
+function showReconnectOverlayFailed() {
+    const overlay = document.getElementById('reconnectOverlay');
+    const sub = document.getElementById('reconnectSub');
+    const attempts = document.getElementById('reconnectAttempts');
+    if (overlay) overlay.classList.remove('hidden');
+    if (sub) sub.textContent = "자동 재연결에 실패했습니다. 네트워크 연결을 확인하고 다시 연결해주세요.";
+    if (attempts) attempts.textContent = "연결 단절 상태";
+    
+    const pulseRing = overlay?.querySelector('.pulse-ring');
+    if (pulseRing) {
+        pulseRing.style.animation = 'none';
+        pulseRing.style.borderColor = '#ef4444';
+    }
+}
+
+function hideReconnectOverlay() {
+    const overlay = document.getElementById('reconnectOverlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+// Page Visibility API for fast foreground sync
+document.addEventListener('visibilitychange', () => {
+    log(`Page Visibility 변경 감지: hidden=${document.hidden}`);
+    if (!document.hidden) {
+        const isSocketClosed = !socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING;
+        if (isSocketClosed && shouldAutoReconnect && reconnectAttempts > 0) {
+            log("화면 전면 복귀 감지 - 즉시 자동 재연결 복원을 시도합니다.");
+            if (reconnectTimeoutId) {
+                clearTimeout(reconnectTimeoutId);
+                reconnectTimeoutId = null;
+            }
+            connectSignaling();
+        }
+    }
 });
 
 setupStreamQualityControls();
