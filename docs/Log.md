@@ -237,6 +237,21 @@ updated: 2026-06-08
   - 빈번한 원격 제어 이벤트의 ACK 전송 과정에서 가비지 컬렉션(GC) Jank가 유발되는 현상을 막기 위해 무거운 `JSONObject` 기반의 JSON 빌더 대신 코틀린 문자열 템플릿 기반의 Raw String 직렬화를 구성하고 불필요한 람다/ACK 객체 생성을 생략했습니다.
   - Active-Idle 품질 전환 및 화질 조정 상황에서 하드웨어 인코더 재기동으로 인해 동영상이 일시 정지(Freezing)되는 문제를 방지하고자, 해상도가 실질적으로 변화할 때만 `changeCaptureFormat`을 호출하고 그 외에는 `RtpSender`의 Bitrate/FPS만 가변 조절하도록 개선했습니다.
 
+### 2026-06-08 (Milestone 5: UI 고도화 및 연결 하드닝 세션)
+* **맥 뷰어 UI 프리미엄 글래스모피즘 고도화**
+  - CSS 변수를 고도화하여 더욱 맑고 투명한 블러 효과(`backdrop-filter: blur(28px)`), 미세 반사 테두리 테두리(`rgba(255, 255, 255, 0.06)`), 그리고 입체적인 섀도우를 연동했습니다.
+  - 배경 레이어에 부드럽게 일렁이며 교차하는 오라 그라디언트 구체(Aura Spheres) 2개를 추가하여 고급스러운 시각 효과를 극대화했습니다.
+  - 다양한 브라우저 해상도(4K, 1080p, 노트북 뷰포트)와 모바일 가로/세로 회전 비율에 대응하여 사이드바와 비디오 영역이 자동으로 조화롭게 배치되는 반응형 레이아웃을 고도화했습니다.
+* **네트워크 예외 자동 복원 및 지수 백오프 스케줄러**
+  - WebSocket 시그널링의 `onclose`/`onerror` 발생 상황을 감시하여 `1s -> 2s -> 4s -> 8s -> 최대 16s` 단위로 지연 시간을 지수적(Exponential)으로 늘리는 자동 재연결 제어기를 구현했습니다.
+  - WebRTC PeerConnection의 `oniceconnectionstatechange` 및 `onconnectionstatechange` 이벤트를 바인딩해 `failed`/`disconnected` 상황을 감지하면 즉시 시그널링 WebSocket부터 복원을 트리거하는 연결 예외 처리 파이프라인을 구축했습니다.
+* **브라우저 Page Visibility API 연동**
+  - 뷰어 탭이 백그라운드로 전향되었다가 사용자에 의해 포그라운드(Active)로 전면 복구될 때 발생하는 `visibilitychange` 이벤트를 포착하여, 유실된 연결이 있을 경우 백오프 대기 시간 없이 즉시 연결을 동기화 및 복구하도록 보완했습니다.
+* **리스너 소멸 및 메모리 누수 방지**
+  - 재연결 시 기존 socket 및 PeerConnection, DataChannel의 리스너 및 타임아웃 타이머들을 확실히 클리어(`null`)하고 인스턴스를 소멸한 뒤 신규 커넥션을 수립하도록 하드닝했습니다.
+* **테스트 러너 타임아웃 픽스**
+  - 1.5초 ACK 워치독 타이머 도입에 따른 `viewer-keyboard.test.mjs` 내 `FakeClock` 충돌을 시간 기반의 `tick(ms)` 시뮬레이션 방식으로 리팩토링하여 Node.js 텍스트 입력 테스트의 100% 정합성과 성공을 확보했습니다.
+
 ---
 
 ## 🔗 Related Documents

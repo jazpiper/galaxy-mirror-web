@@ -111,9 +111,19 @@ updated: 2026-06-08
 * AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속을 기술한 `GEMINI.md` 컨텍스트 가이드 루트 디렉토리에 추가 완료.
 * **성능 및 아키텍처 고도화 작업 완료**: Ktor 서버 및 WebRTC 세션의 포그라운드 서비스(`MediaProjectionService`) 이관, Android 14+ 화면 공유 승인 팝업 우회(Capturer/Track 캐싱), SDP Munging을 통한 H.264 하드웨어 가속 강제화, JSON ACK 직렬화 최적화(GC Jank 제거), Active-Idle 화질 가변 전환 시 화면 프리징 완벽 방지 작업을 구현 및 검증했습니다. 관련 분석은 [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md)에 상세히 문서화되어 있습니다.
 
-### 2. 다음 개발 단계 핵심 미션 (Milestone 5)
-1. **맥 뷰어 UI 고도화**: 프리미엄 글래스모피즘(Glassmorphism) 및 세련된 반응형 디자인 적용.
-2. **네트워크 예외 처리**: Tailscale 터널 전환 및 연결 끊김 감지 시 재연결 로직 세밀화.
+### 🏁 Milestone 5: UI 고도화 및 안정화 (Completed)
+- [x] **T5.1: 맥 뷰어 UI 프리미엄 고도화**
+  - [x] 은은한 그라디언트 구체(Aura Sphere) 배경 및 트랜지션 추가
+  - [x] 반응형 CSS 그리드/플렉스 보정 및 터치/호버 미크로 애니메이션 매핑
+- [x] **T5.2: 지수 백오프 기반 연결 하드닝 및 예외 복구**
+  - [x] WebSocket 및 PeerConnection 연결 단절 상태 감지 및 `1s -> 2s -> 4s -> 8s -> 16s` 지수 백오프 기반 자동 재연결 구현
+  - [x] Page Visibility API (`visibilitychange`) 연동을 통한 브라우저 탭 활성화 시 지연 없는 즉각 세션 동기화 및 복원 적용
+  - [x] 재연결 세션 갱신 시 기존 WebSocket/DataChannel/RTCPeerConnection의 비동기 리스너 정리(cleanup) 및 메모리 누수 방지
+
+### 2. 다음 개발 단계 핵심 미션 (Milestone 6)
+1. **양방향 클립보드 동기화**: 맥북 브라우저와 안드로이드 기기간 Primary Clip 양방향 동기화 및 Glow Toast 피드백.
+2. **물리 하드웨어 제어**: 볼륨 제어(Up/Down/Mute), 잠금 화면(GLOBAL_ACTION_LOCK_SCREEN) 기능 인젝션.
+3. **브라우저 스크린샷 & 화면 녹화**: HTML5 Canvas 이미지 캡처 다운로드 및 MediaRecorder API 기반 스트림 레코딩 다운로드.
 
 ### 3. 화면 켜짐/밝기 최소화 확인 포인트
 * 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.
