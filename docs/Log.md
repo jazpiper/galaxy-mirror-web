@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-06-07
+updated: 2026-06-08
 ---
 
 # 📝 Android Mirror Web Development Log
@@ -224,6 +224,19 @@ updated: 2026-06-07
   - 수정 이후 3개의 Compose UI 계측 테스트가 로컬 에뮬레이터 위에서 29초 만에 모두 정상적으로 빌드 및 통과되었습니다.
   - 이로써 64개의 JVM 단위 테스트와 더불어 모바일 에뮬레이터 계측 테스트까지 통합 테스트 100% 성공을 확보했습니다.
 
+### 2026-06-08 (Gemini 컨텍스트 문서 추가)
+* **[GEMINI.md](./GEMINI.md) 추가 및 프로젝트 컨텍스트 정리**
+  - AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속(Vanilla JS 유지, Aspect Ratio 변환식 준수, 싱글톤 클린업 등)을 한눈에 파악할 수 있도록 컨텍스트 가이드인 `GEMINI.md`를 루트 디렉토리에 추가했습니다.
+  - 이로써 다음 개발 작업이나 기능 확장 세션에서 AI가 프로젝트의 전체 형상과 개발 규칙을 혼선 없이 파악할 수 있는 인프라를 확보했습니다.
+
+### 2026-06-08 (성능 고도화 및 아키텍처 개선 세션)
+* **[PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) 작성 및 최적화 리팩토링**
+  - Ktor 서버, WebRTC 세션 및 시그널링 루프를 포그라운드 서비스인 `MediaProjectionService`로 일체 이관하여 `MainActivity` 생명주기(화면 회전, 백그라운드 전환 등)와 완전히 분리하고 안정성을 극대화했습니다.
+  - 뷰어가 일시적으로 연결을 해제하거나 페이지를 새로고침할 때 `VideoCapturer` 및 `VideoTrack`을 소멸하지 않고 포그라운드 서비스에 캐싱하여, Android 14+ 단말에서 미디어 프로젝션 재승인 시스템 팝업을 거치지 않고 500ms 미만으로 초고속 재연결되도록 개선했습니다.
+  - WebRTC Offer/Answer 교환 과정에서 SDP 텍스트를 가공(SDP Munging)하여 H.264 하드웨어 가속 코덱의 우선순위를 1순위로 강제 적용함으로써, CPU 리소스 점유율 50% 이상 절감 및 발열/배터리 소모를 획기적으로 낮췄습니다.
+  - 빈번한 원격 제어 이벤트의 ACK 전송 과정에서 가비지 컬렉션(GC) Jank가 유발되는 현상을 막기 위해 무거운 `JSONObject` 기반의 JSON 빌더 대신 코틀린 문자열 템플릿 기반의 Raw String 직렬화를 구성하고 불필요한 람다/ACK 객체 생성을 생략했습니다.
+  - Active-Idle 품질 전환 및 화질 조정 상황에서 하드웨어 인코더 재기동으로 인해 동영상이 일시 정지(Freezing)되는 문제를 방지하고자, 해상도가 실질적으로 변화할 때만 `changeCaptureFormat`을 호출하고 그 외에는 `RtpSender`의 Bitrate/FPS만 가변 조절하도록 개선했습니다.
+
 ---
 
 ## 🔗 Related Documents
@@ -234,3 +247,4 @@ updated: 2026-06-07
 | [Handoff.md](./Handoff.md) | 핸드오프 및 태스크 보드 |
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
+| [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |

@@ -1,8 +1,8 @@
 ---
 project: galaxy-mirror-web
 type: Dashboard
-related: [Log.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-05-26
+related: [Log.md, Handoff.md, Protocols.md, Coordinates.md, PerformanceOptimizationReport.md]
+updated: 2026-06-08
 ---
 
 # 🌌 Galaxy Mirror Web Dashboard
@@ -49,7 +49,7 @@ updated: 2026-05-26
   - [x] MediaProjection 기반 화면 캡처 모듈 개발
   - [x] Ktor WebSocket 기반 1:1 인라인 시그널링 구현
   - [x] WebRTC PeerConnection 비디오 스트리밍 연동
-- [x] **M4: 마우스 제어 및 제스처 주입 구현 (완료 - 검증 대기)**
+- [x] **M4: 마우스 제어 및 제스처 주입 구현 (완료)**
   - [x] Accessibility Service 기반 가상 터치 주입 구현
   - [x] WebRTC DataChannel 마우스 좌표 전송 프로토콜 수립
   - [x] 클라이언트 좌표 보정 알고리즘 실장
@@ -68,6 +68,7 @@ updated: 2026-05-26
 | [Handoff.md](./Handoff.md) | Handoff | `Active` | 현재 마일스톤의 활성 태스크 보드 및 인수인계 사항 |
 | [Protocols.md](./Protocols.md) | Specification | `Active` | 1:1 WebSocket 시그널링 및 WebRTC DataChannel 데이터 규격 |
 | [Coordinates.md](./Coordinates.md) | Specification | `Active` | 뷰포트 대비 디바이스 터치 좌표 변환 및 제스처 주입 공식 명세 |
+| [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | Report | `Active` | 라이프사이클 분리, Android 14+ 팝업 제거, H.264 하드웨어 가속, GC Jank 방지 분석 보고서 |
 
 ---
 
@@ -79,3 +80,4 @@ updated: 2026-05-26
 | [Handoff.md](./Handoff.md) | 핸드오프 및 태스크 보드 |
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
+| [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |

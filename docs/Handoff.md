@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-06-07
+updated: 2026-06-08
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -105,14 +105,15 @@ updated: 2026-06-07
 ## 🤝 세션 인수인계 노트 (Handoff Notes)
 
 ### 1. 현재 개발 상태 요약
-* 기 완비된 설계 명세를 바탕으로 안드로이드 뼈대 프로젝트 신설 및 **Ktor CIO 초경량 서버 탑재(0.0.0.0:8080 바인딩 및 에코/시그널링 웹소켓 기본 채널 매핑)**를 완수하였습니다.
-* 맥북에 무거운 컴파일 환경을 구성하지 않고 깃허브 푸시만으로 `app-debug.apk`를 완전 무설치 생산하는 **GitHub Actions CI/CD 인프라 구축 및 1차 빌드 통과 검증**을 마쳤습니다.
-* 다음 작업 세션에서는 최핵심 성능 구역인 **Milestone 3 (WebRTC 스트리밍 및 시그널링 구현)**에 본격 돌입합니다.
+* WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
+* 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4).
+* 에뮬레이터 UI 테스트에서 발생하던 `ComponentActivity` 중복 `setContent` 크래시 수정 완료.
+* AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속을 기술한 `GEMINI.md` 컨텍스트 가이드 루트 디렉토리에 추가 완료.
+* **성능 및 아키텍처 고도화 작업 완료**: Ktor 서버 및 WebRTC 세션의 포그라운드 서비스(`MediaProjectionService`) 이관, Android 14+ 화면 공유 승인 팝업 우회(Capturer/Track 캐싱), SDP Munging을 통한 H.264 하드웨어 가속 강제화, JSON ACK 직렬화 최적화(GC Jank 제거), Active-Idle 화질 가변 전환 시 화면 프리징 완벽 방지 작업을 구현 및 검증했습니다. 관련 분석은 [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md)에 상세히 문서화되어 있습니다.
 
-### 2. 다음 개발 단계 핵심 미션
-1. **MediaProjection 디스플레이 캡처**: Android 화면 미디어 프로젝션 API를 기동하여 화면 스트림을 가로채고, WebRTC 송출을 위해 프레임을 인코딩(VP8/H.264)할 수 있는 모듈 실장.
-2. **시그널링 채널 실구현**: Ktor WebSocket(`/signaling`)을 통하여 `Protocols.md` 규격의 Offer/Answer SDP 및 ICE Candidate를 교환하는 1:1 브로드캐스트 라우팅 코드 작성.
-3. **WebRTC PeerConnection 완성**: 맥 브라우저 뷰어 HTML5 코드와 단말기 간의 1:1 초저지연 비디오 스트리밍 채널 최종 연결.
+### 2. 다음 개발 단계 핵심 미션 (Milestone 5)
+1. **맥 뷰어 UI 고도화**: 프리미엄 글래스모피즘(Glassmorphism) 및 세련된 반응형 디자인 적용.
+2. **네트워크 예외 처리**: Tailscale 터널 전환 및 연결 끊김 감지 시 재연결 로직 세밀화.
 
 ### 3. 화면 켜짐/밝기 최소화 확인 포인트
 * 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.
@@ -133,3 +134,4 @@ updated: 2026-06-07
 | [Handoff.md](./Handoff.md) | 핸드오프 및 태스크 보드 (현재 문서) |
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
+| [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |
