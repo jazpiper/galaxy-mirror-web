@@ -14,7 +14,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.json.JSONObject
 
-class GalaxyMirrorAccessibilityService : AccessibilityService() {
+class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApplier {
 
     companion object {
         var instance: GalaxyMirrorAccessibilityService? = null
@@ -158,9 +158,9 @@ class GalaxyMirrorAccessibilityService : AccessibilityService() {
      *   { "type": "text", "action": "commit", "text": "hello" }
      *   { "type": "text", "action": "deleteBackward", "count": 1 }
      */
-    fun handleControlEvent(
+    override fun handleControlEvent(
         json: JSONObject,
-        resultCallback: (ControlEventResult) -> Unit = {},
+        resultCallback: (ControlEventResult) -> Unit,
     ) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post { handleControlEvent(json, resultCallback) }

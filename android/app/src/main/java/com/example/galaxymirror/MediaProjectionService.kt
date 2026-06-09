@@ -54,6 +54,11 @@ class MediaProjectionService : Service() {
     private val binder = LocalBinder()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val controlEventDispatcher =
+        ControlEventDispatcher(
+            serviceProvider = { GalaxyMirrorAccessibilityService.instance },
+            onViewerActivity = { markViewerActivity() },
+        )
 
     companion object {
         private const val CHANNEL_ID = "GalaxyMirrorCaptureChannel"
@@ -977,43 +982,8 @@ class MediaProjectionService : Service() {
                                     buffer.data.get(bytes)
                                     val text = String(bytes, Charsets.UTF_8)
                                     Log.d("WebRTC", "DataChannel message: $text")
-                                    val json = org.json.JSONObject(text)
-                                    if (ControlEventValidator.isValid(json)) {
-                                        markViewerActivity()
-                                        val service = GalaxyMirrorAccessibilityService.instance
-                                        if (service == null) {
-                                            Log.w("WebRTC", "AccessibilityService not connected yet!")
-                                            sendControlAck(
-                                                dc,
-                                                ControlEventResult(
-                                                    seq = json.controlSeq(),
-                                                    type = json.optString("type", "unknown"),
-                                                    applied = false,
-                                                    message = "ACCESSIBILITY_SERVICE_NOT_READY",
-                                                ),
-                                            )
-                                        } else {
-                                            val seq = json.controlSeq()
-                                            if (seq == null) {
-                                                // Optimization: Process directly without lambda allocation if no seq exists (no ACK required)
-                                                service.handleControlEvent(json)
-                                            } else {
-                                                service.handleControlEvent(json) { result ->
-                                                    sendControlAck(dc, result)
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        Log.w("WebRTC", "Rejected invalid control event: $text")
-                                        sendControlAck(
-                                            dc,
-                                            ControlEventResult(
-                                                seq = json.controlSeq(),
-                                                type = json.optString("type", "unknown"),
-                                                applied = false,
-                                                message = "CONTROL_EVENT_REJECTED",
-                                            ),
-                                        )
+                                    controlEventDispatcher.dispatch(text) { result ->
+                                        sendControlAck(dc, result)
                                     }
                                 } catch (e: Exception) {
                                     Log.e("WebRTC", "Error processing DataChannel message: ${e.message}", e)
