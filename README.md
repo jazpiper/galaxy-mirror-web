@@ -1,6 +1,6 @@
 # Android Mirror Web: Tailscale & MagicDNS 기반 무설치 미러링 시스템
 
-본 프로젝트는 맥북에 추가적인 프로그램 설치를 하지 않고(무설치), Tailscale MagicDNS와 WebRTC를 통해 **Android 스마트폰의 화면을 실시간 미러링하고 맥북의 마우스/키보드로 원격 제어**하기 위한 개인화 솔루션입니다.
+본 프로젝트는 맥북에 추가적인 프로그램 설치를 하지 않고(무설치), 기본적으로 Tailscale MagicDNS와 WebRTC를 통해 **Android 스마트폰의 화면을 실시간 미러링하고 맥북의 마우스/키보드로 원격 제어**하기 위한 개인화 솔루션입니다. 같은 Mac에 USB로 직접 연결한 경우에는 ADB port forwarding 기반 USB 모드로 localhost 접속도 지원합니다.
 
 ---
 
@@ -92,7 +92,30 @@ sequenceDiagram
    * Android 단말기 설정에서 Android Mirror의 **접근성 서비스(Accessibility Service)** 권한을 활성화합니다.
 2. **미러링 개시:**
    * Android Mirror 앱에서 미러링 서버를 켭니다 (포트 `8080`).
-   * 맥북 브라우저를 열고 Android Mirror 앱 메인 화면에 표시되는 token 포함 주소(예: `http://pixel-phone:8080/?token=...`)로 접속합니다.
+   * Tailscale/MagicDNS 또는 USB 직접 연결 중 현재 네트워크 상황에 맞는 접속 주소를 선택합니다.
    * 브라우저에 Android 화면이 실시간으로 송출되며, 마우스로 클릭 및 드래그 제어를 시작합니다.
    * 데이터 사용량이 부담되면 Mac Viewer의 스트림 화질 버튼에서 `표준` 또는 `저데이터`를 선택합니다.
    * 브라우저 연결을 끊었다가 다시 연결하면 Android 14+의 화면 공유 token 재사용 제한 때문에 화면 공유 승인을 다시 요청할 수 있습니다.
+
+### Tailscale / MagicDNS 연결
+
+맥북 브라우저를 열고 Android Mirror 앱 메인 화면에 표시되는 Tailscale URL
+(예: `http://pixel-phone:8080/?token=<token>&transport=tailscale`)로 접속합니다.
+Tailscale 모드는 `/signaling` WebSocket과 WebRTC 비디오 스트림, `control`
+DataChannel을 사용합니다. HTTP 자체는 Tailscale WireGuard 터널 안에서 흐르는 것을
+전제로 하며, URL의 viewer token은 같은 Tailnet 안의 오조작을 줄이는 추가
+안전장치입니다.
+
+### USB 직접 연결
+
+Tailscale 연결이 불안정하거나 같은 Mac에 USB로 직접 연결한 상태라면 ADB port forwarding으로
+Android 내장 서버를 Mac localhost에 노출할 수 있습니다.
+
+```bash
+adb forward --remove tcp:8080 || true
+adb forward tcp:8080 tcp:8080
+```
+
+그 뒤 Mac 브라우저에서 Android 앱 화면의 USB URL
+`http://127.0.0.1:8080/?token=<token>&transport=usb`로 접속합니다.
+USB 모드는 `/usb/session` WebSocket을 통해 JPEG 화면 frame과 원격 입력 JSON을 전송합니다.

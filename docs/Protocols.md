@@ -2,12 +2,12 @@
 project: galaxy-mirror-web
 type: Specification
 related: [Dashboard.md, Coordinates.md, Handoff.md]
-updated: 2026-06-08
+updated: 2026-06-09
 ---
 
 # 🔌 Android Mirror Web: 시그널링 & 제어 입력 프로토콜 상세 명세서
 
-본 문서는 맥북 브라우저 클라이언트와 Android Host가 WebRTC 연결을 초기 수립(Signaling)하고, 수립된 연결을 통해 실시간 마우스/키보드 원격 제어 이벤트를 송수신(DataChannel Control)하기 위한 JSON 통신 프로토콜 상세 명세입니다.
+본 문서는 맥북 브라우저 클라이언트와 Android Host가 Tailscale/WebRTC 또는 USB/JPEG transport로 화면 스트림과 원격 제어 이벤트를 송수신하기 위한 통신 프로토콜 상세 명세입니다.
 
 ---
 
@@ -226,11 +226,99 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 
 ---
 
-## 3. Android 앱 바로가기 HTTP API
+## 3. USB 직접 연결 모드 (ADB Port Forward + JPEG WebSocket)
+
+USB 연결은 같은 Mac에 Android 단말을 USB로 연결한 뒤 ADB port forwarding으로 Android
+내장 서버를 Mac localhost에 노출하는 모드입니다. Tailscale 연결이 불안정하거나 같은
+책상 위에서 지연을 줄이고 싶을 때 사용할 수 있습니다.
+
+```bash
+adb forward --remove tcp:8080 || true
+adb forward tcp:8080 tcp:8080
+```
+
+Mac Viewer URL은 `http://127.0.0.1:8080/?token=<token>&transport=usb`입니다.
+브라우저는 정적 viewer 로드 후 `ws://127.0.0.1:8080/usb/session?token=<token>`
+WebSocket을 열고, Android Host는 같은 소켓으로 JSON text frame과 JPEG binary frame을
+주고받습니다. `/usb/session`도 viewer 접근 토큰이 필요합니다.
+
+### 3.1 Android -> Browser text frame (`USB_STATUS`)
+
+Android Host는 USB 세션 상태와 현재 capture/accessibility 준비 상태를 `USB_STATUS`
+text frame으로 보냅니다.
+
+```json
+{
+  "type": "USB_STATUS",
+  "payload": {
+    "transport": "usb",
+    "captureReady": true,
+    "accessibilityReady": true,
+    "streamQuality": {
+      "selectedMode": "AUTO",
+      "selectedLabel": "자동",
+      "effectiveMode": "STANDARD",
+      "effectiveLabel": "표준",
+      "width": 720,
+      "height": 1600,
+      "fps": 10,
+      "jpegQuality": 70
+    },
+    "message": "USB_STREAMING"
+  }
+}
+```
+
+### 3.2 Android -> Browser binary frame
+
+각 binary frame은 독립 JPEG 이미지입니다. Browser는 수신한 binary payload를 Blob으로
+만들어 새 Object URL을 생성하고 `#usbFrame` 이미지에 표시합니다. 이전 frame Object
+URL이 있으면 다음 frame을 표시하기 전에 `URL.revokeObjectURL(...)`로 해제합니다.
+
+### 3.3 Browser -> Android text frame
+
+USB 제어 입력은 WebRTC `control` DataChannel과 같은 JSON shape을 사용합니다.
+브라우저는 같은 `/usb/session` WebSocket에 text frame으로 전송합니다.
+
+```json
+{
+  "type": "tap",
+  "x": 0.5,
+  "y": 0.25,
+  "seq": 42
+}
+```
+
+Android Host는 처리 결과를 기존 `CONTROL_ACK` JSON과 같은 shape의 text frame으로
+반환합니다.
+
+```json
+{
+  "type": "CONTROL_ACK",
+  "payload": {
+    "seq": 42,
+    "eventType": "tap",
+    "applied": true,
+    "message": "GESTURE_DISPATCH_REQUESTED"
+  }
+}
+```
+
+### 3.4 Transport 전환 정책
+
+Tailscale/WebRTC와 USB/JPEG는 동시에 활성화하지 않습니다. 새 transport 세션이
+시작되면 기존 transport의 영상 capture와 control channel을 정리하고, stale callback은
+현재 session id/transport와 일치할 때만 상태를 갱신합니다. 세션 교체나 transport 전환 뒤
+Android 14+ MediaProjection single-use 제약에 따라 화면 공유 권한 재승인이 필요할 수
+있습니다.
+
+---
+
+## 4. Android 앱 바로가기 HTTP API
 
 자주 쓰는 앱 관리는 Android Host 앱에서만 수행하고, Mac 뷰어는 저장된 바로가기 목록을 조회하거나 실행 요청만 보냅니다. 모든 요청은 viewer 접근 토큰이 필요합니다.
 
-### 3.1 즐겨찾기 앱 목록 조회 (`GET /apps/favorites`)
+### 4.1 즐겨찾기 앱 목록 조회 (`GET /apps/favorites`)
 
 * **응답 예시:**
 ```json
@@ -244,7 +332,7 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 }
 ```
 
-### 3.2 즐겨찾기 앱 실행 (`POST /apps/launch`)
+### 4.2 즐겨찾기 앱 실행 (`POST /apps/launch`)
 
 * **요청 예시:**
 ```json
@@ -264,7 +352,7 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 
 ---
 
-## 4. WebRTC 스트림 화질 HTTP API
+## 5. WebRTC 스트림 화질 HTTP API
 
 스트림 화질은 Android Host가 저장한 선택 모드와 현재 네트워크 종류를 조합해 결정합니다. 기본 선택값은 `AUTO`이며, `AUTO`는 Wi-Fi 또는 Ethernet에서 `HIGH`, 4G/5G 등 cellular 네트워크와 기타 네트워크에서 `STANDARD`로 해석됩니다. `DATA_SAVER`, `STANDARD`, `HIGH`를 직접 선택하면 네트워크 종류와 무관하게 해당 프로필을 사용합니다. 모든 요청은 viewer 접근 토큰이 필요합니다.
 
@@ -274,7 +362,7 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 | `STANDARD` | `720x1600 @ 15fps` | `1200000bps` | 4G/5G 기본값 |
 | `HIGH` | `1080x2400 @ 30fps` | `3000000bps` | Wi-Fi 기본값 |
 
-### 4.1 현재 화질 조회 (`GET /stream/quality`)
+### 5.1 현재 화질 조회 (`GET /stream/quality`)
 
 * **응답 예시:**
 ```json
@@ -293,7 +381,7 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 }
 ```
 
-### 4.2 화질 선택 변경 (`POST /stream/quality`)
+### 5.2 화질 선택 변경 (`POST /stream/quality`)
 
 * **요청 예시:**
 ```json
@@ -308,19 +396,20 @@ Android Host는 WebRTC 세션 시작 시 선택된 프로필의 해상도/FPS로
 
 ---
 
-## 5. MediaProjection 재연결 정책
+## 6. MediaProjection 재연결 정책
 
 Android 14+ 계열에서는 화면 공유 승인 결과 Intent를 같은 projection 세션 재생성에 재사용할
 수 없습니다. Galaxy Mirror는 보수적인 개인정보 보호 정책을 따릅니다. viewer WebSocket이
-닫히거나 새 viewer 세션이 기존 세션을 교체하면 Android Host는 WebRTC peer connection,
-DataChannel, ScreenCapturerAndroid, VideoSource/VideoTrack, EGL/PeerConnectionFactory, 저장된
-projection Intent를 정리합니다.
+닫히거나 새 viewer 세션이 기존 세션을 교체하면 Android Host는 현재 transport에 맞춰
+WebRTC peer connection/DataChannel 또는 USB JPEG streamer, ScreenCapturerAndroid,
+VideoSource/VideoTrack, EGL/PeerConnectionFactory, 저장된 projection Intent를 정리합니다.
 
-이후 새 Offer가 들어오면 Android Host는 `WAITING_FOR_SCREEN_CAPTURE` 상태를 보내고,
-바인딩된 `MainActivity`에 화면 공유 권한 요청을 트리거합니다. Android 사용자가 화면 공유를
-승인하면 pending offer를 재개하고 새 projection token으로 WebRTC 협상을 시작합니다. 화면
-잠금, 화면 꺼짐, 시스템 projection 중단, `startCapture()` 실패는 모두
-`SCREEN_CAPTURE_REAUTH_REQUIRED` 상태로 귀결되며, 기존 capturer는 재사용하지 않습니다.
+이후 새 WebRTC Offer가 들어오거나 USB session이 시작되면 Android Host는
+`WAITING_FOR_SCREEN_CAPTURE` 또는 transport별 상태를 보내고, 바인딩된 `MainActivity`에
+화면 공유 권한 요청을 트리거합니다. Android 사용자가 화면 공유를 승인하면 새 projection
+token으로 선택된 transport의 capture pipeline을 시작합니다. 화면 잠금, 화면 꺼짐, 시스템
+projection 중단, `startCapture()` 실패는 모두 `SCREEN_CAPTURE_REAUTH_REQUIRED` 상태로
+귀결되며, 기존 capturer나 USB streamer는 재사용하지 않습니다.
 
 ---
 

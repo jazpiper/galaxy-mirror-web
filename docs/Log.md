@@ -2,12 +2,21 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-06-08
+updated: 2026-06-09
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-06-09
+
+- Tailscale/WebRTC 기존 경로와 별도로 USB/ADB 직접 연결 모드 구현 계획을 반영했다.
+- Android UI에는 token, Tailscale URL, ADB port forwarding 명령, USB URL을 함께 표시하고, Mac Viewer는 transport selector로 Tailscale/USB 경로를 선택한다.
+- USB 모드는 `adb forward tcp:8080 tcp:8080` 후 `/usb/session` WebSocket에서 JPEG binary frame과 control JSON text frame을 교환한다.
+- 두 transport는 동시에 활성화하지 않고, 전환 시 기존 capture/session을 정리한 뒤 MediaProjection 재승인을 받는 정책으로 정리했다.
 
 ---
 

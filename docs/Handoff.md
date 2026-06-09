@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-06-08
+updated: 2026-06-09
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -78,6 +78,11 @@ updated: 2026-06-08
   - [x] Mac Viewer 상태 패널 아래에 WebRTC 업로드/다운로드 누적 사용량을 MB 단위로 표시
   - [x] `Protocols.md`에 keep-awake 토글, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 밝기 최소화 권한 조건 문서화
   - [x] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
+- [ ] **T3.7: Tailscale/USB dual transport 연결 모델**
+  - [x] Tailscale/WebRTC와 USB/JPEG transport 선택 모델 정의
+  - [x] USB `/usb/session` WebSocket 기반 JPEG frame 및 control event 경로 구현
+  - [ ] 실제 Galaxy 단말에서 USB `adb forward` smoke test
+  - [ ] Tailscale/WebRTC와 USB 전환 반복 smoke test
 
 ### 🚀 Milestone 4: 2차 전체 코드 리뷰 및 시스템 안정성 하드닝 (Completed)
 - [x] **T4.1: WebRTC 라이프사이클 누수 및 크래시 제거**
@@ -106,6 +111,7 @@ updated: 2026-06-08
 
 ### 1. 현재 개발 상태 요약
 * WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
+* Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고, USB/JPEG session 문서화를 반영했습니다. 실제 Galaxy 단말 USB smoke test와 transport 전환 반복 검증은 아직 남아 있습니다.
 * 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4).
 * 에뮬레이터 UI 테스트에서 발생하던 `ComponentActivity` 중복 `setContent` 크래시 수정 완료.
 * AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속을 기술한 `GEMINI.md` 컨텍스트 가이드 루트 디렉토리에 추가 완료.
