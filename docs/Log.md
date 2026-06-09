@@ -17,6 +17,7 @@ updated: 2026-06-09
 - Android UI에는 token, Tailscale URL, ADB port forwarding 명령, USB URL을 함께 표시하고, Mac Viewer는 transport selector로 Tailscale/USB 경로를 선택한다.
 - USB 모드는 `adb forward tcp:8080 tcp:8080` 후 `/usb/session` WebSocket에서 JPEG binary frame과 control JSON text frame을 교환한다.
 - 두 transport는 동시에 활성화하지 않고, 전환 시 기존 capture/session을 정리한 뒤 MediaProjection 재승인을 받는 정책으로 정리했다.
+- `node --check`, Mac Viewer JS 테스트, `app:testDebugUnitTest`, `assembleDebug`, `app:lintDebug`는 통과했고 debug APK는 생성됐다. 다만 `adb devices -l`과 Mac USB 장치 확인에서 Galaxy/Android 장치가 잡히지 않아 APK 재설치/실행 및 USB/Tailscale 실기기 smoke test는 보류했다.
 
 ---
 

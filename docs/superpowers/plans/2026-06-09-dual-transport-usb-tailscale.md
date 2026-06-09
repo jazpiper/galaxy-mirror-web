@@ -1707,7 +1707,7 @@ git commit -m "docs: Tailscale USB 연결 모드 문서화"
 - No source files created in this task.
 - Uses: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-- [ ] **Step 1: Run JS verification**
+- [x] **Step 1: Run JS verification**
 
 Run:
 
@@ -1718,7 +1718,10 @@ node --test android/app/src/test/js/viewer-keyboard.test.mjs
 
 Expected: PASS.
 
-- [ ] **Step 2: Run Android unit tests and debug build**
+Result 2026-06-09: PASS. `node --check android/app/src/main/resources/files/viewer.js`
+and `node --test android/app/src/test/js/viewer-keyboard.test.mjs` completed with exit 0.
+
+- [x] **Step 2: Run Android unit tests and debug build**
 
 Run:
 
@@ -1728,6 +1731,10 @@ cd android
 ```
 
 Expected: PASS and BUILD SUCCESSFUL.
+
+Result 2026-06-09: PASS. `./gradlew app:testDebugUnitTest assembleDebug app:lintDebug --no-daemon`
+completed with `BUILD SUCCESSFUL`, and `android/app/build/outputs/apk/debug/app-debug.apk`
+was generated.
 
 - [ ] **Step 3: Install and launch on Galaxy device**
 
@@ -1744,6 +1751,11 @@ Expected:
 - `adb devices -l` shows the Galaxy device as `device`, not `offline` or `unauthorized`.
 - `adb install -r` prints `Success`.
 - Android Mirror launches and shows Tailscale URL, USB command, USB URL, and token.
+
+Result 2026-06-09: BLOCKED. `adb devices -l` printed only the header,
+`adb get-state` returned `error: no devices/emulators found`, and
+`system_profiler SPUSBDataType | rg -i -C 3 "Samsung|Galaxy|Android|ADB|MTP"`
+found no matching USB device entry on the Mac.
 
 - [ ] **Step 4: Verify USB server reachability**
 

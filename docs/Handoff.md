@@ -111,7 +111,7 @@ updated: 2026-06-09
 
 ### 1. 현재 개발 상태 요약
 * WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
-* Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고, USB/JPEG session 문서화를 반영했습니다. 실제 Galaxy 단말 USB smoke test와 transport 전환 반복 검증은 아직 남아 있습니다.
+* Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고, USB/JPEG session 문서화를 반영했습니다. 로컬 JS 테스트, Android 단위 테스트, debug APK 빌드, lint 검증은 통과했습니다. 현재 Mac에서 ADB/USB 장치가 감지되지 않아 APK 재설치/실행, 실제 Galaxy 단말 USB smoke test, transport 전환 반복 검증은 아직 남아 있습니다.
 * 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4).
 * 에뮬레이터 UI 테스트에서 발생하던 `ComponentActivity` 중복 `setContent` 크래시 수정 완료.
 * AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속을 기술한 `GEMINI.md` 컨텍스트 가이드 루트 디렉토리에 추가 완료.
