@@ -21,6 +21,20 @@ class MirrorSessionStateTest {
     }
 
     @Test
+    fun beginUsbSessionRecordsTransportAndClearsPendingOffer() {
+        val state =
+            MirrorSessionState()
+                .beginSession(1, MirrorTransport.TAILSCALE_WEBRTC)
+                .queueOffer(1)
+                .beginSession(2, MirrorTransport.USB_JPEG)
+
+        assertEquals(2, state.activeSessionId)
+        assertEquals(MirrorTransport.USB_JPEG, state.activeTransport)
+        assertFalse(state.hasPendingOffer)
+        assertFalse(state.requiresScreenCaptureReauthorization)
+    }
+
+    @Test
     fun endActiveSessionClearsSessionState() {
         val state =
             MirrorSessionState()
@@ -33,6 +47,17 @@ class MirrorSessionStateTest {
     }
 
     @Test
+    fun endingUsbSessionClearsTransport() {
+        val state =
+            MirrorSessionState()
+                .beginSession(9, MirrorTransport.USB_JPEG)
+                .endSession(9)
+
+        assertEquals(0, state.activeSessionId)
+        assertNull(state.activeTransport)
+    }
+
+    @Test
     fun endingInactiveSessionDoesNotClearActiveSession() {
         val state =
             MirrorSessionState()
@@ -40,6 +65,15 @@ class MirrorSessionStateTest {
                 .endSession(6)
 
         assertEquals(7, state.activeSessionId)
+    }
+
+    @Test
+    fun activeCheckCanRequireTransportMatch() {
+        val state = MirrorSessionState().beginSession(5, MirrorTransport.USB_JPEG)
+
+        assertTrue(state.isActive(5, MirrorTransport.USB_JPEG))
+        assertFalse(state.isActive(5, MirrorTransport.TAILSCALE_WEBRTC))
+        assertFalse(state.isActive(4, MirrorTransport.USB_JPEG))
     }
 
     @Test
