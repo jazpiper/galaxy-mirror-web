@@ -129,6 +129,7 @@
         }
 
         .status-container,
+        .transport-container,
         .shortcut-container,
         .quality-container,
         .usage-container {
@@ -240,6 +241,30 @@
             box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
         }
 
+        .transport-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .transport-btn {
+            min-height: 38px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .transport-btn.active {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: rgba(56, 189, 248, 0.4);
+            color: #e0f2fe;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+        }
+
         .status-item {
             display: flex;
             justify-content: space-between;
@@ -321,6 +346,21 @@
             object-fit: contain;
             pointer-events: auto;
             cursor: default;
+        }
+
+        #remoteVideo.hidden {
+            display: none;
+        }
+
+        #usbFrame {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        #usbFrame.hidden {
+            display: none;
         }
 
         #keyboardSink {
@@ -665,6 +705,14 @@
                     Android 화면 공유를 승인한 뒤 연결하세요. 화면이 잠기거나 꺼지면 미러링이 중단될 수 있습니다.
                 </div>
 
+                <div class="transport-container">
+                    <div class="section-title">Connection</div>
+                    <div class="transport-actions" role="group" aria-label="Connection transport">
+                        <button id="transportTailscaleBtn" class="transport-btn" type="button">Tailscale</button>
+                        <button id="transportUsbBtn" class="transport-btn" type="button">USB</button>
+                    </div>
+                </div>
+
                 <div class="quality-container">
                     <div class="section-title">스트림 화질</div>
                     <div class="status-item">
@@ -719,6 +767,7 @@
             <div id="mirrorStage">
                 <div id="videoContainer">
                     <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
+                    <img id="usbFrame" class="hidden" alt="USB mirrored Android screen">
                     <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 
                     <!-- 플로팅 캡처 컨트롤 -->

@@ -12,6 +12,9 @@ const statusDetail = document.getElementById('statusDetail');
 const logBox = document.getElementById('logBox');
 const uploadUsage = document.getElementById('uploadUsage');
 const downloadUsage = document.getElementById('downloadUsage');
+const usbFrame = document.getElementById('usbFrame');
+const transportTailscaleBtn = document.getElementById('transportTailscaleBtn');
+const transportUsbBtn = document.getElementById('transportUsbBtn');
 const qualityMode = document.getElementById('qualityMode');
 const qualityEffective = document.getElementById('qualityEffective');
 const qualityNetwork = document.getElementById('qualityNetwork');
@@ -24,6 +27,7 @@ const navHomeBtn = document.getElementById('navHomeBtn');
 const navBackBtn = document.getElementById('navBackBtn');
 
 let socket = null;
+let usbSocket = null;
 let peerConnection = null;
 let dataChannel = null;
 let remoteDescriptionSet = false;
@@ -40,6 +44,8 @@ let nextTextSeq = 1;
 let inFlightTextSeq = null;
 let queuedTextPayloads = [];
 let ackTimeoutId = null;
+let selectedTransport = initialTransport();
+let lastUsbFrameUrl = null;
 
 // Reconnection States
 let shouldAutoReconnect = true;
@@ -60,6 +66,15 @@ remoteVideo.addEventListener('loadedmetadata', updateVideoAspectRatio);
 remoteVideo.addEventListener('resize', updateVideoAspectRatio);
 
 const viewerAccessToken = new URLSearchParams(window.location.search).get('token') || '';
+
+function initialTransport() {
+    const params = new URLSearchParams(window.location.search);
+    const requested = (params.get('transport') || '').toLowerCase();
+    if (requested === 'usb' || requested === 'tailscale') return requested;
+
+    const localHosts = ['127.0.0.1', 'localhost', '::1', '[::1]'];
+    return localHosts.includes(window.location.hostname) ? 'usb' : 'tailscale';
+}
 
 const streamQualityButtons = [
     { mode: 'AUTO', element: qualityAutoBtn },
@@ -259,6 +274,41 @@ function renderStreamQualityStatus(payload = {}) {
     });
 }
 
+function renderTransportSelection() {
+    transportTailscaleBtn?.classList.toggle('active', selectedTransport === 'tailscale');
+    transportUsbBtn?.classList.toggle('active', selectedTransport === 'usb');
+    remoteVideo?.classList.toggle('hidden', selectedTransport === 'usb');
+    usbFrame?.classList.toggle('hidden', selectedTransport !== 'usb');
+}
+
+function setTransport(transport) {
+    if (transport !== 'tailscale' && transport !== 'usb') return;
+    if (selectedTransport === transport) return;
+
+    selectedTransport = transport;
+    statusDetailMessage = "";
+    reconnectAttempts = 0;
+    isReconnecting = false;
+    reconnectCloseInProgress = false;
+    if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = null;
+    }
+    hideReconnectOverlay();
+    disconnectCurrentTransport();
+    renderTransportSelection();
+    showStatusDetail(
+        transport === 'usb'
+            ? 'USB 모드는 adb forward 후 127.0.0.1 주소에서 연결합니다.'
+            : 'Tailscale 모드는 Android MagicDNS 주소에서 WebRTC로 연결합니다.'
+    );
+}
+
+function setupTransportControls() {
+    transportTailscaleBtn?.addEventListener('click', () => setTransport('tailscale'));
+    transportUsbBtn?.addEventListener('click', () => setTransport('usb'));
+}
+
 async function loadStreamQualityStatus() {
     try {
         const response = await fetch('/stream/quality', {
@@ -293,6 +343,20 @@ async function setStreamQualityMode(mode) {
 }
 
 function sendControlPayload(payload) {
+    if (selectedTransport === 'usb') {
+        if (!usbSocket || usbSocket.readyState !== WebSocket.OPEN) {
+            log('USB 제어 채널이 아직 열리지 않았습니다.');
+            return false;
+        }
+        try {
+            usbSocket.send(JSON.stringify(payload));
+            return true;
+        } catch (e) {
+            log(`USB 제어 채널 전송 중 예외 발생: ${e.message}`);
+            return false;
+        }
+    }
+
     if (!dataChannel || dataChannel.readyState !== 'open') {
         log("제어 채널이 아직 열리지 않았습니다.");
         return false;
@@ -391,14 +455,9 @@ function connectSignaling() {
     log(`Signaling WebSocket 연결 시도 중: ${wsUrl}`);
 
     // Clean up socket and PeerConnection to prevent resource leaks
-    if (socket) {
-        socket.onopen = null;
-        socket.onclose = null;
-        socket.onerror = null;
-        socket.onmessage = null;
-        socket.close();
-        socket = null;
-    }
+    closeUsbSocket();
+    clearUsbFrame();
+    closeSignalingSocket();
     cleanupPeerConnection();
 
     const signalingSocket = new WebSocket(wsUrl);
@@ -496,6 +555,128 @@ function connectSignaling() {
             log(`메시지 파싱 실패: ${e.message}`);
         }
     };
+}
+
+function connectMirror() {
+    if (selectedTransport === 'usb') {
+        connectUsbSession();
+        return;
+    }
+
+    connectSignaling();
+}
+
+function usbSessionUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const tokenQuery = viewerAccessToken ? `?token=${encodeURIComponent(viewerAccessToken)}` : '';
+    return `${protocol}//${window.location.host}/usb/session${tokenQuery}`;
+}
+
+function connectUsbSession() {
+    disconnectCurrentTransport();
+    resetTextControlState();
+    resetDataUsageStats();
+    hideReconnectOverlay();
+
+    const wsUrl = usbSessionUrl();
+    log(`USB session 연결 시도 중: ${wsUrl}`);
+
+    const sessionSocket = new WebSocket(wsUrl);
+    sessionSocket.binaryType = 'blob';
+    usbSocket = sessionSocket;
+
+    sessionSocket.onopen = () => {
+        if (usbSocket !== sessionSocket) return;
+        wsIndicator.classList.add('online');
+        wsStatus.innerHTML = `<span class="indicator online" id="wsIndicator"></span>Online`;
+        rtcStatus.innerText = 'USB 스트림 대기';
+        controlStatus.innerText = 'USB';
+        setupTouchControl();
+        setupKeyControl();
+        showStatusDetail('USB 연결이 열렸습니다. Android 화면 공유 승인을 기다립니다.');
+    };
+
+    sessionSocket.onmessage = (event) => {
+        if (usbSocket !== sessionSocket) return;
+        if (typeof event.data === 'string') {
+            handleUsbTextMessage(event.data);
+            return;
+        }
+        renderUsbFrame(event.data);
+    };
+
+    sessionSocket.onclose = (event) => {
+        if (usbSocket !== sessionSocket) return;
+        log(`USB session 연결이 종료되었습니다. Code: ${event.code}, Reason: ${event.reason || '없음'}`);
+        usbSocket = null;
+        wsIndicator.classList.remove('online');
+        wsStatus.innerHTML = `<span class="indicator" id="wsIndicator"></span>Offline`;
+        rtcStatus.innerText = 'USB 연결 종료';
+        controlStatus.innerText = '비활성';
+        accessibilityStatus.innerText = '확인 중';
+        accessibilityReady = false;
+        resetTextControlState();
+        clearUsbFrame();
+        showStatusDetail('USB 연결이 종료되었습니다. 다시 연결하려면 미러링 연결하기를 누르세요.');
+    };
+
+    sessionSocket.onerror = () => {
+        if (usbSocket !== sessionSocket) return;
+        log('USB session WebSocket 에러 발생');
+        showStatusDetail('USB 연결 오류가 발생했습니다. adb forward 상태를 확인하세요.', 'warning');
+    };
+}
+
+function handleUsbTextMessage(text) {
+    try {
+        const message = JSON.parse(text);
+        if (message.type === 'USB_STATUS') {
+            const payload = message.payload || {};
+
+            if (typeof payload.captureReady === 'boolean') {
+                rtcStatus.innerText = payload.captureReady ? 'USB 캡처 준비' : '화면 공유 대기';
+            }
+            if (typeof payload.accessibilityReady === 'boolean') {
+                accessibilityReady = payload.accessibilityReady;
+                accessibilityStatus.innerText = accessibilityReady ? '활성화' : '권한 필요';
+            }
+            if (payload.streamQuality) {
+                renderStreamQualityStatus(payload.streamQuality);
+            }
+
+            if (payload.message === 'USB_STREAMING') {
+                rtcStatus.innerText = 'USB 스트리밍';
+                showStatusDetail('USB 화면 전송 중입니다.', 'success');
+            } else if (payload.message === 'WAITING_FOR_SCREEN_CAPTURE') {
+                rtcStatus.innerText = '화면 공유 대기';
+                clearUsbFrame();
+                enterScreenCaptureApprovalWait('Android 기기에서 화면 공유 권한을 승인하면 USB 미러링이 시작됩니다.');
+            } else if (payload.message) {
+                showStatusDetail(`USB 상태: ${payload.message}`);
+            }
+            return;
+        }
+
+        if (message.type === 'CONTROL_ACK') {
+            handleControlAck(message.payload || {});
+        }
+    } catch (error) {
+        log(`USB 메시지 처리 실패: ${error.message}`);
+    }
+}
+
+function renderUsbFrame(blob) {
+    if (!usbFrame || selectedTransport !== 'usb') return;
+    if (lastUsbFrameUrl) {
+        URL.revokeObjectURL(lastUsbFrameUrl);
+    }
+    lastUsbFrameUrl = URL.createObjectURL(blob);
+    usbFrame.src = lastUsbFrameUrl;
+    usbFrame.classList.remove('hidden');
+    remoteVideo?.classList.add('hidden');
+    rtcStatus.innerText = 'USB 스트리밍';
+    accumulatedNetworkBytes.received += blob?.size || 0;
+    updateDataUsageDisplay();
 }
 
 function handleStatusMessage(payload) {
@@ -845,14 +1026,15 @@ function setupDataChannelHandlers(channel) {
  * Convert a mouse event into normalized {x, y} coordinates (0.0–1.0)
  * that account for letterbox / pillarbox caused by object-fit: contain.
  */
-function getNormalizedCoords(e) {
-    const rect   = remoteVideo.getBoundingClientRect();
+function getNormalizedCoords(e, surface = remoteVideo) {
+    if (!surface) return null;
+    const rect   = surface.getBoundingClientRect();
     const xOff   = e.clientX - rect.left;
     const yOff   = e.clientY - rect.top;
     const wElem  = rect.width;
     const hElem  = rect.height;
-    const wVideo = remoteVideo.videoWidth  || 1080;
-    const hVideo = remoteVideo.videoHeight || 2400;
+    const wVideo = surface.videoWidth  || surface.naturalWidth  || remoteVideo.videoWidth  || 1080;
+    const hVideo = surface.videoHeight || surface.naturalHeight || remoteVideo.videoHeight || 2400;
     const rVideo = wVideo / hVideo;
     const rElem  = wElem  / hElem;
 
@@ -893,65 +1075,71 @@ function setupTouchControl() {
     let startClientY = 0;
     const DRAG_THRESHOLD_PX = 8;
 
-    remoteVideo.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        focusKeyboardCapture();
-        const coords = getNormalizedCoords(e);
-        if (!coords) {
-            dragStart = null;
-            return;
-        }
-        dragStart    = { ...coords, time: Date.now() };
-        startClientX = e.clientX;
-        startClientY = e.clientY;
-        isDragging   = false;
-    });
+    function bindTouchSurface(surface) {
+        if (!surface) return;
 
-    remoteVideo.addEventListener('mousemove', (e) => {
-        if (e.buttons !== 1 || !dragStart) return;
-        const dx = e.clientX - startClientX;
-        const dy = e.clientY - startClientY;
-        if (!isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
-            isDragging = true;
-        }
-    });
+        surface.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            focusKeyboardCapture();
+            const coords = getNormalizedCoords(e, surface);
+            if (!coords) {
+                dragStart = null;
+                return;
+            }
+            dragStart    = { ...coords, time: Date.now() };
+            startClientX = e.clientX;
+            startClientY = e.clientY;
+            isDragging   = false;
+        });
 
-    remoteVideo.addEventListener('mouseup', (e) => {
-        if (!dragStart) return;
-        const end      = getNormalizedCoords(e);
-        if (!end) {
+        surface.addEventListener('mousemove', (e) => {
+            if (e.buttons !== 1 || !dragStart) return;
+            const dx = e.clientX - startClientX;
+            const dy = e.clientY - startClientY;
+            if (!isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+                isDragging = true;
+            }
+        });
+
+        surface.addEventListener('mouseup', (e) => {
+            if (!dragStart) return;
+            const end      = getNormalizedCoords(e, surface);
+            if (!end) {
+                dragStart  = null;
+                isDragging = false;
+                return;
+            }
+            const duration = Date.now() - dragStart.time;
+
+            if (isDragging) {
+                // Swipe gesture
+                sendControlPayload({
+                    type: 'swipe',
+                    x1: dragStart.x,
+                    y1: dragStart.y,
+                    x2: end.x,
+                    y2: end.y,
+                    duration: Math.max(100, Math.min(duration, 1500))
+                });
+                log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
+            } else {
+                // Tap gesture
+                sendControlPayload({ type: 'tap', x: dragStart.x, y: dragStart.y });
+                log(`Tap: (${dragStart.x}, ${dragStart.y})`);
+            }
+
             dragStart  = null;
             isDragging = false;
-            return;
-        }
-        const duration = Date.now() - dragStart.time;
+        });
 
-        if (isDragging) {
-            // Swipe gesture
-            sendControlPayload({
-                type: 'swipe',
-                x1: dragStart.x,
-                y1: dragStart.y,
-                x2: end.x,
-                y2: end.y,
-                duration: Math.max(100, Math.min(duration, 1500))
-            });
-            log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
-        } else {
-            // Tap gesture
-            sendControlPayload({ type: 'tap', x: dragStart.x, y: dragStart.y });
-            log(`Tap: (${dragStart.x}, ${dragStart.y})`);
-        }
+        surface.addEventListener('mouseleave', () => {
+            dragStart  = null;
+            isDragging = false;
+        });
+    }
 
-        dragStart  = null;
-        isDragging = false;
-    });
-
-    // Cancel drag if mouse leaves the video element
-    remoteVideo.addEventListener('mouseleave', () => {
-        dragStart  = null;
-        isDragging = false;
-    });
+    bindTouchSurface(remoteVideo);
+    bindTouchSurface(usbFrame);
 }
 
 // 5. 키보드 단축키 → Android 키 이벤트
@@ -1068,20 +1256,64 @@ connectBtn.addEventListener('click', () => {
     }
     hideReconnectOverlay();
 
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    if (
+        selectedTransport === 'tailscale' &&
+        socket &&
+        (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+    ) {
         log("기존 연결이 감지되어 세션을 갱신합니다.");
         const oldSocket = socket;
         oldSocket.onclose = null;
         oldSocket.close();
         socket = null;
         cleanupPeerConnection();
-        connectSignaling();
+        connectMirror();
     } else {
-        connectSignaling();
+        connectMirror();
     }
 });
 
 // ─── Reconnection and Cleanup Helpers ────────────────────────────────────────
+
+function closeUsbSocket() {
+    if (!usbSocket) return;
+    const oldSocket = usbSocket;
+    usbSocket = null;
+    oldSocket.onopen = null;
+    oldSocket.onmessage = null;
+    oldSocket.onerror = null;
+    oldSocket.onclose = null;
+    try {
+        oldSocket.close();
+    } catch (e) {
+        log(`USB socket close error: ${e.message}`);
+    }
+}
+
+function closeSignalingSocket() {
+    if (!socket) return;
+    const oldSocket = socket;
+    socket = null;
+    oldSocket.onopen = null;
+    oldSocket.onclose = null;
+    oldSocket.onerror = null;
+    oldSocket.onmessage = null;
+    try {
+        oldSocket.close();
+    } catch (e) {
+        log(`Signaling socket close error: ${e.message}`);
+    }
+}
+
+function disconnectCurrentTransport() {
+    closeUsbSocket();
+    closeSignalingSocket();
+    stopDataUsagePolling();
+    cleanupPeerConnection();
+    clearRemoteVideoFrame();
+    clearUsbFrame();
+    resetTextControlState();
+}
 
 function cleanupPeerConnection() {
     if (peerConnection) {
@@ -1110,6 +1342,7 @@ function cleanupPeerConnection() {
 }
 
 function triggerAutoReconnect() {
+    if (selectedTransport !== 'tailscale') return;
     if (isReconnecting || reconnectTimeoutId) return;
     log("네트워크 단절 감지 - 자동 재연결 복원을 시작합니다.");
     isReconnecting = true;
@@ -1139,7 +1372,7 @@ function startReconnectSequence() {
     if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId);
     reconnectTimeoutId = setTimeout(() => {
         reconnectTimeoutId = null;
-        connectSignaling();
+        connectMirror();
     }, delay);
 
     reconnectAttempts++;
@@ -1189,6 +1422,14 @@ function clearRemoteVideoFrame() {
     remoteVideo.load?.();
 }
 
+function clearUsbFrame() {
+    if (lastUsbFrameUrl) {
+        URL.revokeObjectURL(lastUsbFrameUrl);
+        lastUsbFrameUrl = null;
+    }
+    usbFrame?.removeAttribute('src');
+}
+
 function enterScreenCaptureApprovalWait(message) {
     hideReconnectOverlay();
     isReconnecting = false;
@@ -1198,6 +1439,7 @@ function enterScreenCaptureApprovalWait(message) {
         reconnectTimeoutId = null;
     }
     clearRemoteVideoFrame();
+    clearUsbFrame();
     controlStatus.innerText = "대기";
     showStatusDetail(message, "warning");
 }
@@ -1205,7 +1447,7 @@ function enterScreenCaptureApprovalWait(message) {
 // Page Visibility API for fast foreground sync
 document.addEventListener('visibilitychange', () => {
     log(`Page Visibility 변경 감지: hidden=${document.hidden}`);
-    if (!document.hidden) {
+    if (!document.hidden && selectedTransport === 'tailscale') {
         const isSocketClosed = !socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING;
         if (isSocketClosed && shouldAutoReconnect && reconnectAttempts > 0) {
             log("화면 전면 복귀 감지 - 즉시 자동 재연결 복원을 시도합니다.");
@@ -1213,7 +1455,7 @@ document.addEventListener('visibilitychange', () => {
                 clearTimeout(reconnectTimeoutId);
                 reconnectTimeoutId = null;
             }
-            connectSignaling();
+            connectMirror();
         }
     }
 });
@@ -1254,7 +1496,9 @@ function setupClipboardSync() {
         setTimeout(async () => {
             try {
                 const text = await readClipboardForAndroid();
-                if (text !== null && dataChannel && dataChannel.readyState === 'open') {
+                const usbControlReady = selectedTransport === 'usb' && usbSocket && usbSocket.readyState === WebSocket.OPEN;
+                const webRtcControlReady = selectedTransport !== 'usb' && dataChannel && dataChannel.readyState === 'open';
+                if (text !== null && (usbControlReady || webRtcControlReady)) {
                     const sent = sendControlPayload({ type: 'clipboard', text });
                     if (sent) {
                         log(`맥 클립보드 원격 전송 성공: length=${text.length}`);
@@ -1386,6 +1630,8 @@ function setupMediaCapture() {
     }
 }
 
+renderTransportSelection();
+setupTransportControls();
 setupStreamQualityControls();
 setupNavigationControls();
 loadFavoriteApps();

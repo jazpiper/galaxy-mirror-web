@@ -18,6 +18,22 @@ class FakeEventTarget {
             },
             contains(name) {
                 return classes.has(name);
+            },
+            toggle(name, force) {
+                if (force === true) {
+                    classes.add(name);
+                    return true;
+                }
+                if (force === false) {
+                    classes.delete(name);
+                    return false;
+                }
+                if (classes.has(name)) {
+                    classes.delete(name);
+                    return false;
+                }
+                classes.add(name);
+                return true;
             }
         };
         this.style = {};
@@ -29,6 +45,7 @@ class FakeEventTarget {
         this.value = '';
         this.className = '';
         this.disabled = false;
+        this.src = '';
     }
 
     get innerHTML() {
@@ -84,6 +101,10 @@ class FakeEventTarget {
 
     setAttribute(name, value) {
         this[name] = value;
+    }
+
+    removeAttribute(name) {
+        this[name] = '';
     }
 
     setSelectionRange() {}
@@ -221,9 +242,35 @@ function loadViewer(options = {}) {
     const filesDir = path.join(appRoot, 'src/main/resources/files');
     const contextDocument = new FakeDocument();
     const clock = new FakeClock();
+    const viewerUrl = new URL(options.url || 'http://example.test:8080/');
     const fetchCalls = [];
     const webSockets = [];
     const peerConnections = [];
+    const objectUrls = [];
+    const revokedObjectUrls = [];
+    class FakeBlob {
+        constructor(parts = [], options = {}) {
+            this.parts = parts;
+            this.type = options.type || '';
+            this.size = parts.reduce((total, part) => {
+                if (typeof part === 'string') return total + part.length;
+                if (typeof part?.byteLength === 'number') return total + part.byteLength;
+                if (typeof part?.size === 'number') return total + part.size;
+                return total;
+            }, 0);
+        }
+    }
+    function FakeURL(url, base) {
+        return new URL(url, base);
+    }
+    FakeURL.createObjectURL = (blob) => {
+        const url = `blob:fake-${objectUrls.length + 1}`;
+        objectUrls.push({ url, blob });
+        return url;
+    };
+    FakeURL.revokeObjectURL = (url) => {
+        revokedObjectUrls.push(url);
+    };
     class FakeWebSocket {
         static CONNECTING = 0;
         static OPEN = 1;
@@ -234,10 +281,12 @@ function loadViewer(options = {}) {
             this.url = url;
             this.readyState = FakeWebSocket.OPEN;
             this.sent = [];
+            this.sentMessages = [];
             webSockets.push(this);
         }
 
         send(payload) {
+            this.sentMessages.push(payload);
             this.sent.push(JSON.parse(payload));
         }
 
@@ -296,7 +345,14 @@ function loadViewer(options = {}) {
         console,
         document: contextDocument,
         window: {
-            location: { protocol: 'http:', host: 'example.test:8080' },
+            location: {
+                protocol: viewerUrl.protocol,
+                host: viewerUrl.host,
+                hostname: viewerUrl.hostname,
+                search: viewerUrl.search,
+                href: viewerUrl.href,
+                pathname: viewerUrl.pathname
+            },
             setTimeout: (callback, delay) => clock.setTimeout(callback, delay),
             clearTimeout: (id) => clock.clearTimeout(id),
             setInterval: (callback, delay) => clock.setInterval(callback, delay),
@@ -308,8 +364,10 @@ function loadViewer(options = {}) {
         RTCIceCandidate: class {},
         navigator: options.navigator || {},
         MediaRecorder: options.MediaRecorder,
+        Blob: options.Blob || FakeBlob,
         Date,
         JSON,
+        URL: FakeURL,
         URLSearchParams,
         parseFloat,
         Math,
@@ -330,6 +388,8 @@ function loadViewer(options = {}) {
     context.window.fetch = context.fetch;
     context.window.navigator = context.navigator;
     context.window.MediaRecorder = context.MediaRecorder;
+    context.window.Blob = context.Blob;
+    context.window.URL = context.URL;
     vm.createContext(context);
 
     const keyboardHelperPath = path.join(filesDir, 'viewer-keyboard.js');
@@ -361,7 +421,9 @@ function loadViewer(options = {}) {
         filesDir,
         fetchCalls,
         webSockets,
-        peerConnections
+        peerConnections,
+        objectUrls,
+        revokedObjectUrls
     };
 }
 
@@ -521,6 +583,82 @@ await test('control DataChannel uses reliable delivery', () => {
     assert.doesNotMatch(viewerSource, /maxPacketLifeTime\s*:/);
 });
 
+await test('initial transport follows explicit usb query parameter', () => {
+    const { context } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+    });
+
+    assert.equal(vm.runInContext('selectedTransport', context), 'usb');
+});
+
+await test('initial transport defaults to tailscale for phone hostnames', () => {
+    const { context } = loadViewer({
+        url: 'http://phone.ts.net:8080/?token=abc'
+    });
+
+    assert.equal(vm.runInContext('selectedTransport', context), 'tailscale');
+});
+
+await test('USB mode opens local session socket and sends raw control JSON', () => {
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+
+    assert.equal(webSockets.length, 1);
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?token=abc');
+
+    assert.equal(vm.runInContext('sendControlPayload({ type: "key", keyCode: 4 });', context), true);
+    assert.deepEqual(webSockets[0].sentMessages, [
+        JSON.stringify({ type: 'key', keyCode: 4 })
+    ]);
+});
+
+await test('USB binary frame renders blob image and updates download usage', () => {
+    const { context, document, webSockets, objectUrls } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+    vm.runInContext(`
+        const frame = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+        usbSocket.onmessage({ data: frame });
+    `, context);
+
+    assert.equal(document.getElementById('usbFrame').src, 'blob:fake-1');
+    assert.equal(document.getElementById('downloadUsage').textContent, '0.00 MB');
+    assert.equal(objectUrls[0].blob.size, 4);
+    assert.equal(webSockets[0].binaryType, 'blob');
+});
+
+await test('USB frame taps send normalized tap controls through USB socket', () => {
+    const { context, document, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onopen();
+
+    const usbFrame = document.getElementById('usbFrame');
+    usbFrame.dispatchEvent({
+        type: 'mousedown',
+        clientX: 180,
+        clientY: 400,
+        preventDefault() {}
+    });
+    usbFrame.dispatchEvent({
+        type: 'mouseup',
+        clientX: 180,
+        clientY: 400,
+        preventDefault() {}
+    });
+
+    assert.deepEqual(webSockets[0].sentMessages, [
+        JSON.stringify({ type: 'tap', x: 0.5, y: 0.5 })
+    ]);
+});
+
 await test('Backspace sends remote delete when not composing', () => {
     const { document, keyboardSink, messages } = loadViewer();
 
@@ -648,6 +786,28 @@ await test('copy event sends clipboard payload through dataChannel once', async 
 
     assert.deepEqual(messages, [
         { type: 'clipboard', text: 'copied-from-mac' }
+    ]);
+});
+
+await test('copy event sends clipboard payload through USB socket in usb mode', async () => {
+    const { context, webSockets, clock } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb',
+        navigator: {
+            clipboard: {
+                readText: async () => 'copied-over-usb',
+                writeText: async () => {}
+            }
+        }
+    });
+
+    vm.runInContext('connectMirror();', context);
+    context.document.dispatchEvent({ type: 'copy', preventDefault() {} });
+
+    clock.runAll();
+    await flushAsyncWork();
+
+    assert.deepEqual(webSockets[0].sentMessages, [
+        JSON.stringify({ type: 'clipboard', text: 'copied-over-usb' })
     ]);
 });
 
