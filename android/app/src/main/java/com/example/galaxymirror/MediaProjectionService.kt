@@ -621,7 +621,7 @@ class MediaProjectionService : Service() {
                 put("transport", MirrorTransport.USB_JPEG.wireValue)
                 put("captureReady", captureReady)
                 put("accessibilityReady", GalaxyMirrorAccessibilityService.isReadyForRemoteInput())
-                put("streamQuality", buildStreamQualityStatusJson())
+                put("streamQuality", org.json.JSONObject(UsbStreamProfileCodec.toStatusJson(streamQualityMode)))
                 put("message", message)
             })
         }.toString()

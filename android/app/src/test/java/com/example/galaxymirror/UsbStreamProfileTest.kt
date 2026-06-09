@@ -1,6 +1,7 @@
 package com.example.galaxymirror
 
 import junit.framework.TestCase.assertEquals
+import org.json.JSONObject
 import org.junit.Test
 
 class UsbStreamProfileTest {
@@ -32,5 +33,18 @@ class UsbStreamProfileTest {
         assertEquals(2400, profile.height)
         assertEquals(12, profile.fps)
         assertEquals(75, profile.jpegQuality)
+    }
+
+    @Test
+    fun statusJsonReportsActualUsbProfileForAutoMode() {
+        val json = JSONObject(UsbStreamProfileCodec.toStatusJson(StreamQualityMode.AUTO))
+
+        assertEquals("AUTO", json.getString("selectedMode"))
+        assertEquals("STANDARD", json.getString("effectiveMode"))
+        assertEquals("표준", json.getString("effectiveLabel"))
+        assertEquals(720, json.getInt("width"))
+        assertEquals(1600, json.getInt("height"))
+        assertEquals(10, json.getInt("fps"))
+        assertEquals(70, json.getInt("jpegQuality"))
     }
 }

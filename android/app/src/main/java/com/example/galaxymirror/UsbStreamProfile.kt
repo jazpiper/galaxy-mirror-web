@@ -1,5 +1,7 @@
 package com.example.galaxymirror
 
+import org.json.JSONObject
+
 data class UsbStreamProfile(
     val width: Int,
     val height: Int,
@@ -18,4 +20,27 @@ object UsbStreamProfilePolicy {
             StreamQualityMode.STANDARD ->
                 UsbStreamProfile(width = 720, height = 1600, fps = 10, jpegQuality = 70)
         }
+}
+
+object UsbStreamProfileCodec {
+    fun toStatusJson(selectedMode: StreamQualityMode): String {
+        val effectiveMode =
+            if (selectedMode == StreamQualityMode.AUTO) {
+                StreamQualityMode.STANDARD
+            } else {
+                selectedMode
+            }
+        val profile = UsbStreamProfilePolicy.resolve(selectedMode)
+
+        return JSONObject()
+            .put("selectedMode", selectedMode.wireValue)
+            .put("selectedLabel", selectedMode.koreanLabel)
+            .put("effectiveMode", effectiveMode.wireValue)
+            .put("effectiveLabel", effectiveMode.koreanLabel)
+            .put("width", profile.width)
+            .put("height", profile.height)
+            .put("fps", profile.fps)
+            .put("jpegQuality", profile.jpegQuality)
+            .toString()
+    }
 }
