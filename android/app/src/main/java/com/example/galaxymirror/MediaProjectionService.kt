@@ -110,6 +110,7 @@ class MediaProjectionService : Service() {
         private set
     lateinit var networkTransportDetector: NetworkTransportDetector
         private set
+    private lateinit var usbScreenStreamer: UsbScreenStreamer
 
     var streamQualityMode = StreamQualityMode.AUTO
         private set
@@ -146,6 +147,8 @@ class MediaProjectionService : Service() {
     @Volatile private var remoteDescriptionSet = false
     private val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
 
+    var mediaProjectionResultCode: Int? = null
+        private set
     var mediaProjectionResultData: Intent? = null
         private set
     private var pendingOffer: PendingOffer? = null
@@ -177,6 +180,10 @@ class MediaProjectionService : Service() {
         screenBrightnessController = ScreenBrightnessController(applicationContext)
         streamQualitySettingsStore = StreamQualitySettingsStore(StreamQualitySettingsStore.SharedPreferencesStore(applicationContext))
         networkTransportDetector = NetworkTransportDetector(applicationContext)
+        usbScreenStreamer =
+            UsbScreenStreamer(applicationContext) {
+                handleUsbProjectionStopped()
+            }
         streamQualityMode = streamQualitySettingsStore.readMode()
 
         refreshStreamQualityState()
@@ -228,6 +235,7 @@ class MediaProjectionService : Service() {
             }
 
             cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+            mediaProjectionResultCode = resultCode
             mediaProjectionResultData = resultData
             screenCapturePermissionRequired = false
             isRunning = true
@@ -285,6 +293,9 @@ class MediaProjectionService : Service() {
         }
 
         // Cleanup WebRTC (explicit close)
+        if (::usbScreenStreamer.isInitialized) {
+            usbScreenStreamer.stop()
+        }
         cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
 
         try {
@@ -364,7 +375,11 @@ class MediaProjectionService : Service() {
         }
         // Do not stop service entirely, keep Ktor running. Just stop capturing and WebRTC session
         stopForeground(true)
+        if (::usbScreenStreamer.isInitialized) {
+            usbScreenStreamer.stop()
+        }
         cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+        mediaProjectionResultCode = null
         mediaProjectionResultData = null
         screenCapturePermissionRequired = false
         isRunning = false
@@ -394,6 +409,15 @@ class MediaProjectionService : Service() {
     }
 
     // ─── Internal Helper Methods ───────────────────────────────────────────────
+
+    private fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
+        val resultCode = mediaProjectionResultCode
+        val resultData = mediaProjectionResultData
+        if (resultCode == null || resultData == null) return null
+        mediaProjectionResultCode = null
+        mediaProjectionResultData = null
+        return resultCode to resultData
+    }
 
     private fun refreshStreamQualityState(): StreamQualityProfile {
         val network = currentStreamNetworkTransport()
@@ -431,6 +455,18 @@ class MediaProjectionService : Service() {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error applying brightness minimization", e)
+        }
+    }
+
+    private fun handleUsbProjectionStopped() {
+        mainHandler.post {
+            mediaProjectionResultCode = null
+            mediaProjectionResultData = null
+            screenCapturePermissionRequired = true
+            isRunning = false
+            updateWakeLock()
+            applyBrightnessMinimizationForCurrentState()
+            notifyStateChanged()
         }
     }
 
@@ -1113,6 +1149,7 @@ class MediaProjectionService : Service() {
                 return@post
             }
 
+            mediaProjectionResultCode = null
             mediaProjectionResultData = null
             screenCapturePermissionRequired = true
             sendResponse(
@@ -1204,6 +1241,7 @@ class MediaProjectionService : Service() {
         }
 
         if (stopProjectionService) {
+            mediaProjectionResultCode = null
             mediaProjectionResultData = null
         }
 
