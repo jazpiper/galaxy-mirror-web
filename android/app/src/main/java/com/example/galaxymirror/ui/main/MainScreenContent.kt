@@ -7,9 +7,34 @@ object MainScreenContent {
         if (token.isBlank()) {
             "Mac Chrome에서 Android 앱에 표시되는 토큰 포함 주소로 접속하세요."
         } else {
-            "Mac Chrome에서 http://<Android MagicDNS>:8080/?token=$token 주소로 접속하세요."
+            "Mac Chrome 주소창에 아래 토큰 포함 URL을 입력하세요."
         }
 
+    fun viewerTokenLine(token: String): String =
+        if (token.isBlank()) {
+            "접속 토큰: 생성 중"
+        } else {
+            "접속 토큰: $token"
+        }
+
+    fun viewerTailscaleUrlLine(token: String): String =
+        if (token.isBlank()) {
+            "Tailscale URL: http://<Android MagicDNS>:8080/?token=<접속 토큰>&transport=tailscale"
+        } else {
+            "Tailscale URL: http://<Android MagicDNS>:8080/?token=$token&transport=tailscale"
+        }
+
+    fun viewerUsbUrlLine(token: String): String =
+        if (token.isBlank()) {
+            "USB URL: http://127.0.0.1:8080/?token=<접속 토큰>&transport=usb"
+        } else {
+            "USB URL: http://127.0.0.1:8080/?token=$token&transport=usb"
+        }
+
+    fun viewerUrlLine(token: String): String = viewerTailscaleUrlLine(token)
+
+    const val viewerUsbForwardCommand = "Mac 터미널: adb forward tcp:8080 tcp:8080"
+    const val viewerTransportHint = "Tailscale은 무선/원격 연결, USB는 adb forward가 켜진 Mac 직접 연결에 사용합니다."
     const val viewerTokenHint = "토큰은 Tailscale 내부망에서도 오접속으로 인한 원격 제어를 막는 로컬 보호 장치입니다."
     const val appInfoButtonLabel = "앱 정보 열기"
     const val accessibilityButtonLabel = "접근성 설정 열기"

@@ -186,6 +186,11 @@ internal fun MirrorHomeScreen(
       items =
         listOf(
           MainScreenContent.viewerAddressHint(viewerAccessToken),
+          MainScreenContent.viewerTokenLine(viewerAccessToken),
+          MainScreenContent.viewerTailscaleUrlLine(viewerAccessToken),
+          MainScreenContent.viewerUsbForwardCommand,
+          MainScreenContent.viewerUsbUrlLine(viewerAccessToken),
+          MainScreenContent.viewerTransportHint,
           "앱이 켜져 있는 동안 Android 내장 서버가 8080 포트에서 대기합니다.",
           MainScreenContent.viewerTokenHint,
         ),

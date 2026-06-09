@@ -1,10 +1,29 @@
 package com.example.galaxymirror.ui.main
 
+import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
 import org.junit.Test
 
 class MainScreenContentTest {
+    @Test
+    fun viewerConnectionLinesShowTailscaleAndUsbOptions() {
+        val token = "abc123"
+
+        assertEquals(
+            "Tailscale URL: http://<Android MagicDNS>:8080/?token=abc123&transport=tailscale",
+            MainScreenContent.viewerTailscaleUrlLine(token),
+        )
+        assertEquals(
+            "USB URL: http://127.0.0.1:8080/?token=abc123&transport=usb",
+            MainScreenContent.viewerUsbUrlLine(token),
+        )
+        assertEquals(
+            "Mac 터미널: adb forward tcp:8080 tcp:8080",
+            MainScreenContent.viewerUsbForwardCommand,
+        )
+    }
+
     @Test
     fun contentExplainsSetupAndActionsInKorean() {
         val allText: List<String> =
@@ -12,6 +31,11 @@ class MainScreenContentTest {
                 MainScreenContent.title,
                 MainScreenContent.subtitle,
                 MainScreenContent.viewerAddressHint("abc123"),
+                MainScreenContent.viewerTokenLine("abc123"),
+                MainScreenContent.viewerTailscaleUrlLine("abc123"),
+                MainScreenContent.viewerUsbForwardCommand,
+                MainScreenContent.viewerUsbUrlLine("abc123"),
+                MainScreenContent.viewerTransportHint,
                 MainScreenContent.viewerTokenHint,
                 MainScreenContent.appInfoButtonLabel,
                 MainScreenContent.accessibilityButtonLabel,
@@ -40,6 +64,8 @@ class MainScreenContentTest {
         assertTrue(allText.any { it.contains("연결 해제") })
         assertTrue(allText.any { it.contains("Mac") })
         assertTrue(allText.any { it.contains("8080") })
+        assertTrue(allText.any { it.contains("접속 토큰") })
+        assertTrue(allText.any { it.contains("abc123") })
         assertTrue(allText.any { it.contains("애플리케이션") })
         assertTrue(allText.any { it.contains("제한된 설정") })
         assertTrue(allText.any { it.contains("허용") })
