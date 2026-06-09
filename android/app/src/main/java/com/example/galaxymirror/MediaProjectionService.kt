@@ -24,6 +24,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.cio.CIO
 import io.ktor.server.application.call
 import io.ktor.server.application.install
+import io.ktor.server.request.host
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.routing
@@ -242,7 +243,7 @@ class MediaProjectionService : Service() {
             mediaProjectionResultData = resultData
             screenCapturePermissionRequired = false
             isRunning = true
-            updateWakeLock()
+            applyScreenAwakeEffectsForCurrentState()
             CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
 
             // Resume any waiting Offer
@@ -359,8 +360,7 @@ class MediaProjectionService : Service() {
     fun updateScreenAwakeSettings(settings: ScreenAwakeSettings) {
         screenAwakeSettings = settings
         screenAwakeSettingsStore.write(settings)
-        setKeepScreenAwake(settings.shouldKeepScreenAwake(isMirroringActive()))
-        applyBrightnessMinimizationForCurrentState()
+        applyScreenAwakeEffectsForCurrentState()
         notifyStateChanged()
     }
 
@@ -390,8 +390,7 @@ class MediaProjectionService : Service() {
         mediaProjectionResultData = null
         screenCapturePermissionRequired = false
         isRunning = false
-        updateWakeLock()
-        applyBrightnessMinimizationForCurrentState()
+        applyScreenAwakeEffectsForCurrentState()
         notifyStateChanged()
     }
 
@@ -402,8 +401,7 @@ class MediaProjectionService : Service() {
         cleanupWebRTCResources(stopProjectionService = true, stopCapturer = true)
         isRunning = false
         screenCapturePermissionRequired = false
-        updateWakeLock()
-        applyBrightnessMinimizationForCurrentState()
+        applyScreenAwakeEffectsForCurrentState()
     }
 
     fun isMirroringActive(): Boolean {
@@ -465,6 +463,11 @@ class MediaProjectionService : Service() {
         }
     }
 
+    private fun applyScreenAwakeEffectsForCurrentState() {
+        setKeepScreenAwake(screenAwakeSettings.shouldKeepScreenAwake(isMirroringActive()))
+        applyBrightnessMinimizationForCurrentState()
+    }
+
     private fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer =
         UsbScreenStreamer(applicationContext) {
             handleUsbProjectionStopped(sessionId)
@@ -502,8 +505,7 @@ class MediaProjectionService : Service() {
             mediaProjectionResultData = null
             screenCapturePermissionRequired = true
             isRunning = false
-            updateWakeLock()
-            applyBrightnessMinimizationForCurrentState()
+            applyScreenAwakeEffectsForCurrentState()
             notifyStateChanged()
         }
     }
@@ -631,6 +633,8 @@ class MediaProjectionService : Service() {
         ViewerAccessGuard(viewerAccessToken).isAllowed(
             queryToken = call.request.queryParameters[VIEWER_TOKEN_QUERY],
             headerToken = call.request.headers[VIEWER_TOKEN_HEADER],
+            requestHost = call.request.host(),
+            remoteHost = call.request.local.remoteHost,
         )
 
     private suspend fun requireViewerAuthorization(call: ApplicationCall): Boolean {
@@ -994,7 +998,7 @@ class MediaProjectionService : Service() {
                 Log.w("WebRTC", "Replacing active viewer session: $replacingSessionId -> $sessionId")
                 stopProjectionCaptureForPolicy(CleanupReason.VIEWER_REPLACED)
             }
-            applyBrightnessMinimizationForCurrentState()
+            applyScreenAwakeEffectsForCurrentState()
             notifyStateChanged()
         }
         return sessionId
@@ -1414,8 +1418,7 @@ class MediaProjectionService : Service() {
             cleanupWebRTCResources(stopProjectionService = false, stopCapturer = stopCapturer)
             requestScreenCapturePermissionFromActivity(diagnosticReason)
             isRunning = false
-            updateWakeLock()
-            applyBrightnessMinimizationForCurrentState()
+            applyScreenAwakeEffectsForCurrentState()
             notifyStateChanged()
         }
     }

@@ -317,17 +317,17 @@
             width: 100%;
             height: 100%;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
             justify-content: center;
-            gap: 16px;
+            gap: 12px;
         }
 
         /* 비디오 컨테이너 (그림자 및 모서리 깎기) */
         #videoContainer {
             width: auto;
-            height: calc(100% - 66px);
-            max-width: 100%;
+            height: 100%;
+            max-width: calc(100% - 64px);
             aspect-ratio: 9 / 19.5; /* Android phone default render ratio */
             position: relative;
             background: rgba(0, 0, 0, 0.6);
@@ -405,32 +405,53 @@
             transform: translateY(0);
         }
 
-        .nav-controls {
-            width: min(420px, 100%);
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-            flex: 0 0 50px;
+        .control-rail {
+            width: 52px;
+            max-height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 10px;
+            flex: 0 0 52px;
         }
 
+        .rail-group {
+            display: grid;
+            gap: 8px;
+        }
+
+        .system-controls,
+        .nav-controls {
+            grid-template-columns: 1fr;
+        }
+
+        .system-btn,
         .nav-btn {
-            height: 50px;
+            width: 44px;
+            height: 44px;
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
+            border-radius: 12px;
             background: rgba(255, 255, 255, 0.04);
             color: var(--text-main);
             cursor: pointer;
-            font-size: 13px;
+            font-size: 16px;
             font-weight: 700;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            line-height: 1;
         }
 
+        .system-btn:hover,
         .nav-btn:hover {
             background: rgba(56, 189, 248, 0.15);
             border-color: rgba(56, 189, 248, 0.3);
             color: #ffffff;
+            transform: translateY(-1px);
         }
 
+        .system-btn:active,
         .nav-btn:active {
             transform: scale(0.96);
         }
@@ -544,12 +565,36 @@
                 width: 100%;
                 height: auto;
                 padding: 20px;
+                align-items: flex-start;
             }
             #videoContainer {
-                height: auto;
-                width: 100%;
+                height: min(72vh, 680px);
+                width: auto;
                 max-width: 420px;
                 aspect-ratio: 9 / 19.5;
+            }
+            #mirrorStage {
+                flex-direction: column;
+                gap: 10px;
+                height: auto;
+            }
+            .control-rail {
+                width: min(420px, 100%);
+                max-width: 100%;
+                flex: 0 0 auto;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .system-controls {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+            .nav-controls {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            .system-btn,
+            .nav-btn {
+                width: 100%;
+                height: 42px;
             }
             .log-box {
                 max-height: 200px;
@@ -557,36 +602,6 @@
         }
 
         /* Milestone 6 UI Extensions */
-        .system-controls {
-            width: min(420px, 100%);
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 12px;
-            flex: 0 0 50px;
-            margin-bottom: 10px;
-        }
-        .system-btn {
-            height: 50px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-main);
-            cursor: pointer;
-            font-size: 16px;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .system-btn:hover {
-            background: rgba(56, 189, 248, 0.15);
-            border-color: rgba(56, 189, 248, 0.3);
-            color: #ffffff;
-            transform: translateY(-1px);
-        }
-        .system-btn:active {
-            transform: scale(0.96);
-        }
         .capture-controls {
             position: absolute;
             top: 16px;
@@ -787,19 +802,21 @@
                     </div>
                 </div>
 
-                <!-- 하드웨어 전원/볼륨 원격 제어 -->
-                <div class="system-controls" aria-label="Android system controls">
-                    <button class="system-btn" id="volUpBtn" type="button" title="볼륨 크게">🔊</button>
-                    <button class="system-btn" id="volDownBtn" type="button" title="볼륨 작게">🔉</button>
-                    <button class="system-btn" id="muteBtn" type="button" title="음소거 토글">🔇</button>
-                    <button class="system-btn" id="powerBtn" type="button" title="화면 잠금">🔒</button>
-                </div>
+                <aside class="control-rail" aria-label="Android remote controls">
+                    <!-- 하드웨어 전원/볼륨 원격 제어 -->
+                    <div class="rail-group system-controls" aria-label="Android system controls">
+                        <button class="system-btn" id="volUpBtn" type="button" title="볼륨 크게" aria-label="볼륨 크게">🔊</button>
+                        <button class="system-btn" id="volDownBtn" type="button" title="볼륨 작게" aria-label="볼륨 작게">🔉</button>
+                        <button class="system-btn" id="muteBtn" type="button" title="음소거 토글" aria-label="음소거 토글">🔇</button>
+                        <button class="system-btn" id="powerBtn" type="button" title="화면 잠금" aria-label="화면 잠금">🔒</button>
+                    </div>
 
-                <div class="nav-controls" aria-label="Android navigation controls">
-                    <button class="nav-btn" id="navRecentsBtn" type="button">최근 앱</button>
-                    <button class="nav-btn" id="navHomeBtn" type="button">홈</button>
-                    <button class="nav-btn" id="navBackBtn" type="button">뒤로</button>
-                </div>
+                    <div class="rail-group nav-controls" aria-label="Android navigation controls">
+                        <button class="nav-btn" id="navRecentsBtn" type="button" title="최근 앱" aria-label="최근 앱">▢</button>
+                        <button class="nav-btn" id="navHomeBtn" type="button" title="홈" aria-label="홈">●</button>
+                        <button class="nav-btn" id="navBackBtn" type="button" title="뒤로" aria-label="뒤로">‹</button>
+                    </div>
+                </aside>
             </div>
         </div>
     </div>

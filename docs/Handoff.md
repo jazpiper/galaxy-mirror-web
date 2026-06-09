@@ -157,7 +157,7 @@ updated: 2026-06-09
 * Android Host는 projection 중단 시 `SCREEN_CAPTURE_REAUTH_REQUIRED`를 송신합니다. Mac Viewer는 호환성 차원에서 `PROJECTION_STOPPED_LOCKED`도 복구 가능한 상태로 보고, Android 잠금 해제와 화면 공유 재승인 후 재연결하라는 안내를 표시합니다.
 * 밝기 최소화 모드는 로컬 Android 화면 보호 목적입니다. `WRITE_SETTINGS` 권한이 없으면 Android 설정의 시스템 설정 수정 화면에서 Android Mirror를 허용해야 하며, 연결 해제 시 이전 밝기와 밝기 모드 복원 여부를 Galaxy S26 Android 16 등 실기기에서 확인해야 합니다.
 * 스트림 화질 `AUTO` 모드는 현재 Android 네트워크를 보고 Wi-Fi/Ethernet이면 고화질, 4G/5G cellular이면 표준 화질을 적용합니다. Mac Viewer와 Android 앱 양쪽 버튼에서 수동으로 저데이터/표준/고화질을 고정할 수 있습니다.
-* viewer 접속 주소는 Android 앱 메인 화면의 토큰 포함 URL을 사용해야 합니다. 정적 화면은 열려도 토큰이 없으면 `/signaling`, `/debug/crash`, 앱 바로가기, 화질 변경 API가 거부됩니다.
+* Tailscale viewer 접속 주소는 Android 앱 메인 화면의 토큰 포함 URL을 사용해야 합니다. USB loopback 접속은 `adb forward tcp:8080 tcp:8080` 후 `http://127.0.0.1:8080/?transport=usb`로 토큰 없이 접속할 수 있습니다.
 * viewer 연결 종료나 세션 교체 후에는 Android 14+ projection token 재사용 예외를 피하기 위해 화면 공유 권한을 다시 승인해야 할 수 있습니다.
 * 재연결 중 이전 viewer session의 WebSocket/DataChannel/MediaProjection callback이 늦게 도착해도 현재 session state와 입력 ACK 큐를 건드리지 않도록 인스턴스/세션 id guard가 들어가 있습니다.
 

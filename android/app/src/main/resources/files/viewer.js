@@ -1074,9 +1074,60 @@ function setupTouchControl() {
     let startClientX = 0;
     let startClientY = 0;
     const DRAG_THRESHOLD_PX = 8;
+    const WHEEL_SWIPE_DELAY_MS = 40;
+    const WHEEL_SWIPE_DURATION_MS = 180;
+    const WHEEL_SWIPE_MIN_DISTANCE = 0.12;
+    const WHEEL_SWIPE_MAX_DISTANCE = 0.45;
+    const WHEEL_SWIPE_SCALE = 900;
+
+    function clampNormalized(value) {
+        return Math.max(0.02, Math.min(value, 0.98));
+    }
+
+    function rounded(value) {
+        return parseFloat(value.toFixed(4));
+    }
+
+    function buildWheelSwipePayload(coords, deltaX, deltaY) {
+        const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
+        const dominantDelta = vertical ? deltaY : deltaX;
+        if (Math.abs(dominantDelta) < 1) return null;
+
+        const distance = Math.min(
+            WHEEL_SWIPE_MAX_DISTANCE,
+            Math.max(WHEEL_SWIPE_MIN_DISTANCE, Math.abs(dominantDelta) / WHEEL_SWIPE_SCALE)
+        );
+        const halfDistance = distance / 2;
+
+        if (vertical) {
+            return {
+                type: 'swipe',
+                x1: coords.x,
+                y1: rounded(clampNormalized(coords.y + Math.sign(deltaY) * halfDistance)),
+                x2: coords.x,
+                y2: rounded(clampNormalized(coords.y - Math.sign(deltaY) * halfDistance)),
+                duration: WHEEL_SWIPE_DURATION_MS
+            };
+        }
+
+        return {
+            type: 'swipe',
+            x1: rounded(clampNormalized(coords.x + Math.sign(deltaX) * halfDistance)),
+            y1: coords.y,
+            x2: rounded(clampNormalized(coords.x - Math.sign(deltaX) * halfDistance)),
+            y2: coords.y,
+            duration: WHEEL_SWIPE_DURATION_MS
+        };
+    }
 
     function bindTouchSurface(surface) {
         if (!surface) return;
+        const wheelState = {
+            deltaX: 0,
+            deltaY: 0,
+            coords: null,
+            timeoutId: null
+        };
 
         surface.addEventListener('mousedown', (e) => {
             e.preventDefault();
@@ -1136,6 +1187,40 @@ function setupTouchControl() {
             dragStart  = null;
             isDragging = false;
         });
+
+        surface.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            focusKeyboardCapture();
+            const coords = getNormalizedCoords(e, surface);
+            if (!coords) return;
+
+            wheelState.deltaX += e.deltaX || 0;
+            wheelState.deltaY += e.deltaY || 0;
+            wheelState.coords = coords;
+
+            if (wheelState.timeoutId !== null) {
+                clearTimeout(wheelState.timeoutId);
+            }
+
+            wheelState.timeoutId = setTimeout(() => {
+                const payload = buildWheelSwipePayload(
+                    wheelState.coords,
+                    wheelState.deltaX,
+                    wheelState.deltaY
+                );
+                wheelState.deltaX = 0;
+                wheelState.deltaY = 0;
+                wheelState.coords = null;
+                wheelState.timeoutId = null;
+
+                if (!payload) return;
+                if (sendControlPayload(payload)) {
+                    log(
+                        `Wheel swipe: (${payload.x1},${payload.y1})→(${payload.x2},${payload.y2}) ${payload.duration}ms`
+                    );
+                }
+            }, WHEEL_SWIPE_DELAY_MS);
+        }, { passive: false });
     }
 
     bindTouchSurface(remoteVideo);

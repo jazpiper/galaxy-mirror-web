@@ -16,10 +16,11 @@ updated: 2026-06-09
 Tailscale 가상 메시 VPN 내부에서 맥북 브라우저가 Android 내장 Ktor 웹서버(`ws://[MagicDNS-Android-Host]:8080/signaling?token=...`)로 직접 소켓 연결을 시도합니다. 1:1 전용 연결이므로 방(Room) 관리 없이 단일 통신 파이프라인으로 작동합니다.
 
 ### 1.0 Viewer 접근 토큰
-Android Host는 앱 시작 시 로컬 저장소에 viewer 접근 토큰을 만들고, 메인 화면의 접속 주소에 `?token=...` 형태로 표시합니다. 브라우저 정적 리소스와 `/status`는 진단 편의를 위해 공개되지만, 원격 입력/디버그/앱 실행/화질 변경에 쓰이는 API와 `/signaling` WebSocket은 토큰이 필요합니다.
+Android Host는 앱 시작 시 로컬 저장소에 viewer 접근 토큰을 만들고, Tailscale 접속 주소에 `?token=...` 형태로 표시합니다. 브라우저 정적 리소스와 `/status`는 진단 편의를 위해 공개되지만, 원격 입력/디버그/앱 실행/화질 변경에 쓰이는 API와 `/signaling` WebSocket은 토큰이 필요합니다. 단, `adb forward`로 접속하는 `127.0.0.1`/`localhost` loopback 요청은 로컬 USB 운용 편의를 위해 토큰 없이 허용합니다.
 
 * HTTP API: `X-Android-Mirror-Token` 헤더 또는 `token` query parameter 중 하나가 Android Host의 현재 토큰과 일치해야 합니다.
 * WebSocket: `/signaling?token=...` query parameter가 필요합니다.
+* Loopback USB: `http://127.0.0.1:8080/?transport=usb` 및 `ws://127.0.0.1:8080/usb/session`은 토큰 없이 사용할 수 있습니다.
 * 토큰이 없거나 맞지 않으면 HTTP API는 `401 {"ok":false,"error":"UNAUTHORIZED_VIEWER"}`를 반환하고, WebSocket은 policy violation close reason `UNAUTHORIZED_VIEWER`로 종료됩니다.
 
 ### 1.1 WebRTC SDP Offer (맥 브라우저 $\rightarrow$ 안드로이드)
@@ -128,6 +129,9 @@ WebRTC PeerConnection의 `control` DataChannel은 `ordered: true` 기반의 reli
 
 #### ② 연속 드래그 (`swipe`)
 마우스를 드래그하여 스와이프하거나 화면을 스크롤할 때 발생합니다.
+Mac Viewer는 미러 화면 위의 마우스 휠 이벤트도 짧은 `swipe` payload로 변환합니다.
+휠 아래 방향(`deltaY > 0`)은 Android에서 콘텐츠를 아래로 내리는 동작과 맞도록 위쪽
+스와이프 좌표로 전송합니다.
 * **JSON 패킷 예시 (`swipe`):**
 ```json
 {
@@ -237,10 +241,10 @@ adb forward --remove tcp:8080 || true
 adb forward tcp:8080 tcp:8080
 ```
 
-Mac Viewer URL은 `http://127.0.0.1:8080/?token=<token>&transport=usb`입니다.
-브라우저는 정적 viewer 로드 후 `ws://127.0.0.1:8080/usb/session?token=<token>`
+Mac Viewer URL은 `http://127.0.0.1:8080/?transport=usb`입니다.
+브라우저는 정적 viewer 로드 후 `ws://127.0.0.1:8080/usb/session`
 WebSocket을 열고, Android Host는 같은 소켓으로 JSON text frame과 JPEG binary frame을
-주고받습니다. `/usb/session`도 viewer 접근 토큰이 필요합니다.
+주고받습니다. loopback이 아닌 host로 USB session을 열면 viewer 접근 토큰 검증을 통과해야 합니다.
 
 ### 3.1 Android -> Browser text frame (`USB_STATUS`)
 

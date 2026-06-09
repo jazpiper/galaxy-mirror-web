@@ -102,7 +102,7 @@ dispatchGesture(gesture, null, null)
 ```
 
 #### ② 화면 드래그 및 스크롤 (Drag / Scroll Simulation)
-사용자가 마우스를 누른 채 이동시킬 때 (`TOUCH_DOWN` $\rightarrow$ 연속 `TOUCH_MOVE` $\rightarrow$ `TOUCH_UP`), 이 좌표 궤적을 메모리 큐(Queue)에 적재한 뒤 스와이프 제스처 경로로 변환합니다.
+사용자가 마우스를 누른 채 이동시킬 때 (`TOUCH_DOWN` $\rightarrow$ 연속 `TOUCH_MOVE` $\rightarrow$ `TOUCH_UP`), 이 좌표 궤적을 메모리 큐(Queue)에 적재한 뒤 스와이프 제스처 경로로 변환합니다. Mac Viewer의 마우스 휠은 40ms 단위로 누적한 뒤 현재 포인터 좌표 중심의 짧은 스와이프로 변환합니다.
 * **지속 시간**: 200ms ~ 500ms (드래그 길이에 비례)
 * **경로(Path)**: 시점 좌표부터 종점 좌표까지 `lineTo` 메소드로 부드럽게 이어진 직선 또는 곡선
 

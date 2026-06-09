@@ -5,9 +5,9 @@ object MainScreenContent {
     const val subtitle = "Android 화면을 Mac 브라우저로 보고, 터치와 키보드를 원격 입력합니다."
     fun viewerAddressHint(token: String): String =
         if (token.isBlank()) {
-            "Mac Chrome에서 Android 앱에 표시되는 토큰 포함 주소로 접속하세요."
+            "Mac Chrome에서 Android 앱에 표시되는 접속 주소로 이동하세요."
         } else {
-            "Mac Chrome 주소창에 아래 토큰 포함 URL을 입력하세요."
+            "Mac Chrome 주소창에 아래 URL을 입력하세요."
         }
 
     fun viewerTokenLine(token: String): String =
@@ -25,17 +25,13 @@ object MainScreenContent {
         }
 
     fun viewerUsbUrlLine(token: String): String =
-        if (token.isBlank()) {
-            "USB URL: http://127.0.0.1:8080/?token=<접속 토큰>&transport=usb"
-        } else {
-            "USB URL: http://127.0.0.1:8080/?token=$token&transport=usb"
-        }
+        "USB URL: http://127.0.0.1:8080/?transport=usb"
 
     fun viewerUrlLine(token: String): String = viewerTailscaleUrlLine(token)
 
     const val viewerUsbForwardCommand = "Mac 터미널: adb forward tcp:8080 tcp:8080"
     const val viewerTransportHint = "Tailscale은 무선/원격 연결, USB는 adb forward가 켜진 Mac 직접 연결에 사용합니다."
-    const val viewerTokenHint = "토큰은 Tailscale 내부망에서도 오접속으로 인한 원격 제어를 막는 로컬 보호 장치입니다."
+    const val viewerTokenHint = "토큰은 Tailscale 내부망에서 오접속으로 인한 원격 제어를 막는 보호 장치입니다. USB loopback 접속은 토큰 없이 허용합니다."
     const val appInfoButtonLabel = "앱 정보 열기"
     const val accessibilityButtonLabel = "접근성 설정 열기"
     const val accessibilityEnabledLabel = "접근성 입력 활성화됨"
@@ -63,7 +59,7 @@ object MainScreenContent {
     val setupSteps =
         listOf(
             "앱 실행 직후 화면 공유 권한 팝업이 뜨면 전체 화면 공유를 허용합니다.",
-            "Mac Chrome에서 Android 앱에 표시된 token 포함 8080 포트 주소로 접속하고 미러링 연결하기를 누릅니다.",
+            "Mac Chrome에서 Android 앱에 표시된 8080 포트 주소로 접속하고 미러링 연결하기를 누릅니다.",
             "처음 설치했다면 Android 설정 > 애플리케이션 > Android Mirror > 우측 상단 메뉴 > 제한된 설정 허용을 먼저 켭니다.",
             "아래 앱 정보 열기 버튼으로 Android Mirror 앱 정보 화면에 바로 이동할 수 있습니다.",
             "원격 터치와 키보드 입력이 필요하면 접근성 설정 > 설치된 앱에서 Android Mirror 서비스를 켭니다.",

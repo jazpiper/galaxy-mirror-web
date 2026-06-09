@@ -61,6 +61,27 @@ class MediaProjectionServiceLifecycleRegressionTest {
         )
     }
 
+    @Test
+    fun screenAwakeEffectsAreReappliedWhenProjectionGrantStarts() {
+        val source = readServiceSource()
+
+        assertTrue(
+            "Starting a fresh MediaProjection grant should reapply saved keep-awake and brightness options.",
+            source.contains(
+                """
+                isRunning = true
+                            applyScreenAwakeEffectsForCurrentState()
+                """.trimIndent()
+            )
+        )
+        assertTrue(
+            "Screen-awake effects must update both the wake lock and brightness controller.",
+            source.contains("private fun applyScreenAwakeEffectsForCurrentState()") &&
+                source.contains("setKeepScreenAwake(screenAwakeSettings.shouldKeepScreenAwake(isMirroringActive()))") &&
+                source.contains("applyBrightnessMinimizationForCurrentState()")
+        )
+    }
+
     private fun readServiceSource(): String {
         val candidates = listOf(
             Path.of("src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),

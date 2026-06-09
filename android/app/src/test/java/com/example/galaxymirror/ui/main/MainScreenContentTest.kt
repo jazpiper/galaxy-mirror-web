@@ -15,7 +15,7 @@ class MainScreenContentTest {
             MainScreenContent.viewerTailscaleUrlLine(token),
         )
         assertEquals(
-            "USB URL: http://127.0.0.1:8080/?token=abc123&transport=usb",
+            "USB URL: http://127.0.0.1:8080/?transport=usb",
             MainScreenContent.viewerUsbUrlLine(token),
         )
         assertEquals(

@@ -601,13 +601,13 @@ await test('initial transport defaults to tailscale for phone hostnames', () => 
 
 await test('USB mode opens local session socket and sends raw control JSON', () => {
     const { context, webSockets } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+        url: 'http://127.0.0.1:8080/?transport=usb'
     });
 
     vm.runInContext('connectMirror();', context);
 
     assert.equal(webSockets.length, 1);
-    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?token=abc');
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session');
 
     assert.equal(vm.runInContext('sendControlPayload({ type: "key", keyCode: 4 });', context), true);
     assert.deepEqual(webSockets[0].sentMessages, [
@@ -656,6 +656,42 @@ await test('USB frame taps send normalized tap controls through USB socket', () 
 
     assert.deepEqual(webSockets[0].sentMessages, [
         JSON.stringify({ type: 'tap', x: 0.5, y: 0.5 })
+    ]);
+});
+
+await test('USB frame mouse wheel sends swipe controls through USB socket', () => {
+    const { context, document, webSockets, clock } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onopen();
+
+    const usbFrame = document.getElementById('usbFrame');
+    const wheelEvent = {
+        type: 'wheel',
+        clientX: 180,
+        clientY: 400,
+        deltaY: 360,
+        deltaX: 0,
+        defaultPrevented: false,
+        preventDefault() {
+            this.defaultPrevented = true;
+        }
+    };
+    usbFrame.dispatchEvent(wheelEvent);
+    clock.runAll();
+
+    assert.equal(wheelEvent.defaultPrevented, true);
+    assert.deepEqual(webSockets[0].sent, [
+        {
+            type: 'swipe',
+            x1: 0.5,
+            y1: 0.7,
+            x2: 0.5,
+            y2: 0.3,
+            duration: 180
+        }
     ]);
 });
 

@@ -14,8 +14,11 @@ updated: 2026-06-09
 ### 2026-06-09
 
 - Tailscale/WebRTC 기존 경로와 별도로 USB/ADB 직접 연결 모드 구현 계획을 반영했다.
-- Android UI에는 token, Tailscale URL, ADB port forwarding 명령, USB URL을 함께 표시하고, Mac Viewer는 transport selector로 Tailscale/USB 경로를 선택한다.
+- Android UI에는 token, Tailscale URL, ADB port forwarding 명령, 토큰 없는 loopback USB URL을 함께 표시하고, Mac Viewer는 transport selector로 Tailscale/USB 경로를 선택한다.
 - USB 모드는 `adb forward tcp:8080 tcp:8080` 후 `/usb/session` WebSocket에서 JPEG binary frame과 control JSON text frame을 교환한다.
+- `127.0.0.1`/`localhost` loopback viewer 요청은 로컬 USB 운용 편의를 위해 token 없이 허용하고, Tailscale/WebRTC 경로는 기존 token 보호를 유지한다.
+- Mac Viewer의 하단 전원/볼륨/내비게이션 컨트롤을 데스크톱에서는 우측 compact rail로 이동해 미러 화면이 세로 공간을 더 크게 쓰도록 조정했다.
+- 미러 화면 위 마우스 휠 이벤트를 짧은 `swipe` control payload로 변환해 Android 화면 스크롤에 사용할 수 있도록 했다.
 - 두 transport는 동시에 활성화하지 않고, 전환 시 기존 capture/session을 정리한 뒤 MediaProjection 재승인을 받는 정책으로 정리했다.
 - `node --check`, Mac Viewer JS 테스트, `app:testDebugUnitTest`, `assembleDebug`, `app:lintDebug`는 통과했고 debug APK는 생성됐다. 다만 `adb devices -l`과 Mac USB 장치 확인에서 Galaxy/Android 장치가 잡히지 않아 APK 재설치/실행 및 USB/Tailscale 실기기 smoke test는 보류했다.
 
@@ -288,6 +291,12 @@ updated: 2026-06-09
 * 로컬 검증으로 `app:testDebugUnitTest`, `app:lintDebug`, `assembleDebug`,
   `node --test android/app/src/test/js/viewer-keyboard.test.mjs`, `git diff --check`가 통과했습니다.
   실제 Galaxy 단말 smoke test는 별도 체크리스트로 남겨 두었습니다.
+
+### 2026-06-09 (재연결 시 화면 켜짐/밝기 옵션 재적용 수정)
+* **MediaProjection 재승인 후 화면 설정 재적용**
+  - 새 미러링 연결에서 화면 공유 권한을 다시 승인해 `MediaProjectionService`가 `isRunning=true`로 전환될 때, 저장된 `화면 켜짐 유지`와 `밝기 최소화 모드`가 즉시 다시 적용되도록 `applyScreenAwakeEffectsForCurrentState()` 경로를 추가했습니다.
+  - 기존에는 옵션 토글 시점에는 적용되지만 새 연결/재승인 시점에는 밝기 최소화 재적용이 빠져 있어, 사용자가 토글을 껐다 켜야 다시 반영되는 문제가 있었습니다.
+  - `MediaProjectionServiceLifecycleRegressionTest`에 새 grant 시작 시 화면 설정 효과가 재적용되는지 확인하는 회귀 테스트를 추가했습니다.
 
 ---
 
