@@ -8,9 +8,17 @@ class FakeEventTarget {
         this.id = id;
         this.listeners = new Map();
         this.children = [];
+        const classes = new Set();
         this.classList = {
-            add() {},
-            remove() {}
+            add(...names) {
+                names.forEach(name => classes.add(name));
+            },
+            remove(...names) {
+                names.forEach(name => classes.delete(name));
+            },
+            contains(name) {
+                return classes.has(name);
+            }
         };
         this.style = {};
         this.textContent = '';
@@ -701,6 +709,24 @@ await test('auto reconnect schedules backoff after closing an open signaling soc
     clock.tick(1000);
 
     assert.equal(webSockets.length, 2);
+});
+
+await test('waiting for screen capture stops reconnect overlay and clears stale video', () => {
+    const { context, document, remoteVideo } = loadViewer();
+    const overlay = document.getElementById('reconnectOverlay');
+    remoteVideo.srcObject = { stale: true };
+    remoteVideo.videoWidth = 2;
+    remoteVideo.videoHeight = 2;
+
+    vm.runInContext('showReconnectOverlayProgress(1, 1);', context);
+    assert.equal(overlay.classList.contains('hidden'), false);
+
+    vm.runInContext('applyAndroidStatusMessage("WAITING_FOR_SCREEN_CAPTURE");', context);
+
+    assert.equal(overlay.classList.contains('hidden'), true);
+    assert.equal(remoteVideo.srcObject, null);
+    assert.equal(document.getElementById('controlStatus').innerText, '대기');
+    assert.match(document.getElementById('statusDetail').textContent, /화면 공유 권한/);
 });
 
 await test('record button handles missing MediaRecorder without throwing', () => {

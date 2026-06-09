@@ -529,7 +529,7 @@ function applyAndroidStatusMessage(message) {
         case 'WAITING_FOR_SCREEN_CAPTURE':
         case 'SCREEN_CAPTURE_NOT_READY':
             rtcStatus.innerText = "화면 공유 대기";
-            showStatusDetail("Android 기기에서 화면 공유 권한을 승인하면 미러링이 시작됩니다.", "warning");
+            enterScreenCaptureApprovalWait("Android 기기에서 화면 공유 권한을 승인하면 미러링이 시작됩니다.");
             return;
         case 'SCREEN_CAPTURE_READY':
             rtcStatus.innerText = "Capture Ready";
@@ -541,17 +541,15 @@ function applyAndroidStatusMessage(message) {
             return;
         case 'SCREEN_CAPTURE_REAUTH_REQUIRED':
             rtcStatus.innerText = "재승인 필요";
-            controlStatus.innerText = "대기";
             statusDetailMessage = "Android 화면 공유 재승인이 필요합니다. Android 기기에서 화면 공유를 다시 승인한 뒤 미러링 연결하기를 누르세요.";
-            showStatusDetail(statusDetailMessage, "warning");
+            enterScreenCaptureApprovalWait(statusDetailMessage);
             shouldAutoReconnect = false;
             triggerAutoReconnect();
             return;
         case 'PROJECTION_STOPPED_LOCKED':
             rtcStatus.innerText = "잠금으로 중단";
-            controlStatus.innerText = "대기";
             statusDetailMessage = "Android 화면 잠금 또는 화면 꺼짐으로 미러링이 중단되었습니다. 잠금을 해제하고 화면 공유를 다시 승인하세요.";
-            showStatusDetail(statusDetailMessage, "warning");
+            enterScreenCaptureApprovalWait(statusDetailMessage);
             shouldAutoReconnect = false;
             triggerAutoReconnect();
             return;
@@ -1180,6 +1178,28 @@ function showReconnectOverlayFailed() {
 function hideReconnectOverlay() {
     const overlay = document.getElementById('reconnectOverlay');
     if (overlay) overlay.classList.add('hidden');
+}
+
+function clearRemoteVideoFrame() {
+    if (!remoteVideo) return;
+    if (remoteVideo.srcObject) {
+        remoteVideo.srcObject = null;
+    }
+    remoteVideo.removeAttribute?.('src');
+    remoteVideo.load?.();
+}
+
+function enterScreenCaptureApprovalWait(message) {
+    hideReconnectOverlay();
+    isReconnecting = false;
+    reconnectCloseInProgress = false;
+    if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+        reconnectTimeoutId = null;
+    }
+    clearRemoteVideoFrame();
+    controlStatus.innerText = "대기";
+    showStatusDetail(message, "warning");
 }
 
 // Page Visibility API for fast foreground sync
