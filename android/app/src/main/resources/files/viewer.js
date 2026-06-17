@@ -47,6 +47,9 @@ let ackTimeoutId = null;
 let selectedTransport = initialTransport();
 let lastUsbFrameUrl = null;
 
+// Clipboard History
+let clipboardHistory = [];
+const MAX_CLIPBOARD_HISTORY = 30;
 // Reconnection States
 let shouldAutoReconnect = true;
 let statusDetailMessage = "";
@@ -985,6 +988,53 @@ async function readClipboardForAndroid() {
     return navigator.clipboard.readText();
 }
 
+// ─── Clipboard History ───────────────────────────────────────────────────────
+function renderClipboardHistory() {
+    const listContainer = document.getElementById('clipboardHistoryList');
+    if (!listContainer) return;
+    
+    listContainer.innerHTML = '';
+    
+    if (clipboardHistory.length === 0) {
+        listContainer.innerHTML = '<div class="clipboard-empty">수신된 클립보드 내역이 없습니다.</div>';
+        return;
+    }
+    
+    clipboardHistory.forEach(text => {
+        const item = document.createElement('div');
+        item.className = 'clipboard-item';
+        item.textContent = text;
+        item.title = text; // hover시 전체 텍스트 툴팁
+        item.onclick = () => {
+            writeClipboardFromAndroid(text);
+        };
+        listContainer.appendChild(item);
+    });
+}
+
+const clearClipboardBtn = document.getElementById('clearClipboardBtn');
+if (clearClipboardBtn) {
+    clearClipboardBtn.addEventListener('click', () => {
+        clipboardHistory = [];
+        renderClipboardHistory();
+        showGlowToast("클립보드 내역이 비워졌습니다.");
+    });
+}
+
+function addClipboardToHistory(text) {
+    if (!text || text.trim() === "") return;
+    
+    // 중복 방지 (가장 최신 항목과 같으면 추가하지 않음)
+    if (clipboardHistory.length > 0 && clipboardHistory[0] === text) return;
+    
+    clipboardHistory.unshift(text);
+    if (clipboardHistory.length > MAX_CLIPBOARD_HISTORY) {
+        clipboardHistory.pop();
+    }
+    
+    renderClipboardHistory();
+}
+
 // 3. DataChannel 이벤트 핸들러 세팅
 function setupDataChannelHandlers(channel) {
     channel.onopen = () => {
@@ -1012,6 +1062,7 @@ function setupDataChannelHandlers(channel) {
             } else if (message.type === 'clipboard') {
                 const text = message.text;
                 if (typeof text === 'string') {
+                    addClipboardToHistory(text);
                     writeClipboardFromAndroid(text);
                 }
             }
