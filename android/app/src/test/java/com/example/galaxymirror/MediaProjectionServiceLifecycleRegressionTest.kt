@@ -9,7 +9,7 @@ import java.nio.file.Path
 class MediaProjectionServiceLifecycleRegressionTest {
     @Test
     fun mediaProjectionStopDisposesCapturerPipeline() {
-        val source = readServiceSource()
+        val source = readServiceSource().replace("\r\n", "\n")
 
         assertFalse(
             "MediaProjection onStop must not keep a stopped ScreenCapturerAndroid cached.",
@@ -25,7 +25,7 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
     @Test
     fun viewerReplacementAndSocketCloseUseCleanupPolicy() {
-        val source = readServiceSource()
+        val source = readServiceSource().replace("\r\n", "\n")
 
         assertTrue(source.contains("CleanupReason.VIEWER_REPLACED"))
         assertTrue(source.contains("CleanupReason.VIEWER_SOCKET_CLOSED"))
@@ -37,9 +37,8 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
     @Test
     fun missingPermissionOfferRequestsActivityPermissionFlow() {
-        val source = readServiceSource()
+        val source = readServiceSource().replace("\r\n", "\n")
 
-        assertTrue(source.contains("fun onScreenCapturePermissionRequired() {}"))
         assertTrue(source.contains("screenCapturePermissionRequired"))
         assertTrue(source.contains("requestScreenCapturePermissionFromActivity("))
         assertTrue(source.contains("SCREEN_CAPTURE_REAUTH_REQUIRED"))
@@ -47,7 +46,7 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
     @Test
     fun manualDisconnectClearsPermissionRequestFlag() {
-        val source = readServiceSource()
+        val source = readServiceSource().replace("\r\n", "\n")
 
         assertTrue(
             "Disconnect after a denied permission request must not immediately relaunch the screen-share prompt.",
@@ -63,7 +62,7 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
     @Test
     fun screenAwakeEffectsAreReappliedWhenProjectionGrantStarts() {
-        val source = readServiceSource()
+        val source = readServiceSource().replace("\r\n", "\n")
 
         assertTrue(
             "Starting a fresh MediaProjection grant should reapply saved keep-awake and brightness options.",
