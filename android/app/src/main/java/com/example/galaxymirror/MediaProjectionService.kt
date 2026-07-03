@@ -127,7 +127,7 @@ class MediaProjectionService : Service() {
         private set
     var viewerActivityState = ViewerActivityState.ACTIVE
         private set
-    var mirrorSessionState = MirrorSessionState()
+    @Volatile var mirrorSessionState = MirrorSessionState()
         private set
     var activeSessionId = 0
         private set
@@ -809,9 +809,7 @@ class MediaProjectionService : Service() {
                                 )
                             val frameSenderJob = launch {
                                 for (frameBytes in frameChannel) {
-                                    val active = withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    }
+                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                                     if (!active) break
                                     try {
                                         send(Frame.Binary(fin = true, data = frameBytes))
@@ -893,19 +891,13 @@ class MediaProjectionService : Service() {
                                 send(Frame.Text(streamingStatus))
 
                                 for (frame in incoming) {
-                                    val active = withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    }
+                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                                     if (!active) break
                                     if (frame is Frame.Text) {
                                         controlEventDispatcher.dispatch(frame.readText()) { result ->
                                             socketSession.launch {
                                                 try {
-                                                    if (
-                                                        withContext(Dispatchers.Main) {
-                                                            isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                                        }
-                                                    ) {
+                                                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
                                                         socketSession.send(Frame.Text(result.toAckJson()))
                                                     }
                                                 } catch (e: CancellationException) {
