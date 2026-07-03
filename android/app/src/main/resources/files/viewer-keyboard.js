@@ -1,225 +1,251 @@
 (function (global) {
-    function createKeyboardControl(options) {
-        const documentRef = options.document;
-        const remoteTarget = options.remoteTarget;
-        const keyboardSink = options.keyboardSink;
-        const sendKey = options.sendKey;
-        const sendTextCommit = options.sendTextCommit;
-        const sendTextDeleteBackward = options.sendTextDeleteBackward;
-        const setDelay = options.setTimeout || global.setTimeout.bind(global);
-        const clearDelay = options.clearTimeout || global.clearTimeout.bind(global);
-        const textFlushDelayMs = options.textFlushDelayMs || 35;
-        const maxTextBatchLength = options.maxTextBatchLength || 64;
-
-        let initialized = false;
-        let isComposing = false;
-        let latestCompositionText = '';
-        let ignoreNextInputText = null;
-        let pendingText = '';
-        let flushTimerId = null;
-
-        function clearFlushTimer() {
-            if (flushTimerId === null) return;
-            clearDelay(flushTimerId);
-            flushTimerId = null;
+    class TextQueue {
+        constructor(sendTextCommit, setDelay, clearDelay, textFlushDelayMs, maxTextBatchLength) {
+            this.sendTextCommit = sendTextCommit;
+            this.setDelay = setDelay;
+            this.clearDelay = clearDelay;
+            this.textFlushDelayMs = textFlushDelayMs;
+            this.maxTextBatchLength = maxTextBatchLength;
+            this.pendingText = '';
+            this.flushTimerId = null;
         }
 
-        function flushPendingText() {
-            if (!pendingText) {
-                clearFlushTimer();
+        clearFlushTimer() {
+            if (this.flushTimerId === null) return;
+            this.clearDelay(this.flushTimerId);
+            this.flushTimerId = null;
+        }
+
+        flushPendingText() {
+            if (!this.pendingText) {
+                this.clearFlushTimer();
                 return;
             }
 
-            const text = pendingText;
-            pendingText = '';
-            clearFlushTimer();
-            sendTextCommit(text);
+            const text = this.pendingText;
+            this.pendingText = '';
+            this.clearFlushTimer();
+            this.sendTextCommit(text);
         }
 
-        function scheduleTextFlush() {
-            clearFlushTimer();
-            flushTimerId = setDelay(flushPendingText, textFlushDelayMs);
+        scheduleTextFlush() {
+            this.clearFlushTimer();
+            this.flushTimerId = this.setDelay(() => this.flushPendingText(), this.textFlushDelayMs);
         }
 
-        function queueText(text) {
+        queueText(text) {
             if (!text) return;
-            pendingText += text;
-            if (pendingText.length >= maxTextBatchLength || text.indexOf('\n') >= 0) {
-                flushPendingText();
+            this.pendingText += text;
+            if (this.pendingText.length >= this.maxTextBatchLength || text.indexOf('\n') >= 0) {
+                this.flushPendingText();
                 return;
             }
-            scheduleTextFlush();
+            this.scheduleTextFlush();
         }
 
-        function removeLastPendingCharacter() {
-            if (!pendingText) return false;
-            const characters = Array.from(pendingText);
+        removeLastPendingCharacter() {
+            if (!this.pendingText) return false;
+            const characters = Array.from(this.pendingText);
             characters.pop();
-            pendingText = characters.join('');
-            if (pendingText) {
-                scheduleTextFlush();
+            this.pendingText = characters.join('');
+            if (this.pendingText) {
+                this.scheduleTextFlush();
             } else {
-                clearFlushTimer();
+                this.clearFlushTimer();
             }
             return true;
         }
+    }
 
-        function resetSink() {
-            if (!keyboardSink) return;
-            keyboardSink.value = '';
-            if (typeof keyboardSink.setSelectionRange === 'function') {
-                keyboardSink.setSelectionRange(0, 0);
+    class KeyboardEventHandler {
+        constructor(textQueue, options) {
+            this.textQueue = textQueue;
+            this.sendKey = options.sendKey;
+            this.sendTextDeleteBackward = options.sendTextDeleteBackward;
+            this.keyboardSink = options.keyboardSink;
+            this.documentRef = options.document;
+            this.remoteTarget = options.remoteTarget;
+
+            this.isComposing = false;
+            this.latestCompositionText = '';
+            this.ignoreNextInputText = null;
+        }
+
+        resetSink() {
+            if (!this.keyboardSink) return;
+            this.keyboardSink.value = '';
+            if (typeof this.keyboardSink.setSelectionRange === 'function') {
+                this.keyboardSink.setSelectionRange(0, 0);
             }
         }
 
-        function focusKeyboardSink() {
-            if (!keyboardSink) return;
-            if (documentRef.activeElement !== keyboardSink && typeof keyboardSink.focus === 'function') {
-                keyboardSink.focus({ preventScroll: true });
+        focusKeyboardSink() {
+            if (!this.keyboardSink) return;
+            if (this.documentRef.activeElement !== this.keyboardSink && typeof this.keyboardSink.focus === 'function') {
+                this.keyboardSink.focus({ preventScroll: true });
             }
-            resetSink();
+            this.resetSink();
         }
 
-        function isKeyboardActive() {
-            return documentRef.activeElement === keyboardSink || documentRef.activeElement === remoteTarget;
+        isKeyboardActive() {
+            return this.documentRef.activeElement === this.keyboardSink || this.documentRef.activeElement === this.remoteTarget;
         }
 
-        function commitText(text) {
+        commitText(text) {
             if (!text) return;
-            queueText(text);
+            this.textQueue.queueText(text);
         }
 
-        function handleKeydown(event) {
-            if (!isKeyboardActive()) return;
+        handleKeydown(event) {
+            if (!this.isKeyboardActive()) return;
             if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-            if (isComposing || event.isComposing) {
+            if (this.isComposing || event.isComposing) {
                 return;
             }
 
             switch (event.key) {
                 case 'Backspace':
                     event.preventDefault();
-                    if (removeLastPendingCharacter()) {
-                        resetSink();
+                    if (this.textQueue.removeLastPendingCharacter()) {
+                        this.resetSink();
                         return;
                     }
-                    sendTextDeleteBackward(1);
-                    resetSink();
+                    this.sendTextDeleteBackward(1);
+                    this.resetSink();
                     return;
                 case 'Home':
                     event.preventDefault();
-                    flushPendingText();
-                    sendKey(3);
-                    resetSink();
+                    this.textQueue.flushPendingText();
+                    this.sendKey(3);
+                    this.resetSink();
                     return;
                 case 'F1':
                     event.preventDefault();
-                    flushPendingText();
-                    sendKey(187);
-                    resetSink();
+                    this.textQueue.flushPendingText();
+                    this.sendKey(187);
+                    this.resetSink();
                     return;
                 case 'Enter':
                     event.preventDefault();
-                    flushPendingText();
-                    sendKey(66);
-                    resetSink();
+                    this.textQueue.flushPendingText();
+                    this.sendKey(66);
+                    this.resetSink();
                     return;
                 case 'Escape':
                     event.preventDefault();
-                    flushPendingText();
-                    sendKey(4);
-                    resetSink();
+                    this.textQueue.flushPendingText();
+                    this.sendKey(4);
+                    this.resetSink();
                     return;
                 case 'ArrowLeft':
                     event.preventDefault();
-                    sendKey(21);
-                    resetSink();
+                    this.sendKey(21);
+                    this.resetSink();
                     return;
                 case 'ArrowRight':
                     event.preventDefault();
-                    sendKey(22);
-                    resetSink();
+                    this.sendKey(22);
+                    this.resetSink();
                     return;
                 case 'ArrowUp':
                     event.preventDefault();
-                    sendKey(19);
-                    resetSink();
+                    this.sendKey(19);
+                    this.resetSink();
                     return;
                 case 'ArrowDown':
                     event.preventDefault();
-                    sendKey(20);
-                    resetSink();
+                    this.sendKey(20);
+                    this.resetSink();
                     return;
             }
 
-            if (documentRef.activeElement !== keyboardSink) {
-                focusKeyboardSink();
+            if (this.documentRef.activeElement !== this.keyboardSink) {
+                this.focusKeyboardSink();
             }
         }
 
-        function handleInput(event) {
-            if (isComposing || event.isComposing) return;
+        handleInput(event) {
+            if (this.isComposing || event.isComposing) return;
 
             if (event.inputType === 'deleteContentBackward') {
-                if (removeLastPendingCharacter()) {
-                    resetSink();
+                if (this.textQueue.removeLastPendingCharacter()) {
+                    this.resetSink();
                     return;
                 }
-                sendTextDeleteBackward(1);
-                resetSink();
+                this.sendTextDeleteBackward(1);
+                this.resetSink();
                 return;
             }
 
-            const text = event.data || keyboardSink.value;
-            if (ignoreNextInputText && text === ignoreNextInputText) {
-                ignoreNextInputText = null;
-                resetSink();
+            const text = event.data || this.keyboardSink.value;
+            if (this.ignoreNextInputText && text === this.ignoreNextInputText) {
+                this.ignoreNextInputText = null;
+                this.resetSink();
                 return;
             }
 
-            commitText(text);
-            resetSink();
+            this.commitText(text);
+            this.resetSink();
         }
 
-        function handleCompositionStart() {
-            isComposing = true;
-            latestCompositionText = '';
-            ignoreNextInputText = null;
+        handleCompositionStart() {
+            this.isComposing = true;
+            this.latestCompositionText = '';
+            this.ignoreNextInputText = null;
         }
 
-        function handleCompositionUpdate(event) {
-            latestCompositionText = event.data || latestCompositionText;
+        handleCompositionUpdate(event) {
+            this.latestCompositionText = event.data || this.latestCompositionText;
         }
 
-        function handleCompositionEnd(event) {
-            isComposing = false;
-            const text = event.data || latestCompositionText || keyboardSink.value;
-            commitText(text);
-            ignoreNextInputText = text || null;
-            latestCompositionText = '';
-            resetSink();
+        handleCompositionEnd(event) {
+            this.isComposing = false;
+            const text = event.data || this.latestCompositionText || this.keyboardSink.value;
+            this.commitText(text);
+            this.ignoreNextInputText = text || null;
+            this.latestCompositionText = '';
+            this.resetSink();
         }
+    }
+
+    function createKeyboardControl(options) {
+        const setDelay = options.setTimeout || global.setTimeout.bind(global);
+        const clearDelay = options.clearTimeout || global.clearTimeout.bind(global);
+        const textFlushDelayMs = options.textFlushDelayMs || 35;
+        const maxTextBatchLength = options.maxTextBatchLength || 64;
+
+        const textQueue = new TextQueue(
+            options.sendTextCommit,
+            setDelay,
+            clearDelay,
+            textFlushDelayMs,
+            maxTextBatchLength
+        );
+
+        const eventHandler = new KeyboardEventHandler(textQueue, options);
+
+        let initialized = false;
 
         function init() {
-            if (initialized || !keyboardSink || !remoteTarget) return;
+            if (initialized || !options.keyboardSink || !options.remoteTarget) return;
             initialized = true;
 
-            documentRef.addEventListener('keydown', handleKeydown);
-            keyboardSink.addEventListener('input', handleInput);
-            keyboardSink.addEventListener('compositionstart', handleCompositionStart);
-            keyboardSink.addEventListener('compositionupdate', handleCompositionUpdate);
-            keyboardSink.addEventListener('compositionend', handleCompositionEnd);
-            remoteTarget.addEventListener('mousedown', focusKeyboardSink);
-            remoteTarget.addEventListener('click', focusKeyboardSink);
-            remoteTarget.addEventListener('focus', focusKeyboardSink);
+            options.document.addEventListener('keydown', (e) => eventHandler.handleKeydown(e));
+            options.keyboardSink.addEventListener('input', (e) => eventHandler.handleInput(e));
+            options.keyboardSink.addEventListener('compositionstart', () => eventHandler.handleCompositionStart());
+            options.keyboardSink.addEventListener('compositionupdate', (e) => eventHandler.handleCompositionUpdate(e));
+            options.keyboardSink.addEventListener('compositionend', (e) => eventHandler.handleCompositionEnd(e));
+            options.remoteTarget.addEventListener('mousedown', () => eventHandler.focusKeyboardSink());
+            options.remoteTarget.addEventListener('click', () => eventHandler.focusKeyboardSink());
+            options.remoteTarget.addEventListener('focus', () => eventHandler.focusKeyboardSink());
 
-            focusKeyboardSink();
+            eventHandler.focusKeyboardSink();
         }
 
         return {
             init,
-            focus: focusKeyboardSink
+            focus: () => eventHandler.focusKeyboardSink()
         };
     }
 
