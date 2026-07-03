@@ -16,6 +16,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,12 +31,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.galaxymirror.FavoriteApp
+
 import com.example.galaxymirror.ScreenAwakeSettings
 import com.example.galaxymirror.StreamNetworkTransport
 import com.example.galaxymirror.StreamQualityMode
@@ -40,6 +47,8 @@ import com.example.galaxymirror.StreamQualityPolicy
 import com.example.galaxymirror.StreamQualityProfile
 import com.example.galaxymirror.data.DefaultDataRepository
 import com.example.galaxymirror.theme.GalaxyMirrorTheme
+
+data class InfoPanelItem(val text: String, val copyText: String? = null)
 
 @Composable
 fun MainScreen(
@@ -178,26 +187,38 @@ internal fun MirrorHomeScreen(
     }
 
     warning?.let {
-      InfoPanel(title = "알림", items = listOf(it))
+      InfoPanel(title = "알림", items = listOf(InfoPanelItem(it)))
     }
 
     InfoPanel(
       title = "Mac 연결 주소",
       items =
         listOf(
-          MainScreenContent.viewerAddressHint(viewerAccessToken),
-          MainScreenContent.viewerTokenLine(viewerAccessToken),
-          MainScreenContent.viewerTailscaleUrlLine(viewerAccessToken),
-          MainScreenContent.viewerUsbForwardCommand,
-          MainScreenContent.viewerUsbUrlLine(viewerAccessToken),
-          MainScreenContent.viewerTransportHint,
-          "앱이 켜져 있는 동안 Android 내장 서버가 8080 포트에서 대기합니다.",
-          MainScreenContent.viewerTokenHint,
+          InfoPanelItem(MainScreenContent.viewerAddressHint(viewerAccessToken)),
+          InfoPanelItem(
+            text = MainScreenContent.viewerTokenLine(viewerAccessToken),
+            copyText = if (viewerAccessToken.isBlank()) null else viewerAccessToken
+          ),
+          InfoPanelItem(
+            text = MainScreenContent.viewerTailscaleUrlLine(viewerAccessToken),
+            copyText = if (viewerAccessToken.isBlank()) null else "http://<Android MagicDNS>:8080/?token=$viewerAccessToken&transport=tailscale"
+          ),
+          InfoPanelItem(
+            text = MainScreenContent.viewerUsbForwardCommand,
+            copyText = "adb forward tcp:8080 tcp:8080"
+          ),
+          InfoPanelItem(
+            text = MainScreenContent.viewerUsbUrlLine(viewerAccessToken),
+            copyText = if (viewerAccessToken.isBlank()) null else "http://127.0.0.1:8080/?token=$viewerAccessToken&transport=usb"
+          ),
+          InfoPanelItem(MainScreenContent.viewerTransportHint),
+          InfoPanelItem("앱이 켜져 있는 동안 Android 내장 서버가 8080 포트에서 대기합니다."),
+          InfoPanelItem(MainScreenContent.viewerTokenHint),
         ),
     )
 
-    InfoPanel(title = "처음 설정", items = MainScreenContent.setupSteps)
-    InfoPanel(title = "조작 방법", items = MainScreenContent.controlTips)
+    InfoPanel(title = "처음 설정", items = MainScreenContent.setupSteps.map { InfoPanelItem(it) })
+    InfoPanel(title = "조작 방법", items = MainScreenContent.controlTips.map { InfoPanelItem(it) })
     ScreenAwakeSettingsPanel(
       settings = screenAwakeSettings,
       canWriteSystemSettings = canWriteSystemSettings,
@@ -420,7 +441,8 @@ private fun SettingsSwitchRow(
 }
 
 @Composable
-private fun InfoPanel(title: String, items: List<String>, modifier: Modifier = Modifier) {
+private fun InfoPanel(title: String, items: List<InfoPanelItem>, modifier: Modifier = Modifier) {
+  val clipboardManager = LocalClipboardManager.current
   Surface(
     modifier = modifier.fillMaxWidth(),
     shape = RoundedCornerShape(8.dp),
@@ -429,14 +451,24 @@ private fun InfoPanel(title: String, items: List<String>, modifier: Modifier = M
     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       items.forEachIndexed { index, item ->
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(
-            text = "${index + 1}.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-          )
-          Text(text = item, style = MaterialTheme.typography.bodyMedium)
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+              text = "${index + 1}.",
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.primary,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Text(text = item.text, style = MaterialTheme.typography.bodyMedium)
+          }
+          if (item.copyText != null) {
+            IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.copyText)) }) {
+              Icon(Icons.Outlined.ContentCopy, contentDescription = "복사")
+            }
+          }
         }
       }
     }
