@@ -12,7 +12,8 @@ const statusDetail = document.getElementById('statusDetail');
 const logBox = document.getElementById('logBox');
 const uploadUsage = document.getElementById('uploadUsage');
 const downloadUsage = document.getElementById('downloadUsage');
-const usbFrame = document.getElementById('usbFrame');
+const usbCanvas = document.getElementById('usbCanvas');
+let usbFrame = null; // Dynamically created for legacy fallback
 const transportTailscaleBtn = document.getElementById('transportTailscaleBtn');
 const transportUsbBtn = document.getElementById('transportUsbBtn');
 const qualityMode = document.getElementById('qualityMode');
@@ -92,20 +93,39 @@ const rtcConfig = {
     ]
 };
 
-// 로그 출력 함수
-function log(msg) {
-    console.log(msg);
-    const time = new Date().toLocaleTimeString();
-    const entry = document.createElement('div');
-    entry.textContent = `[${time}] ${msg}`;
-    logBox.appendChild(entry);
+let logQueue = [];
+let logFrameRequested = false;
 
-    // Evict old entries to prevent DOM bloat
+function flushLogs() {
+    logFrameRequested = false;
+    if (logQueue.length === 0) return;
+
+    const fragment = document.createDocumentFragment();
+    for (const msg of logQueue) {
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.textContent = `[${time}] ${msg}`;
+        fragment.appendChild(entry);
+    }
+    logQueue = [];
+
+    logBox.appendChild(fragment);
+
     while (logBox.childElementCount > 200) {
         logBox.removeChild(logBox.firstChild);
     }
 
     logBox.scrollTop = logBox.scrollHeight;
+}
+
+// 로그 출력 함수
+function log(msg) {
+    console.log(msg);
+    logQueue.push(msg);
+    if (!logFrameRequested) {
+        logFrameRequested = true;
+        requestAnimationFrame(flushLogs);
+    }
 }
 
 function focusKeyboardCapture() {
@@ -281,7 +301,10 @@ function renderTransportSelection() {
     transportTailscaleBtn?.classList.toggle('active', selectedTransport === 'tailscale');
     transportUsbBtn?.classList.toggle('active', selectedTransport === 'usb');
     remoteVideo?.classList.toggle('hidden', selectedTransport === 'usb');
-    usbFrame?.classList.toggle('hidden', selectedTransport !== 'usb');
+    usbCanvas?.classList.toggle('hidden', selectedTransport !== 'usb');
+    if (usbFrame) {
+        usbFrame.classList.toggle('hidden', selectedTransport !== 'usb');
+    }
 }
 
 function setTransport(transport) {
@@ -532,32 +555,34 @@ function connectSignaling() {
         log(`WebSocket 에러 발생: ${err.message || '네트워크 오류'}`);
     };
 
-    signalingSocket.onmessage = async (event) => {
-        if (socket !== signalingSocket) return;
-        try {
-            const message = JSON.parse(event.data);
-            log(`수신된 시그널 패킷: ${message.type}`);
+    signalingSocket.onmessage = (event) => handleSignalingMessage(event, signalingSocket);
+}
 
-            switch (message.type) {
-                case 'ANSWER':
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload));
-                    remoteDescriptionSet = true;
-                    await flushPendingRemoteCandidates();
-                    log("WebRTC Remote Description (Answer) 설정 완료.");
-                    break;
-                case 'STATUS':
-                    handleStatusMessage(message.payload || {});
-                    break;
-                case 'ICE_CANDIDATE':
-                    if (message.payload) {
-                        await addRemoteCandidate(message.payload);
-                    }
-                    break;
-            }
-        } catch (e) {
-            log(`메시지 파싱 실패: ${e.message}`);
+async function handleSignalingMessage(event, signalingSocket) {
+    if (socket !== signalingSocket) return;
+    try {
+        const message = JSON.parse(event.data);
+        log(`수신된 시그널 패킷: ${message.type}`);
+
+        switch (message.type) {
+            case 'ANSWER':
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload));
+                remoteDescriptionSet = true;
+                await flushPendingRemoteCandidates();
+                log("WebRTC Remote Description (Answer) 설정 완료.");
+                break;
+            case 'STATUS':
+                handleStatusMessage(message.payload || {});
+                break;
+            case 'ICE_CANDIDATE':
+                if (message.payload) {
+                    await addRemoteCandidate(message.payload);
+                }
+                break;
         }
-    };
+    } catch (e) {
+        log(`메시지 파싱 실패: ${e.message}`);
+    }
 }
 
 function connectMirror() {
@@ -668,18 +693,72 @@ function handleUsbTextMessage(text) {
     }
 }
 
-function renderUsbFrame(blob) {
-    if (!usbFrame || selectedTransport !== 'usb') return;
-    if (lastUsbFrameUrl) {
-        URL.revokeObjectURL(lastUsbFrameUrl);
+async function renderUsbFrame(blob) {
+    if (selectedTransport !== 'usb') return;
+
+    if (typeof createImageBitmap !== 'undefined') {
+        if (usbFrame) {
+            usbFrame.classList.add('hidden');
+        }
+        if (!usbCanvas) return;
+        usbCanvas.classList.remove('hidden');
+        remoteVideo?.classList.add('hidden');
+        rtcStatus.innerText = 'USB 스트리밍';
+        accumulatedNetworkBytes.received += blob?.size || 0;
+        updateDataUsageDisplay();
+
+        try {
+            const imageBitmap = await createImageBitmap(blob);
+            const ctx = usbCanvas.getContext('2d');
+            
+            if (usbCanvas.width !== imageBitmap.width || usbCanvas.height !== imageBitmap.height) {
+                usbCanvas.width = imageBitmap.width;
+                usbCanvas.height = imageBitmap.height;
+                const videoContainer = document.getElementById('videoContainer');
+                if (videoContainer) {
+                    videoContainer.style.aspectRatio = `${imageBitmap.width} / ${imageBitmap.height}`;
+                }
+            }
+
+            ctx.drawImage(imageBitmap, 0, 0);
+            imageBitmap.close();
+        } catch (error) {
+            log(`createImageBitmap rendering failed: ${error.message}`);
+        }
+    } else {
+        if (!usbCanvas) return;
+        usbCanvas.classList.add('hidden');
+        
+        if (!usbFrame) {
+            usbFrame = document.createElement('img');
+            usbFrame.id = 'usbFrame';
+            usbFrame.style.width = '100%';
+            usbFrame.style.height = '100%';
+            usbFrame.style.objectFit = 'contain';
+            usbFrame.style.display = 'block';
+            usbCanvas.parentNode.insertBefore(usbFrame, usbCanvas);
+            bindTouchSurface(usbFrame);
+        }
+        
+        usbFrame.classList.remove('hidden');
+        remoteVideo?.classList.add('hidden');
+        rtcStatus.innerText = 'USB 스트리밍';
+        accumulatedNetworkBytes.received += blob?.size || 0;
+        updateDataUsageDisplay();
+
+        if (lastUsbFrameUrl) {
+            URL.revokeObjectURL(lastUsbFrameUrl);
+        }
+        lastUsbFrameUrl = URL.createObjectURL(blob);
+        usbFrame.src = lastUsbFrameUrl;
+        
+        usbFrame.onload = () => {
+            const videoContainer = document.getElementById('videoContainer');
+            if (videoContainer && usbFrame.naturalWidth && usbFrame.naturalHeight) {
+                videoContainer.style.aspectRatio = `${usbFrame.naturalWidth} / ${usbFrame.naturalHeight}`;
+            }
+        };
     }
-    lastUsbFrameUrl = URL.createObjectURL(blob);
-    usbFrame.src = lastUsbFrameUrl;
-    usbFrame.classList.remove('hidden');
-    remoteVideo?.classList.add('hidden');
-    rtcStatus.innerText = 'USB 스트리밍';
-    accumulatedNetworkBytes.received += blob?.size || 0;
-    updateDataUsageDisplay();
 }
 
 function handleStatusMessage(payload) {
@@ -1084,8 +1163,8 @@ function getNormalizedCoords(e, surface = remoteVideo) {
     const yOff   = e.clientY - rect.top;
     const wElem  = rect.width;
     const hElem  = rect.height;
-    const wVideo = surface.videoWidth  || surface.naturalWidth  || remoteVideo.videoWidth  || 1080;
-    const hVideo = surface.videoHeight || surface.naturalHeight || remoteVideo.videoHeight || 2400;
+    const wVideo = surface.videoWidth  || surface.naturalWidth  || surface.width  || remoteVideo.videoWidth  || 1080;
+    const hVideo = surface.videoHeight || surface.naturalHeight || surface.height || remoteVideo.videoHeight || 2400;
     const rVideo = wVideo / hVideo;
     const rElem  = wElem  / hElem;
 
@@ -1115,6 +1194,27 @@ function getNormalizedCoords(e, surface = remoteVideo) {
 }
 
 // 4. 터치/클릭 & 스와이프 제어 세팅
+function unbindTouchSurface(surface) {
+    if (!surface || !surface._touchListeners) return;
+    const listeners = surface._touchListeners;
+    surface.removeEventListener('mousedown', listeners.mousedown);
+    surface.removeEventListener('mousemove', listeners.mousemove);
+    surface.removeEventListener('mouseup', listeners.mouseup);
+    surface.removeEventListener('mouseleave', listeners.mouseleave);
+    surface.removeEventListener('wheel', listeners.wheel);
+    delete surface._touchListeners;
+}
+
+function destroyTouchControl() {
+    if (!touchControlInitialized) return;
+    touchControlInitialized = false;
+
+    unbindTouchSurface(remoteVideo);
+    if (usbCanvas) unbindTouchSurface(usbCanvas);
+    if (usbFrame) unbindTouchSurface(usbFrame);
+    log("마우스 원격 터치 좌표 리스너 해제 완료.");
+}
+
 function setupTouchControl() {
     if (touchControlInitialized) return;
     touchControlInitialized = true;
@@ -1137,6 +1237,30 @@ function setupTouchControl() {
 
     function rounded(value) {
         return parseFloat(value.toFixed(4));
+    }
+
+    function handleSwipe(start, end, duration) {
+        sendControlPayload({
+            type: 'swipe',
+            x1: start.x,
+            y1: start.y,
+            x2: end.x,
+            y2: end.y,
+            duration: Math.max(100, Math.min(duration, 1500))
+        });
+        log(`Swipe: (${start.x},${start.y})→(${end.x},${end.y}) ${duration}ms`);
+    }
+
+    function handleTap(start) {
+        sendControlPayload({ type: 'tap', x: start.x, y: start.y });
+        log(`Tap: (${start.x}, ${start.y})`);
+    }
+
+    function handleWheelSwipe(payload) {
+        if (!payload) return;
+        if (sendControlPayload(payload)) {
+            log(`Wheel swipe: (${payload.x1},${payload.y1})→(${payload.x2},${payload.y2}) ${payload.duration}ms`);
+        }
     }
 
     function buildWheelSwipePayload(coords, deltaX, deltaY) {
@@ -1173,6 +1297,9 @@ function setupTouchControl() {
 
     function bindTouchSurface(surface) {
         if (!surface) return;
+
+        unbindTouchSurface(surface);
+
         const wheelState = {
             deltaX: 0,
             deltaY: 0,
@@ -1180,7 +1307,7 @@ function setupTouchControl() {
             timeoutId: null
         };
 
-        surface.addEventListener('mousedown', (e) => {
+        const mousedownHandler = (e) => {
             e.preventDefault();
             focusKeyboardCapture();
             const coords = getNormalizedCoords(e, surface);
@@ -1192,18 +1319,18 @@ function setupTouchControl() {
             startClientX = e.clientX;
             startClientY = e.clientY;
             isDragging   = false;
-        });
+        };
 
-        surface.addEventListener('mousemove', (e) => {
+        const mousemoveHandler = (e) => {
             if (e.buttons !== 1 || !dragStart) return;
             const dx = e.clientX - startClientX;
             const dy = e.clientY - startClientY;
             if (!isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
                 isDragging = true;
             }
-        });
+        };
 
-        surface.addEventListener('mouseup', (e) => {
+        const mouseupHandler = (e) => {
             if (!dragStart) return;
             const end      = getNormalizedCoords(e, surface);
             if (!end) {
@@ -1214,32 +1341,21 @@ function setupTouchControl() {
             const duration = Date.now() - dragStart.time;
 
             if (isDragging) {
-                // Swipe gesture
-                sendControlPayload({
-                    type: 'swipe',
-                    x1: dragStart.x,
-                    y1: dragStart.y,
-                    x2: end.x,
-                    y2: end.y,
-                    duration: Math.max(100, Math.min(duration, 1500))
-                });
-                log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
+                handleSwipe(dragStart, end, duration);
             } else {
-                // Tap gesture
-                sendControlPayload({ type: 'tap', x: dragStart.x, y: dragStart.y });
-                log(`Tap: (${dragStart.x}, ${dragStart.y})`);
+                handleTap(dragStart);
             }
 
             dragStart  = null;
             isDragging = false;
-        });
+        };
 
-        surface.addEventListener('mouseleave', () => {
+        const mouseleaveHandler = () => {
             dragStart  = null;
             isDragging = false;
-        });
+        };
 
-        surface.addEventListener('wheel', (e) => {
+        const wheelHandler = (e) => {
             e.preventDefault();
             focusKeyboardCapture();
             const coords = getNormalizedCoords(e, surface);
@@ -1264,25 +1380,117 @@ function setupTouchControl() {
                 wheelState.coords = null;
                 wheelState.timeoutId = null;
 
-                if (!payload) return;
-                if (sendControlPayload(payload)) {
-                    log(
-                        `Wheel swipe: (${payload.x1},${payload.y1})→(${payload.x2},${payload.y2}) ${payload.duration}ms`
-                    );
-                }
+                handleWheelSwipe(payload);
             }, WHEEL_SWIPE_DELAY_MS);
-        }, { passive: false });
+        };
+
+        surface.addEventListener('mousedown', mousedownHandler);
+        surface.addEventListener('mousemove', mousemoveHandler);
+        surface.addEventListener('mouseup', mouseupHandler);
+        surface.addEventListener('mouseleave', mouseleaveHandler);
+        surface.addEventListener('wheel', wheelHandler, { passive: false });
+
+        surface._touchListeners = {
+            mousedown: mousedownHandler,
+            mousemove: mousemoveHandler,
+            mouseup: mouseupHandler,
+            mouseleave: mouseleaveHandler,
+            wheel: wheelHandler
+        };
     }
 
     bindTouchSurface(remoteVideo);
-    bindTouchSurface(usbFrame);
+    if (usbCanvas) bindTouchSurface(usbCanvas);
+    if (usbFrame) bindTouchSurface(usbFrame);
 }
 
 // 5. 키보드 단축키 → Android 키 이벤트
+let documentKeydownHandler = null;
+let keyboardListeners = [];
+
+function createEventInterceptor(targetObject, onAdd) {
+    if (!targetObject) return targetObject;
+    return new Proxy(targetObject, {
+        get(target, prop) {
+            if (prop === 'addEventListener') {
+                return function(type, listener, options) {
+                    onAdd(target, type, listener, options);
+                    return target.addEventListener(type, listener, options);
+                };
+            }
+            const value = target[prop];
+            if (typeof value === 'function') {
+                return value.bind(target);
+            }
+            return value;
+        },
+        set(target, prop, value) {
+            target[prop] = value;
+            return true;
+        }
+    });
+}
+
+function interceptKeyboardControl() {
+    if (!window.GalaxyMirrorKeyboard || !window.GalaxyMirrorKeyboard.createKeyboardControl) return;
+    if (window.GalaxyMirrorKeyboard._isIntercepted) return;
+    window.GalaxyMirrorKeyboard._isIntercepted = true;
+    
+    const originalCreate = window.GalaxyMirrorKeyboard.createKeyboardControl;
+    window.GalaxyMirrorKeyboard.createKeyboardControl = function(options) {
+        const onAdd = (element, type, listener, opts) => {
+            keyboardListeners.push({ element, type, listener, opts });
+        };
+        
+        const interceptedDoc = createEventInterceptor(options.document, onAdd);
+        const interceptedTarget = createEventInterceptor(options.remoteTarget, onAdd);
+        const interceptedSink = createEventInterceptor(options.keyboardSink, onAdd);
+
+        const ctrl = originalCreate({
+            ...options,
+            document: interceptedDoc,
+            remoteTarget: interceptedTarget,
+            keyboardSink: interceptedSink
+        });
+
+        ctrl.destroy = function() {
+            keyboardListeners.forEach(({ element, type, listener, opts }) => {
+                try {
+                    element.removeEventListener(type, listener, opts);
+                } catch (e) {
+                    console.error("Failed to remove event listener", e);
+                }
+            });
+            keyboardListeners = [];
+        };
+
+        return ctrl;
+    };
+}
+
+// 5. 키보드 단축키 → Android 키 이벤트
+function destroyKeyControl() {
+    if (!keyControlInitialized) return;
+    keyControlInitialized = false;
+
+    if (keyboardControl && typeof keyboardControl.destroy === 'function') {
+        keyboardControl.destroy();
+        keyboardControl = null;
+    }
+    if (documentKeydownHandler) {
+        document.removeEventListener('keydown', documentKeydownHandler);
+        documentKeydownHandler = null;
+    }
+    log("키보드 단축키 리스너 해제 완료.");
+}
+
 function setupKeyControl() {
     if (keyControlInitialized) return;
     keyControlInitialized = true;
     log("키보드 단축키 리스너 기동 완료.");
+
+    // Ensure keyboard control creation is intercepted
+    interceptKeyboardControl();
 
     function sendTextCommit(text) {
         if (sendSequencedTextPayload({ type: 'text', action: 'commit', text })) {
@@ -1314,7 +1522,7 @@ function setupKeyControl() {
         return;
     }
 
-    document.addEventListener('keydown', (e) => {
+    documentKeydownHandler = (e) => {
         if (document.activeElement !== remoteVideo) return;
         if (e.isComposing) return;
 
@@ -1346,7 +1554,8 @@ function setupKeyControl() {
             e.preventDefault();
             sendTextCommit(e.key);
         }
-    });
+    };
+    document.addEventListener('keydown', documentKeydownHandler);
 }
 
 function setupNavigationControls() {
@@ -1449,6 +1658,11 @@ function disconnectCurrentTransport() {
     clearRemoteVideoFrame();
     clearUsbFrame();
     resetTextControlState();
+    
+    // Explicit event listener cleanup
+    destroyTouchControl();
+    destroyKeyControl();
+    destroyClipboardSync();
 }
 
 function cleanupPeerConnection() {
@@ -1475,6 +1689,10 @@ function cleanupPeerConnection() {
         }
         dataChannel = null;
     }
+    
+    // Explicit event listener cleanup on PeerConnection cleanup
+    destroyTouchControl();
+    destroyKeyControl();
 }
 
 function triggerAutoReconnect() {
@@ -1563,7 +1781,13 @@ function clearUsbFrame() {
         URL.revokeObjectURL(lastUsbFrameUrl);
         lastUsbFrameUrl = null;
     }
-    usbFrame?.removeAttribute('src');
+    if (usbFrame) {
+        usbFrame.removeAttribute('src');
+    }
+    if (usbCanvas) {
+        const ctx = usbCanvas.getContext('2d');
+        ctx.clearRect(0, 0, usbCanvas.width, usbCanvas.height);
+    }
 }
 
 function enterScreenCaptureApprovalWait(message) {
@@ -1627,8 +1851,21 @@ function setupSystemControls() {
     if (powerBtn) powerBtn.addEventListener('click', () => sendAndroidKey(26));
 }
 
+let documentCopyHandler = null;
+
+function destroyClipboardSync() {
+    if (documentCopyHandler) {
+        document.removeEventListener('copy', documentCopyHandler);
+        documentCopyHandler = null;
+    }
+}
+
 function setupClipboardSync() {
-    document.addEventListener('copy', () => {
+    if (documentCopyHandler) {
+        document.removeEventListener('copy', documentCopyHandler);
+    }
+
+    documentCopyHandler = () => {
         setTimeout(async () => {
             try {
                 const text = await readClipboardForAndroid();
@@ -1644,7 +1881,9 @@ function setupClipboardSync() {
                 log(`맥 클립보드 읽기/전송 실패: ${e.message}`);
             }
         }, 100);
-    });
+    };
+
+    document.addEventListener('copy', documentCopyHandler);
 }
 
 let mediaRecorder = null;

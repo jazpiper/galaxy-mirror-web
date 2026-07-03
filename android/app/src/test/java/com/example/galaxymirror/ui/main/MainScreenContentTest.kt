@@ -11,11 +11,11 @@ class MainScreenContentTest {
         val token = "abc123"
 
         assertEquals(
-            "Tailscale URL: http://<Android MagicDNS>:8080/?token=abc123&transport=tailscale",
+            "Tailscale URL: http://<Android MagicDNS>:8080/?token=***&transport=tailscale",
             MainScreenContent.viewerTailscaleUrlLine(token),
         )
         assertEquals(
-            "USB URL: http://127.0.0.1:8080/?transport=usb",
+            "USB URL: http://127.0.0.1:8080/?token=***&transport=usb",
             MainScreenContent.viewerUsbUrlLine(token),
         )
         assertEquals(
@@ -65,7 +65,7 @@ class MainScreenContentTest {
         assertTrue(allText.any { it.contains("Mac") })
         assertTrue(allText.any { it.contains("8080") })
         assertTrue(allText.any { it.contains("접속 토큰") })
-        assertTrue(allText.any { it.contains("abc123") })
+        assertTrue(allText.any { it.contains("***") })
         assertTrue(allText.any { it.contains("애플리케이션") })
         assertTrue(allText.any { it.contains("제한된 설정") })
         assertTrue(allText.any { it.contains("허용") })

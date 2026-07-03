@@ -65,7 +65,6 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation(libs.androidx.compose.material.icons.extended)
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
   // Instrumented tests
@@ -76,8 +75,7 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.json)
   testImplementation(libs.kotlinx.coroutines.test)
-  testImplementation(libs.mockito.core)
-  testImplementation(libs.mockito.kotlin)
+  testImplementation("org.mockito:mockito-core:4.11.0")
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)
