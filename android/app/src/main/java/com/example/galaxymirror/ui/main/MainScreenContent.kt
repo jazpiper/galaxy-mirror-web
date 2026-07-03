@@ -10,22 +10,31 @@ object MainScreenContent {
             "Mac Chrome 주소창에 아래 URL을 입력하세요."
         }
 
+    private fun obscureToken(token: String): String {
+        if (token.length <= 8) return "***"
+        return "${token.take(4)}...${token.takeLast(4)}"
+    }
+
     fun viewerTokenLine(token: String): String =
         if (token.isBlank()) {
             "접속 토큰: 생성 중"
         } else {
-            "접속 토큰: $token"
+            "접속 토큰: ${obscureToken(token)}"
         }
 
     fun viewerTailscaleUrlLine(token: String): String =
         if (token.isBlank()) {
             "Tailscale URL: http://<Android MagicDNS>:8080/?token=<접속 토큰>&transport=tailscale"
         } else {
-            "Tailscale URL: http://<Android MagicDNS>:8080/?token=$token&transport=tailscale"
+            "Tailscale URL: http://<Android MagicDNS>:8080/?token=${obscureToken(token)}&transport=tailscale"
         }
 
     fun viewerUsbUrlLine(token: String): String =
-        "USB URL: http://127.0.0.1:8080/?transport=usb"
+        if (token.isBlank()) {
+            "USB URL: http://127.0.0.1:8080/?token=<접속 토큰>&transport=usb"
+        } else {
+            "USB URL: http://127.0.0.1:8080/?token=${obscureToken(token)}&transport=usb"
+        }
 
     fun viewerUrlLine(token: String): String = viewerTailscaleUrlLine(token)
 
