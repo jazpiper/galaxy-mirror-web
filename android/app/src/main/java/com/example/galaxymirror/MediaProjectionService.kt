@@ -27,6 +27,7 @@ import io.ktor.server.request.host
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.routing
+import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.http.content.staticResources
@@ -662,297 +663,7 @@ class MediaProjectionService : Service() {
                 server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
                     install(WebSockets)
                     routing {
-                        staticResources("/", "files")
-
-                        get("/status") {
-                            call.respondText("Android Mirror Web Server is active. Port: 8080")
-                        }
-
-                        get("/debug/crash") {
-                            if (!requireViewerAuthorization(call)) return@get
-                            call.respondText(
-                                redactSensitiveInfo(CrashDiagnostics.readDebugReport(this@MediaProjectionService.filesDir)),
-                                ContentType.Text.Plain
-                            )
-                        }
-
-                        get("/debug/crash/clear") {
-                            if (!requireViewerAuthorization(call)) return@get
-                            CrashDiagnostics.clearCrash(this@MediaProjectionService.filesDir)
-                            call.respondText(
-                                "Cleared saved crash and caught exception. Recent events were kept.\n",
-                                ContentType.Text.Plain
-                            )
-                        }
-
-                        get("/apps/favorites") {
-                            if (!requireViewerAuthorization(call)) return@get
-                            call.respondText(
-                                favoriteAppsRepository.getFavoritesResponseJson(),
-                                ContentType.Application.Json
-                            )
-                        }
-
-                        get("/stream/quality") {
-                            if (!requireViewerAuthorization(call)) return@get
-                            val statusJson = withContext(Dispatchers.Main) {
-                                buildStreamQualityStatusString()
-                            }
-                            call.respondText(statusJson, ContentType.Application.Json)
-                        }
-
-                        post("/stream/quality") {
-                            if (!requireViewerAuthorization(call)) return@post
-                            val mode = StreamQualityCodec.parseMode(call.receiveText())
-                            if (mode == null) {
-                                call.respondText(
-                                    """{"ok":false,"error":"INVALID_STREAM_QUALITY_MODE"}""",
-                                    ContentType.Application.Json,
-                                    HttpStatusCode.BadRequest,
-                                    )
-                                return@post
-                            }
-
-                            withContext(Dispatchers.Main) {
-                                updateStreamQualityMode(mode)
-                            }
-                            val statusJson = withContext(Dispatchers.Main) {
-                                buildStreamQualityStatusString()
-                            }
-                            call.respondText(statusJson, ContentType.Application.Json)
-                        }
-
-                        post("/apps/launch") {
-                            if (!requireViewerAuthorization(call)) return@post
-                            val packageName = FavoriteAppsCodec.parseLaunchPackageName(call.receiveText())
-                            if (packageName == null) {
-                                call.respondText(
-                                    """{"ok":false,"error":"INVALID_PACKAGE"}""",
-                                    ContentType.Application.Json,
-                                    HttpStatusCode.BadRequest
-                                )
-                                return@post
-                            }
-
-                            val launched = withContext(Dispatchers.Main) {
-                                favoriteAppsRepository.launchFavorite(packageName)
-                            }
-
-                            if (launched) {
-                                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launched: $packageName.")
-                                call.respondText("""{"ok":true}""", ContentType.Application.Json)
-                            } else {
-                                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launch failed: $packageName.")
-                                call.respondText(
-                                    """{"ok":false,"error":"APP_NOT_FOUND"}""",
-                                    ContentType.Application.Json,
-                                    HttpStatusCode.NotFound
-                                )
-                            }
-                        }
-
-                        webSocket("/signaling") {
-                            if (!isViewerAuthorized(call)) {
-                                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "UNAUTHORIZED_VIEWER"))
-                                return@webSocket
-                            }
-                            val sessionId = beginViewerSession(MirrorTransport.TAILSCALE_WEBRTC)
-                            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling WebSocket connected: sessionId=$sessionId.")
-                            Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
-
-                            val statusJob = launch {
-                                while (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-                                    delay(2_000)
-                                    try {
-                                        val statusMsg = withContext(Dispatchers.Main) {
-                                            buildStatusMessage(message = "STATUS_TICK")
-                                        }
-                                        send(Frame.Text(statusMsg))
-                                    } catch (e: Throwable) {
-                                        CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling status tick", e)
-                                        return@launch
-                                    }
-                                }
-                            }
-
-                            try {
-                                val connectedMsg = withContext(Dispatchers.Main) {
-                                    buildStatusMessage(message = "SIGNALING_CONNECTED")
-                                }
-                                send(Frame.Text(connectedMsg))
-                                for (frame in incoming) {
-                                    if (frame is Frame.Text) {
-                                        val text = frame.readText()
-                                        Log.d("KtorServer", "Signaling packet received: $text")
-                                        handleSignalingMessage(sessionId, text) { response ->
-                                            if (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-                                                launch { send(Frame.Text(response)) }
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (e: ClosedReceiveChannelException) {
-                                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling connection closed by peer: sessionId=$sessionId.")
-                            } catch (e: Throwable) {
-                                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling session $sessionId", e)
-                                Log.e("KtorServer", "Error in signaling session $sessionId: ${e.message}", e)
-                            } finally {
-                                statusJob.cancel()
-                                endViewerSession(sessionId)
-                            }
-                        }
-
-                        webSocket("/usb/session") {
-                            if (!isViewerAuthorized(call)) {
-                                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "UNAUTHORIZED_VIEWER"))
-                                return@webSocket
-                            }
-
-                            val socketSession = this
-                            val sessionId = beginViewerSession(MirrorTransport.USB_JPEG)
-                            val frameChannel =
-                                Channel<ByteArray>(
-                                    capacity = 1,
-                                    onBufferOverflow = BufferOverflow.DROP_OLDEST,
-                                )
-                            val frameSenderJob = launch {
-                                for (frameBytes in frameChannel) {
-                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    if (!active) break
-                                    try {
-                                        send(Frame.Binary(fin = true, data = frameBytes))
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Throwable) {
-                                        CrashDiagnostics.recordCaughtException(
-                                            this@MediaProjectionService.filesDir,
-                                            "USB frame send $sessionId",
-                                            e,
-                                        )
-                                        Log.e("KtorServer", "USB frame send error: ${e.message}", e)
-                                        break
-                                    }
-                                }
-                            }
-                            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connected: sessionId=$sessionId.")
-                            Log.d("KtorServer", "USB session connected: sessionId=$sessionId.")
-
-                            try {
-                                val hasCachedGrant = withContext(Dispatchers.Main) {
-                                    mediaProjectionResultCode != null && mediaProjectionResultData != null
-                                }
-                                if (!hasCachedGrant) {
-                                    val waitingStatus = withContext(Dispatchers.Main) {
-                                        buildUsbStatusMessage("WAITING_FOR_SCREEN_CAPTURE", captureReady = false)
-                                    }
-                                    send(Frame.Text(waitingStatus))
-                                    withContext(Dispatchers.Main) {
-                                        requestScreenCapturePermissionFromActivity("USB session requested MediaProjection grant")
-                                    }
-                                }
-
-                                // Clear any stale tokens in the channel
-                                while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
-
-                                while (true) {
-                                    val isActive = withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    }
-                                    if (!isActive) break
-
-                                    val hasGrant = withContext(Dispatchers.Main) {
-                                        mediaProjectionResultCode != null && mediaProjectionResultData != null
-                                    }
-                                    if (hasGrant) break
-
-                                    permissionGrantChannel.receive()
-                                }
-
-                                val grant = withContext(Dispatchers.Main) {
-                                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
-                                        consumeMediaProjectionGrant()
-                                    } else {
-                                        null
-                                    }
-                                }
-                                if (grant == null) {
-                                    val reauthStatus = withContext(Dispatchers.Main) {
-                                        buildUsbStatusMessage("SCREEN_CAPTURE_REAUTH_REQUIRED", captureReady = false)
-                                    }
-                                    send(Frame.Text(reauthStatus))
-                                    return@webSocket
-                                }
-
-                                val (resultCode, resultData) = grant
-                                val profile = withContext(Dispatchers.Main) {
-                                    UsbStreamProfilePolicy.resolve(streamQualityMode)
-                                }
-                                val startingStatus = withContext(Dispatchers.Main) {
-                                    buildUsbStatusMessage("USB_STREAM_STARTING", captureReady = true)
-                                }
-                                send(Frame.Text(startingStatus))
-                                withContext(Dispatchers.Main) {
-                                    prepareUsbScreenStreamerForSession(sessionId)
-                                    usbScreenStreamer.start(
-                                        resultCode = resultCode,
-                                        resultData = resultData,
-                                        profile = profile,
-                                    ) { frameBytes ->
-                                        frameChannel.trySend(frameBytes)
-                                    }
-                                }
-                                val streamingStatus = withContext(Dispatchers.Main) {
-                                    buildUsbStatusMessage("USB_STREAMING", captureReady = true)
-                                }
-                                send(Frame.Text(streamingStatus))
-
-                                for (frame in incoming) {
-                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    if (!active) break
-                                    if (frame is Frame.Text) {
-                                        controlEventDispatcher.dispatch(frame.readText()) { result ->
-                                            socketSession.launch {
-                                                try {
-                                                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
-                                                        socketSession.send(Frame.Text(result.toAckJson()))
-                                                    }
-                                                } catch (e: CancellationException) {
-                                                    throw e
-                                                } catch (e: Throwable) {
-                                                    CrashDiagnostics.recordCaughtException(
-                                                        this@MediaProjectionService.filesDir,
-                                                        "USB control ack send $sessionId",
-                                                        e,
-                                                    )
-                                                    Log.e("KtorServer", "USB control ACK send error: ${e.message}", e)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (e: ClosedReceiveChannelException) {
-                                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connection closed by peer: sessionId=$sessionId.")
-                            } catch (e: Throwable) {
-                                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "USB session $sessionId", e)
-                                Log.e("KtorServer", "USB session error: ${e.message}", e)
-                            } finally {
-                                frameChannel.close()
-                                withContext(NonCancellable) {
-                                    frameSenderJob.cancelAndJoin()
-                                    withContext(Dispatchers.Main) {
-                                        if (
-                                            isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
-                                            ::usbScreenStreamer.isInitialized
-                                        ) {
-                                            usbScreenStreamer.stop()
-                                        }
-                                    }
-                                    clearActiveUsbProjectionSession(sessionId)
-                                    endViewerSession(sessionId)
-                                    CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session ended: sessionId=$sessionId.")
-                                }
-                            }
-                        }
+                        setupRouting()
                     }
                 }.start(wait = false)
                 CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Ktor server started on 0.0.0.0:8080.")
@@ -960,6 +671,302 @@ class MediaProjectionService : Service() {
             } catch (e: Exception) {
                 CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "Ktor server startup", e)
                 Log.e("KtorServer", "Error starting Ktor Server: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun Routing.setupRouting() {
+        staticResources("/", "files")
+
+        get("/status") {
+            call.respondText("Android Mirror Web Server is active. Port: 8080")
+        }
+
+        get("/debug/crash") {
+            if (!requireViewerAuthorization(call)) return@get
+            call.respondText(
+                redactSensitiveInfo(CrashDiagnostics.readDebugReport(this@MediaProjectionService.filesDir)),
+                ContentType.Text.Plain
+            )
+        }
+
+        get("/debug/crash/clear") {
+            if (!requireViewerAuthorization(call)) return@get
+            CrashDiagnostics.clearCrash(this@MediaProjectionService.filesDir)
+            call.respondText(
+                "Cleared saved crash and caught exception. Recent events were kept.\n",
+                ContentType.Text.Plain
+            )
+        }
+
+        get("/apps/favorites") {
+            if (!requireViewerAuthorization(call)) return@get
+            call.respondText(
+                favoriteAppsRepository.getFavoritesResponseJson(),
+                ContentType.Application.Json
+            )
+        }
+
+        get("/stream/quality") {
+            if (!requireViewerAuthorization(call)) return@get
+            val statusJson = withContext(Dispatchers.Main) {
+                buildStreamQualityStatusString()
+            }
+            call.respondText(statusJson, ContentType.Application.Json)
+        }
+
+        post("/stream/quality") {
+            if (!requireViewerAuthorization(call)) return@post
+            val mode = StreamQualityCodec.parseMode(call.receiveText())
+            if (mode == null) {
+                call.respondText(
+                    """{"ok":false,"error":"INVALID_STREAM_QUALITY_MODE"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                    )
+                return@post
+            }
+
+            withContext(Dispatchers.Main) {
+                updateStreamQualityMode(mode)
+            }
+            val statusJson = withContext(Dispatchers.Main) {
+                buildStreamQualityStatusString()
+            }
+            call.respondText(statusJson, ContentType.Application.Json)
+        }
+
+        post("/apps/launch") {
+            if (!requireViewerAuthorization(call)) return@post
+            val packageName = FavoriteAppsCodec.parseLaunchPackageName(call.receiveText())
+            if (packageName == null) {
+                call.respondText(
+                    """{"ok":false,"error":"INVALID_PACKAGE"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest
+                )
+                return@post
+            }
+
+            val launched = withContext(Dispatchers.Main) {
+                favoriteAppsRepository.launchFavorite(packageName)
+            }
+
+            if (launched) {
+                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launched: $packageName.")
+                call.respondText("""{"ok":true}""", ContentType.Application.Json)
+            } else {
+                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launch failed: $packageName.")
+                call.respondText(
+                    """{"ok":false,"error":"APP_NOT_FOUND"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.NotFound
+                )
+            }
+        }
+
+        webSocket("/signaling") {
+            if (!isViewerAuthorized(call)) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "UNAUTHORIZED_VIEWER"))
+                return@webSocket
+            }
+            val sessionId = beginViewerSession(MirrorTransport.TAILSCALE_WEBRTC)
+            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling WebSocket connected: sessionId=$sessionId.")
+            Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
+
+            val statusJob = launch {
+                while (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
+                    delay(2_000)
+                    try {
+                        val statusMsg = withContext(Dispatchers.Main) {
+                            buildStatusMessage(message = "STATUS_TICK")
+                        }
+                        send(Frame.Text(statusMsg))
+                    } catch (e: Throwable) {
+                        CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling status tick", e)
+                        return@launch
+                    }
+                }
+            }
+
+            try {
+                val connectedMsg = withContext(Dispatchers.Main) {
+                    buildStatusMessage(message = "SIGNALING_CONNECTED")
+                }
+                send(Frame.Text(connectedMsg))
+                for (frame in incoming) {
+                    if (frame is Frame.Text) {
+                        val text = frame.readText()
+                        Log.d("KtorServer", "Signaling packet received: $text")
+                        handleSignalingMessage(sessionId, text) { response ->
+                            if (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
+                                launch { send(Frame.Text(response)) }
+                            }
+                        }
+                    }
+                }
+            } catch (e: ClosedReceiveChannelException) {
+                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling connection closed by peer: sessionId=$sessionId.")
+            } catch (e: Throwable) {
+                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling session $sessionId", e)
+                Log.e("KtorServer", "Error in signaling session $sessionId: ${e.message}", e)
+            } finally {
+                statusJob.cancel()
+                endViewerSession(sessionId)
+            }
+        }
+
+        webSocket("/usb/session") {
+            if (!isViewerAuthorized(call)) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "UNAUTHORIZED_VIEWER"))
+                return@webSocket
+            }
+
+            val socketSession = this
+            val sessionId = beginViewerSession(MirrorTransport.USB_JPEG)
+            val frameChannel =
+                Channel<ByteArray>(
+                    capacity = 1,
+                    onBufferOverflow = BufferOverflow.DROP_OLDEST,
+                )
+            val frameSenderJob = launch {
+                for (frameBytes in frameChannel) {
+                    val active = withContext(Dispatchers.Main) {
+                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
+                    }
+                    if (!active) break
+                    try {
+                        send(Frame.Binary(fin = true, data = frameBytes))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        CrashDiagnostics.recordCaughtException(
+                            this@MediaProjectionService.filesDir,
+                            "USB frame send $sessionId",
+                            e,
+                        )
+                        Log.e("KtorServer", "USB frame send error: ${e.message}", e)
+                        break
+                    }
+                }
+            }
+            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connected: sessionId=$sessionId.")
+            Log.d("KtorServer", "USB session connected: sessionId=$sessionId.")
+
+            try {
+                val hasCachedGrant = withContext(Dispatchers.Main) {
+                    mediaProjectionResultCode != null && mediaProjectionResultData != null
+                }
+                if (!hasCachedGrant) {
+                    val waitingStatus = withContext(Dispatchers.Main) {
+                        buildUsbStatusMessage("WAITING_FOR_SCREEN_CAPTURE", captureReady = false)
+                    }
+                    send(Frame.Text(waitingStatus))
+                    withContext(Dispatchers.Main) {
+                        requestScreenCapturePermissionFromActivity("USB session requested MediaProjection grant")
+                    }
+                }
+
+                // Clear any stale tokens in the channel
+                while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
+
+                while (true) {
+                    val isActive = withContext(Dispatchers.Main) {
+                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
+                    }
+                    if (!isActive) break
+
+                    val hasGrant = withContext(Dispatchers.Main) {
+                        mediaProjectionResultCode != null && mediaProjectionResultData != null
+                    }
+                    if (hasGrant) break
+
+                    permissionGrantChannel.receive()
+                }
+
+                val grant = withContext(Dispatchers.Main) {
+                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
+                        consumeMediaProjectionGrant()
+                    } else {
+                        null
+                    }
+                }
+                if (grant == null) {
+                    val reauthStatus = withContext(Dispatchers.Main) {
+                        buildUsbStatusMessage("SCREEN_CAPTURE_REAUTH_REQUIRED", captureReady = false)
+                    }
+                    send(Frame.Text(reauthStatus))
+                    return@webSocket
+                }
+
+                val (resultCode, resultData) = grant
+                val profile = withContext(Dispatchers.Main) {
+                    UsbStreamProfilePolicy.resolve(streamQualityMode)
+                }
+                val startingStatus = withContext(Dispatchers.Main) {
+                    buildUsbStatusMessage("USB_STREAM_STARTING", captureReady = true)
+                }
+                send(Frame.Text(startingStatus))
+                withContext(Dispatchers.Main) {
+                    prepareUsbScreenStreamerForSession(sessionId)
+                    usbScreenStreamer.start(
+                        resultCode = resultCode,
+                        resultData = resultData,
+                        profile = profile,
+                    ) { frameBytes ->
+                        frameChannel.trySend(frameBytes)
+                    }
+                }
+                val streamingStatus = withContext(Dispatchers.Main) {
+                    buildUsbStatusMessage("USB_STREAMING", captureReady = true)
+                }
+                send(Frame.Text(streamingStatus))
+
+                for (frame in incoming) {
+                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
+                    if (!active) break
+                    if (frame is Frame.Text) {
+                        controlEventDispatcher.dispatch(frame.readText()) { result ->
+                            socketSession.launch {
+                                try {
+                                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
+                                        socketSession.send(Frame.Text(result.toAckJson()))
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Throwable) {
+                                    CrashDiagnostics.recordCaughtException(
+                                        this@MediaProjectionService.filesDir,
+                                        "USB control ack send $sessionId",
+                                        e,
+                                    )
+                                    Log.e("KtorServer", "USB control ACK send error: ${e.message}", e)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: ClosedReceiveChannelException) {
+                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connection closed by peer: sessionId=$sessionId.")
+            } catch (e: Throwable) {
+                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "USB session $sessionId", e)
+                Log.e("KtorServer", "USB session error: ${e.message}", e)
+            } finally {
+                frameChannel.close()
+                withContext(NonCancellable) {
+                    frameSenderJob.cancelAndJoin()
+                    withContext(Dispatchers.Main) {
+                        if (
+                            isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
+                            ::usbScreenStreamer.isInitialized
+                        ) {
+                            usbScreenStreamer.stop()
+                        }
+                    }
+                    clearActiveUsbProjectionSession(sessionId)
+                    endViewerSession(sessionId)
+                    CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session ended: sessionId=$sessionId.")
+                }
             }
         }
     }
