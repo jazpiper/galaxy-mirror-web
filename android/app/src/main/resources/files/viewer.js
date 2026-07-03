@@ -532,32 +532,34 @@ function connectSignaling() {
         log(`WebSocket 에러 발생: ${err.message || '네트워크 오류'}`);
     };
 
-    signalingSocket.onmessage = async (event) => {
-        if (socket !== signalingSocket) return;
-        try {
-            const message = JSON.parse(event.data);
-            log(`수신된 시그널 패킷: ${message.type}`);
+    signalingSocket.onmessage = (event) => handleSignalingMessage(event, signalingSocket);
+}
 
-            switch (message.type) {
-                case 'ANSWER':
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload));
-                    remoteDescriptionSet = true;
-                    await flushPendingRemoteCandidates();
-                    log("WebRTC Remote Description (Answer) 설정 완료.");
-                    break;
-                case 'STATUS':
-                    handleStatusMessage(message.payload || {});
-                    break;
-                case 'ICE_CANDIDATE':
-                    if (message.payload) {
-                        await addRemoteCandidate(message.payload);
-                    }
-                    break;
-            }
-        } catch (e) {
-            log(`메시지 파싱 실패: ${e.message}`);
+async function handleSignalingMessage(event, signalingSocket) {
+    if (socket !== signalingSocket) return;
+    try {
+        const message = JSON.parse(event.data);
+        log(`수신된 시그널 패킷: ${message.type}`);
+
+        switch (message.type) {
+            case 'ANSWER':
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(message.payload));
+                remoteDescriptionSet = true;
+                await flushPendingRemoteCandidates();
+                log("WebRTC Remote Description (Answer) 설정 완료.");
+                break;
+            case 'STATUS':
+                handleStatusMessage(message.payload || {});
+                break;
+            case 'ICE_CANDIDATE':
+                if (message.payload) {
+                    await addRemoteCandidate(message.payload);
+                }
+                break;
         }
-    };
+    } catch (e) {
+        log(`메시지 파싱 실패: ${e.message}`);
+    }
 }
 
 function connectMirror() {
