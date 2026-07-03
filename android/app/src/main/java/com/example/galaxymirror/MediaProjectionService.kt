@@ -831,9 +831,7 @@ class MediaProjectionService : Service() {
                 )
             val frameSenderJob = launch {
                 for (frameBytes in frameChannel) {
-                    val active = withContext(Dispatchers.Main) {
-                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                    }
+                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                     if (!active) break
                     try {
                         send(Frame.Binary(fin = true, data = frameBytes))
@@ -871,9 +869,7 @@ class MediaProjectionService : Service() {
                 while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
 
                 while (true) {
-                    val isActive = withContext(Dispatchers.Main) {
-                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                    }
+                    val isActive = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                     if (!isActive) break
 
                     val hasGrant = withContext(Dispatchers.Main) {
@@ -955,11 +951,11 @@ class MediaProjectionService : Service() {
                 frameChannel.close()
                 withContext(NonCancellable) {
                     frameSenderJob.cancelAndJoin()
-                    withContext(Dispatchers.Main) {
-                        if (
-                            isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
-                            ::usbScreenStreamer.isInitialized
-                        ) {
+                    if (
+                        isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
+                        ::usbScreenStreamer.isInitialized
+                    ) {
+                        withContext(Dispatchers.Main) {
                             usbScreenStreamer.stop()
                         }
                     }
