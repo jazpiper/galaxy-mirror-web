@@ -79,16 +79,25 @@
             }
         }
 
+        getOriginalElement(el) {
+            return (el && el.__target__) ? el.__target__ : el;
+        }
+
         focusKeyboardSink() {
             if (!this.keyboardSink) return;
-            if (this.documentRef.activeElement !== this.keyboardSink && typeof this.keyboardSink.focus === 'function') {
+            const active = this.getOriginalElement(this.documentRef.activeElement);
+            const sink = this.getOriginalElement(this.keyboardSink);
+            if (active !== sink && typeof this.keyboardSink.focus === 'function') {
                 this.keyboardSink.focus({ preventScroll: true });
             }
             this.resetSink();
         }
 
         isKeyboardActive() {
-            return this.documentRef.activeElement === this.keyboardSink || this.documentRef.activeElement === this.remoteTarget;
+            const active = this.getOriginalElement(this.documentRef.activeElement);
+            const sink = this.getOriginalElement(this.keyboardSink);
+            const target = this.getOriginalElement(this.remoteTarget);
+            return active === sink || active === target;
         }
 
         commitText(text) {
@@ -160,7 +169,9 @@
                     return;
             }
 
-            if (this.documentRef.activeElement !== this.keyboardSink) {
+            const active = this.getOriginalElement(this.documentRef.activeElement);
+            const sink = this.getOriginalElement(this.keyboardSink);
+            if (active !== sink) {
                 this.focusKeyboardSink();
             }
         }

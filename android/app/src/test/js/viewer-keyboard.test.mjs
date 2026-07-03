@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 class FakeEventTarget {
     constructor(id = '') {
-        this.id = id;
+        this._id = id;
         this.listeners = new Map();
         this.children = [];
         const classes = new Set();
@@ -48,6 +48,27 @@ class FakeEventTarget {
         this.src = '';
     }
 
+    get id() {
+        return this._id;
+    }
+
+    set id(val) {
+        this._id = val;
+        if (this.ownerDocument) {
+            this.ownerDocument.elements.set(val, this);
+        }
+    }
+
+    getContext(type) {
+        if (type === '2d') {
+            return {
+                clearRect(x, y, w, h) {},
+                drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh) {}
+            };
+        }
+        return null;
+    }
+
     get innerHTML() {
         return this._innerHTML;
     }
@@ -74,6 +95,13 @@ class FakeEventTarget {
         this.listeners.set(type, listeners);
     }
 
+    removeEventListener(type, listener) {
+        if (this.listeners.has(type)) {
+            const listeners = this.listeners.get(type).filter(l => l !== listener);
+            this.listeners.set(type, listeners);
+        }
+    }
+
     dispatchEvent(event) {
         event.target = event.target || this;
         for (const listener of this.listeners.get(event.type) || []) {
@@ -84,6 +112,16 @@ class FakeEventTarget {
     appendChild(child) {
         this.children.push(child);
         child.parentNode = this;
+    }
+
+    insertBefore(newChild, referenceChild) {
+        const index = this.children.indexOf(referenceChild);
+        if (index !== -1) {
+            this.children.splice(index, 0, newChild);
+        } else {
+            this.children.push(newChild);
+        }
+        newChild.parentNode = this;
     }
 
     removeChild(child) {
@@ -159,6 +197,12 @@ class FakeDocument extends FakeEventTarget {
         const element = new FakeEventTarget(tagName);
         element.ownerDocument = this;
         return element;
+    }
+
+    createDocumentFragment() {
+        const fragment = new FakeEventTarget('fragment');
+        fragment.ownerDocument = this;
+        return fragment;
     }
 }
 
@@ -367,7 +411,9 @@ function loadViewer(options = {}) {
             setTimeout: (callback, delay) => clock.setTimeout(callback, delay),
             clearTimeout: (id) => clock.clearTimeout(id),
             setInterval: (callback, delay) => clock.setInterval(callback, delay),
-            clearInterval: (id) => clock.clearInterval(id)
+            clearInterval: (id) => clock.clearInterval(id),
+            requestAnimationFrame: (callback) => clock.setTimeout(callback, 16),
+            cancelAnimationFrame: (id) => clock.clearTimeout(id)
         },
         WebSocket: FakeWebSocket,
         RTCPeerConnection: FakeRTCPeerConnection,
@@ -386,6 +432,9 @@ function loadViewer(options = {}) {
         clearTimeout: (id) => clock.clearTimeout(id),
         setInterval: (callback, delay) => clock.setInterval(callback, delay),
         clearInterval: (id) => clock.clearInterval(id),
+        requestAnimationFrame: (callback) => clock.setTimeout(callback, 16),
+        cancelAnimationFrame: (id) => clock.clearTimeout(id),
+        createImageBitmap: undefined,
         fetch: async (url, options = {}) => {
             fetchCalls.push({ url, options });
             return {
@@ -412,6 +461,10 @@ function loadViewer(options = {}) {
     vm.runInContext(fs.readFileSync(path.join(filesDir, 'viewer.js'), 'utf8'), context, {
         filename: 'viewer.js'
     });
+
+    const videoContainer = contextDocument.getElementById('videoContainer');
+    const usbCanvas = contextDocument.getElementById('usbCanvas');
+    videoContainer.appendChild(usbCanvas);
 
     const messages = [];
     context.channel = {
@@ -650,6 +703,10 @@ await test('USB frame taps send normalized tap controls through USB socket', () 
 
     vm.runInContext('connectMirror();', context);
     webSockets[0].onopen();
+    vm.runInContext(`
+        const frame = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+        usbSocket.onmessage({ data: frame });
+    `, context);
 
     const usbFrame = document.getElementById('usbFrame');
     usbFrame.dispatchEvent({
@@ -677,6 +734,10 @@ await test('USB frame mouse wheel sends swipe controls through USB socket', () =
 
     vm.runInContext('connectMirror();', context);
     webSockets[0].onopen();
+    vm.runInContext(`
+        const frame = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+        usbSocket.onmessage({ data: frame });
+    `, context);
 
     const usbFrame = document.getElementById('usbFrame');
     const wheelEvent = {
@@ -848,6 +909,7 @@ await test('copy event sends clipboard payload through USB socket in usb mode', 
     });
 
     vm.runInContext('connectMirror();', context);
+    webSockets[0].onopen();
     context.document.dispatchEvent({ type: 'copy', preventDefault() {} });
 
     clock.runAll();

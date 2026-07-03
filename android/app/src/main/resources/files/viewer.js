@@ -14,6 +14,7 @@ const uploadUsage = document.getElementById('uploadUsage');
 const downloadUsage = document.getElementById('downloadUsage');
 const usbCanvas = document.getElementById('usbCanvas');
 let usbFrame = null; // Dynamically created for legacy fallback
+let bindTouchSurface = null;
 const transportTailscaleBtn = document.getElementById('transportTailscaleBtn');
 const transportUsbBtn = document.getElementById('transportUsbBtn');
 const qualityMode = document.getElementById('qualityMode');
@@ -737,7 +738,7 @@ async function renderUsbFrame(blob) {
             usbFrame.style.objectFit = 'contain';
             usbFrame.style.display = 'block';
             usbCanvas.parentNode.insertBefore(usbFrame, usbCanvas);
-            bindTouchSurface(usbFrame);
+            bindTouchSurface?.(usbFrame);
         }
         
         usbFrame.classList.remove('hidden');
@@ -1295,7 +1296,7 @@ function setupTouchControl() {
         };
     }
 
-    function bindTouchSurface(surface) {
+    bindTouchSurface = function(surface) {
         if (!surface) return;
 
         unbindTouchSurface(surface);
@@ -1412,6 +1413,9 @@ function createEventInterceptor(targetObject, onAdd) {
     if (!targetObject) return targetObject;
     return new Proxy(targetObject, {
         get(target, prop) {
+            if (prop === '__target__') {
+                return target;
+            }
             if (prop === 'addEventListener') {
                 return function(type, listener, options) {
                     onAdd(target, type, listener, options);
@@ -1488,6 +1492,7 @@ function setupKeyControl() {
     if (keyControlInitialized) return;
     keyControlInitialized = true;
     log("키보드 단축키 리스너 기동 완료.");
+    setupClipboardSync();
 
     // Ensure keyboard control creation is intercepted
     interceptKeyboardControl();
