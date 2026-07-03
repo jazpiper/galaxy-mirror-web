@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
-import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import io.ktor.server.application.ApplicationCall
 import io.ktor.http.ContentType
