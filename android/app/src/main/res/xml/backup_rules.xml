@@ -6,8 +6,7 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
    <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+   <exclude domain="sharedpref" path="viewer_access.xml"/>
+   <exclude domain="sharedpref" path="screen_brightness_restore.xml"/>
 </full-backup-content>
