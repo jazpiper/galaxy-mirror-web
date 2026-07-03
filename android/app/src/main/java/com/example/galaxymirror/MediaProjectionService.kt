@@ -439,6 +439,25 @@ class MediaProjectionService : Service() {
             StreamNetworkTransport.OTHER
         }
 
+    private fun redactSensitiveInfo(input: String?): String {
+        if (input == null) return ""
+        var redacted = input
+
+        // Redact IP addresses (IPv4)
+        redacted = redacted.replace(Regex("(?<!\\d)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?!\\d)"), "[REDACTED_IP]")
+
+        // Redact MAC addresses
+        redacted = redacted.replace(Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}"), "[REDACTED_MAC]")
+
+        // Redact file paths (Android specific)
+        redacted = redacted.replace(Regex("(/data/user/\\d+/|/data/data/|/sdcard/|/storage/emulated/\\d+/)[\\w\\-./]+"), "[REDACTED_PATH]")
+
+        // Redact Stack traces. Hide stack frames starting with "at "
+        redacted = redacted.replace(Regex("(?m)^\\s*at .*\\(.*\\)$"), "\t[REDACTED_STACK_FRAME]")
+
+        return redacted
+    }
+
     private fun buildStreamQualityStatusJson(): org.json.JSONObject {
         val network = currentStreamNetworkTransport()
         val profile = AdaptiveStreamQuality.resolve(streamQualityMode, network, viewerActivityState)
@@ -663,7 +682,7 @@ class MediaProjectionService : Service() {
                         get("/debug/crash") {
                             if (!requireViewerAuthorization(call)) return@get
                             call.respondText(
-                                CrashDiagnostics.readDebugReport(this@MediaProjectionService.filesDir),
+                                redactSensitiveInfo(CrashDiagnostics.readDebugReport(this@MediaProjectionService.filesDir)),
                                 ContentType.Text.Plain
                             )
                         }
