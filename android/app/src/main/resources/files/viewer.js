@@ -1139,6 +1139,30 @@ function setupTouchControl() {
         return parseFloat(value.toFixed(4));
     }
 
+    function handleSwipe(start, end, duration) {
+        sendControlPayload({
+            type: 'swipe',
+            x1: start.x,
+            y1: start.y,
+            x2: end.x,
+            y2: end.y,
+            duration: Math.max(100, Math.min(duration, 1500))
+        });
+        log(`Swipe: (${start.x},${start.y})→(${end.x},${end.y}) ${duration}ms`);
+    }
+
+    function handleTap(start) {
+        sendControlPayload({ type: 'tap', x: start.x, y: start.y });
+        log(`Tap: (${start.x}, ${start.y})`);
+    }
+
+    function handleWheelSwipe(payload) {
+        if (!payload) return;
+        if (sendControlPayload(payload)) {
+            log(`Wheel swipe: (${payload.x1},${payload.y1})→(${payload.x2},${payload.y2}) ${payload.duration}ms`);
+        }
+    }
+
     function buildWheelSwipePayload(coords, deltaX, deltaY) {
         const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
         const dominantDelta = vertical ? deltaY : deltaX;
@@ -1214,20 +1238,9 @@ function setupTouchControl() {
             const duration = Date.now() - dragStart.time;
 
             if (isDragging) {
-                // Swipe gesture
-                sendControlPayload({
-                    type: 'swipe',
-                    x1: dragStart.x,
-                    y1: dragStart.y,
-                    x2: end.x,
-                    y2: end.y,
-                    duration: Math.max(100, Math.min(duration, 1500))
-                });
-                log(`Swipe: (${dragStart.x},${dragStart.y})→(${end.x},${end.y}) ${duration}ms`);
+                handleSwipe(dragStart, end, duration);
             } else {
-                // Tap gesture
-                sendControlPayload({ type: 'tap', x: dragStart.x, y: dragStart.y });
-                log(`Tap: (${dragStart.x}, ${dragStart.y})`);
+                handleTap(dragStart);
             }
 
             dragStart  = null;
@@ -1264,12 +1277,7 @@ function setupTouchControl() {
                 wheelState.coords = null;
                 wheelState.timeoutId = null;
 
-                if (!payload) return;
-                if (sendControlPayload(payload)) {
-                    log(
-                        `Wheel swipe: (${payload.x1},${payload.y1})→(${payload.x2},${payload.y2}) ${payload.duration}ms`
-                    );
-                }
+                handleWheelSwipe(payload);
             }, WHEEL_SWIPE_DELAY_MS);
         }, { passive: false });
     }
