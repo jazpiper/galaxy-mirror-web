@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-06-19
+updated: 2026-07-03
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -110,6 +110,7 @@ updated: 2026-06-19
 ## 🤝 세션 인수인계 노트 (Handoff Notes)
 
 ### 1. 현재 개발 상태 요약
+* **2026-07-03 업데이트**: 대기 상태였던 16개의 open PR (PR 1 ~ PR 16)을 모두 `main` 브랜치에 통합 병합 완료했습니다. 병합 과정에서의 모든 충돌 해소 및 통합 단위 테스트, 빌드, 린트 검사 통과를 완수하여 소스 트리 안정성을 검증했습니다.
 * WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
 * Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고 구현을 완료했습니다. 실제 Galaxy 단말에서 USB `adb forward` smoke test 및 Tailscale/WebRTC와의 전환 반복 검증, 그리고 Post-review hardening에 대한 최종 검증까지 모두 통과하였습니다.
 * 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4). 최근 추가된 WebRTC 해제 누수 보강 및 USB 뷰어 사용성/화면 설정 재적용 개선에 대한 단위/회귀 테스트도 모두 통과했습니다.
