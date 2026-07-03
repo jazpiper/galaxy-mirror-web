@@ -1,0 +1,29 @@
+package com.example.galaxymirror
+
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.content.ActivityNotFoundException
+import junit.framework.TestCase.assertFalse
+import org.junit.Test
+import org.mockito.Mockito.*
+import org.mockito.ArgumentMatchers.any
+
+class FavoriteAppsRepositoryTest {
+    @Test
+    fun launchFavorite_returnsFalse_whenStartActivityThrowsActivityNotFoundException() {
+        val mockContext = mock(Context::class.java)
+        val mockPackageManager = mock(PackageManager::class.java)
+        val mockSharedPreferences = mock(SharedPreferences::class.java)
+        `when`(mockContext.packageManager).thenReturn(mockPackageManager)
+        `when`(mockContext.getSharedPreferences(anyString(), anyInt())).thenReturn(mockSharedPreferences)
+        `when`(mockPackageManager.getLaunchIntentForPackage("com.test.app")).thenReturn(Intent())
+        `when`(mockContext.startActivity(any())).thenThrow(ActivityNotFoundException("Mock exception"))
+
+        val repo = FavoriteAppsRepository(mockContext)
+        val result = repo.launchFavorite("com.test.app")
+
+        assertFalse(result)
+    }
+}

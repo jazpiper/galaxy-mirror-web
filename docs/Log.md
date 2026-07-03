@@ -2,12 +2,23 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-06-09
+updated: 2026-06-19
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-06-19
+
+- **안정화 및 하드닝 검증 완료**
+  - 실제 Galaxy 단말에서 USB `adb forward` 연결 검증 및 Tailscale/WebRTC와의 전환 반복을 성공적으로 완수했다.
+  - MediaProjection viewer close/replacement cleanup이 디바이스 상에서 정상 동작하는 것을 확인했다.
+  - 클립보드 동기화와 물리 디바이스 볼륨 업/다운/음소거 기능이 실제 장치에서 완벽하게 동작하는 것을 검증했다.
+  - USB 뷰어 사용성 향상을 위한 단축키, UI 동작 개선 및 화면 설정 재적용 기능을 추가 보완했다.
+  - WebRTC 해제 시 이벤트 리스너 정리 및 메모리 누수 방지에 대한 회귀/단위 테스트를 보강하여 통과시켰다.
 
 ---
 
