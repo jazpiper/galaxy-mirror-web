@@ -798,9 +798,7 @@ class MediaProjectionService : Service() {
                                 )
                             val frameSenderJob = launch {
                                 for (frameBytes in frameChannel) {
-                                    val active = withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    }
+                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                                     if (!active) break
                                     try {
                                         send(Frame.Binary(fin = true, data = frameBytes))
