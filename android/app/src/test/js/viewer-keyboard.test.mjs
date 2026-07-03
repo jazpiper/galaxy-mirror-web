@@ -57,6 +57,17 @@ class FakeEventTarget {
         this.textContent = String(value).replace(/<[^>]+>/g, '');
     }
 
+    get textContent() {
+        if (this.children.length > 0) {
+            return this.children.map(c => c.textContent).join('');
+        }
+        return this._textContent || '';
+    }
+
+    set textContent(value) {
+        this._textContent = value;
+    }
+
     addEventListener(type, listener) {
         const listeners = this.listeners.get(type) || [];
         listeners.push(listener);
