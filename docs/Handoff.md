@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-06-09
+updated: 2026-06-19
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -78,11 +78,11 @@ updated: 2026-06-09
   - [x] Mac Viewer 상태 패널 아래에 WebRTC 업로드/다운로드 누적 사용량을 MB 단위로 표시
   - [x] `Protocols.md`에 keep-awake 토글, Android 잠금/화면 꺼짐에 따른 MediaProjection 중단, 밝기 최소화 권한 조건 문서화
   - [x] 실제 Android 단말에서 keep-awake 토글, 밝기 최소화/복원, 시스템 설정 수정 권한 이동 동작 검증
-- [ ] **T3.7: Tailscale/USB dual transport 연결 모델**
+- [x] **T3.7: Tailscale/USB dual transport 연결 모델**
   - [x] Tailscale/WebRTC와 USB/JPEG transport 선택 모델 정의
   - [x] USB `/usb/session` WebSocket 기반 JPEG frame 및 control event 경로 구현
-  - [ ] 실제 Galaxy 단말에서 USB `adb forward` smoke test
-  - [ ] Tailscale/WebRTC와 USB 전환 반복 smoke test
+  - [x] 실제 Galaxy 단말에서 USB `adb forward` smoke test
+  - [x] Tailscale/WebRTC와 USB 전환 반복 smoke test
 
 ### 🚀 Milestone 4: 2차 전체 코드 리뷰 및 시스템 안정성 하드닝 (Completed)
 - [x] **T4.1: WebRTC 라이프사이클 누수 및 크래시 제거**
@@ -111,8 +111,8 @@ updated: 2026-06-09
 
 ### 1. 현재 개발 상태 요약
 * WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
-* Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고, USB/JPEG session 문서화를 반영했습니다. 로컬 JS 테스트, Android 단위 테스트, debug APK 빌드, lint 검증은 통과했습니다. 현재 Mac에서 ADB/USB 장치가 감지되지 않아 APK 재설치/실행, 실제 Galaxy 단말 USB smoke test, transport 전환 반복 검증은 아직 남아 있습니다.
-* 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4).
+* Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고 구현을 완료했습니다. 실제 Galaxy 단말에서 USB `adb forward` smoke test 및 Tailscale/WebRTC와의 전환 반복 검증, 그리고 Post-review hardening에 대한 최종 검증까지 모두 통과하였습니다.
+* 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4). 최근 추가된 WebRTC 해제 누수 보강 및 USB 뷰어 사용성/화면 설정 재적용 개선에 대한 단위/회귀 테스트도 모두 통과했습니다.
 * 에뮬레이터 UI 테스트에서 발생하던 `ComponentActivity` 중복 `setContent` 크래시 수정 완료.
 * AI 에이전트(Gemini) 세션 구동 시 프로젝트의 아키텍처, 기술 스택, 디렉토리 구조, 빌드/테스트 명령 및 개발 약속을 기술한 `GEMINI.md` 컨텍스트 가이드 루트 디렉토리에 추가 완료.
 * **성능 및 아키텍처 고도화 작업 완료**: Ktor 서버 및 WebRTC 세션의 포그라운드 서비스(`MediaProjectionService`) 이관, Android 14+ 화면 공유 승인 팝업 우회(Capturer/Track 캐싱), SDP Munging을 통한 H.264 하드웨어 가속 강제화, JSON ACK 직렬화 최적화(GC Jank 제거), Active-Idle 화질 가변 전환 시 화면 프리징 완벽 방지 작업을 구현 및 검증했습니다. 관련 분석은 [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md)에 상세히 문서화되어 있습니다.
@@ -144,9 +144,9 @@ updated: 2026-06-09
 > privacy-first 정책으로 확정했습니다.
 
 ### 🧯 Post-review hardening
-- [ ] MediaProjection viewer close/replacement cleanup verified on device
-- [ ] Clipboard sync verified on actual `http://<MagicDNS-host>:8080` viewer origin
-- [ ] Volume up/down/mute verified on physical device
+- [x] MediaProjection viewer close/replacement cleanup verified on device
+- [x] Clipboard sync verified on actual `http://<MagicDNS-host>:8080` viewer origin
+- [x] Volume up/down/mute verified on physical device
 
 ### 2. 다음 개발 단계 핵심 미션 (Backlog / Future Enhancements)
 1. **오디오 스트리밍 미러링**: Android 10+ MediaProjection 오디오 캡처 파이프라인 및 WebRTC 오디오 트랙 뷰어 연동.

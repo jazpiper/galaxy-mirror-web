@@ -36,6 +36,10 @@ class UsbScreenStreamer(
     private var projectionCallback: MediaProjection.Callback? = null
     private var virtualDisplay: VirtualDisplay? = null
 
+    private var cachedSourceBitmap: Bitmap? = null
+    private var cachedJpegBitmap: Bitmap? = null
+    private var cachedOutputStream: java.io.ByteArrayOutputStream? = null
+
     fun start(
         resultCode: Int,
         resultData: Intent,
@@ -184,31 +188,58 @@ class UsbScreenStreamer(
         val rowStride = plane.rowStride
         val rowPadding = rowStride - pixelStride * profile.width
         val bitmapWidth = profile.width + rowPadding / pixelStride
-        val sourceBitmap = Bitmap.createBitmap(bitmapWidth, profile.height, Bitmap.Config.ARGB_8888)
-        sourceBitmap.copyPixelsFromBuffer(buffer)
 
-        val jpegBitmap =
+        val sBitmap: Bitmap
+        val jBitmap: Bitmap
+
+        synchronized(stateLock) {
+            val currentSrc = cachedSourceBitmap
+            if (currentSrc == null || currentSrc.width != bitmapWidth || currentSrc.height != profile.height) {
+                currentSrc?.recycle()
+                cachedSourceBitmap = Bitmap.createBitmap(bitmapWidth, profile.height, Bitmap.Config.ARGB_8888)
+            }
+            sBitmap = cachedSourceBitmap!!
+
             if (bitmapWidth == profile.width) {
-                sourceBitmap
+                cachedJpegBitmap?.recycle()
+                cachedJpegBitmap = null
+                jBitmap = sBitmap
             } else {
-                Bitmap.createBitmap(sourceBitmap, 0, 0, profile.width, profile.height)
+                val currentJpeg = cachedJpegBitmap
+                if (currentJpeg == null || currentJpeg.width != profile.width || currentJpeg.height != profile.height) {
+                    currentJpeg?.recycle()
+                    cachedJpegBitmap = Bitmap.createBitmap(profile.width, profile.height, Bitmap.Config.ARGB_8888)
+                }
+                jBitmap = cachedJpegBitmap!!
             }
-
-        return try {
-            ByteArrayOutputStream().use { output ->
-                jpegBitmap.compress(
-                    Bitmap.CompressFormat.JPEG,
-                    profile.jpegQuality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY),
-                    output,
-                )
-                output.toByteArray()
-            }
-        } finally {
-            if (jpegBitmap !== sourceBitmap) {
-                jpegBitmap.recycle()
-            }
-            sourceBitmap.recycle()
         }
+
+        sBitmap.copyPixelsFromBuffer(buffer)
+
+        if (jBitmap !== sBitmap) {
+            val canvas = android.graphics.Canvas(jBitmap)
+            val srcRect = android.graphics.Rect(0, 0, profile.width, profile.height)
+            val destRect = android.graphics.Rect(0, 0, profile.width, profile.height)
+            canvas.drawBitmap(sBitmap, srcRect, destRect, null)
+        }
+
+        val output = synchronized(stateLock) {
+            var out = cachedOutputStream
+            if (out == null) {
+                out = java.io.ByteArrayOutputStream(1024 * 1024)
+                cachedOutputStream = out
+            } else {
+                out.reset()
+            }
+            out
+        }
+
+        jBitmap.compress(
+            Bitmap.CompressFormat.JPEG,
+            profile.jpegQuality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY),
+            output
+        )
+        return output.toByteArray()
     }
 
     private fun releaseResources(stopProjection: Boolean) {
@@ -282,6 +313,14 @@ class UsbScreenStreamer(
         }
 
         resources.handlerThread?.quitSafely()
+
+        synchronized(stateLock) {
+            cachedSourceBitmap?.recycle()
+            cachedSourceBitmap = null
+            cachedJpegBitmap?.recycle()
+            cachedJpegBitmap = null
+            cachedOutputStream = null
+        }
     }
 
     private fun unregisterMediaProjectionCallback(
