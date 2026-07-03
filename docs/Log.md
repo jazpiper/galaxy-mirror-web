@@ -309,3 +309,11 @@ updated: 2026-06-09
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
 | [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |
+
+### 2024-xx-xx: FavoriteAppsRepository Test Coverage (Testing Improvement)
+* **Goal**: Write tests for `FavoriteAppsRepository`.
+* **Changes**:
+  * Refactored `FavoriteAppsRepository.kt` to depend on clean interfaces `KeyValueStore` and `AppLauncher` instead of abstract Android SDK classes (`Context`, `SharedPreferences`, `PackageManager`). This enables deterministic and isolation testing without heavy framework dependencies like Robolectric.
+  * Created `FavoriteAppsRepositoryTest.kt` introducing `FakeKeyValueStore` and `FakeAppLauncher` tailored for the new interfaces.
+  * Added unit test cases for all key workflows: `getFavorites`, `addFavorite`, `removeFavorite`, `getLaunchableApps`, and `launchFavorite`.
+* **Result**: Code is fully tested ensuring high reliability. Tested successfully via `./gradlew :app:testDebugUnitTest`.

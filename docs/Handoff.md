@@ -172,3 +172,8 @@ updated: 2026-06-09
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
 | [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |
+### 🧪 Milestone 7: Testing Improvement (Completed)
+- [x] **FavoriteAppsRepository 테스트 커버리지 확보**
+  - `Context`, `PackageManager`, `SharedPreferences` 등 Android SDK 객체 의존성을 제거하고 `KeyValueStore`, `AppLauncher` 인터페이스로 `FavoriteAppsRepository` 리팩토링.
+  - 리팩토링된 인터페이스에 대한 테스트 Fake 구현체 작성.
+  - 추가된 Fake를 활용하여 `getFavorites`, `addFavorite`, `removeFavorite`, `getLaunchableApps`, `launchFavorite` 등 리포지토리 로직의 전체 동작 및 에지 케이스 검증.
