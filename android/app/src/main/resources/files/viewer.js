@@ -1601,7 +1601,12 @@ function showGlowToast(message) {
     if (!container) return null;
     const toast = document.createElement('div');
     toast.className = 'toast';
-    toast.innerHTML = `<span>🔔</span><span>${message}</span>`;
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = '🔔';
+    const textSpan = document.createElement('span');
+    textSpan.textContent = message;
+    toast.appendChild(iconSpan);
+    toast.appendChild(textSpan);
     container.appendChild(toast);
 
     // Force a reflow to trigger CSS transitions
