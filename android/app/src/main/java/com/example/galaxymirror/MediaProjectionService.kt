@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
-import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import io.ktor.server.application.ApplicationCall
 import io.ktor.http.ContentType
@@ -51,6 +50,9 @@ import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.webrtc.*
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,6 +61,7 @@ class MediaProjectionService : Service() {
 
     private val binder = LocalBinder()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val permissionGrantChannel = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val controlEventDispatcher =
         ControlEventDispatcher(
@@ -87,12 +90,9 @@ class MediaProjectionService : Service() {
         private const val IDLE_QUALITY_DELAY_MS = 6_000L
     }
 
-    // Binder interface for UI communication
-    interface StateListener {
-        fun onStateChanged()
-        fun onScreenCapturePermissionRequired() {}
-    }
-    private val listeners = mutableListOf<StateListener>()
+    // Service state structure
+    private val _serviceState = MutableStateFlow(MirrorServiceState())
+    val serviceState: StateFlow<MirrorServiceState> = _serviceState.asStateFlow()
 
     var screenCapturePermissionRequired = false
         private set
@@ -127,7 +127,7 @@ class MediaProjectionService : Service() {
         private set
     var viewerActivityState = ViewerActivityState.ACTIVE
         private set
-    var mirrorSessionState = MirrorSessionState()
+    @Volatile var mirrorSessionState = MirrorSessionState()
         private set
     var activeSessionId = 0
         private set
@@ -206,13 +206,15 @@ class MediaProjectionService : Service() {
                         val newProfile = AdaptiveStreamQuality.resolve(streamQualityMode, newNetwork, viewerActivityState)
                         streamQualityProfile = newProfile
                         applyStreamQualityProfile(newProfile, reason = "Network handoff callback")
-                        notifyStateChanged()
+                        updateServiceState()
                     }
                 }
             }
         }
         networkCallback = callback
         connectivityManager.registerDefaultNetworkCallback(callback)
+
+        updateServiceState()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -245,11 +247,12 @@ class MediaProjectionService : Service() {
             isRunning = true
             applyScreenAwakeEffectsForCurrentState()
             CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
+            permissionGrantChannel.trySend(Unit)
 
             // Resume any waiting Offer
             mainHandler.post {
                 resumePendingOfferIfReady()
-                notifyStateChanged()
+                updateServiceState()
             }
         } else {
             // Started without screen capture intent data (just run Ktor server)
@@ -314,45 +317,32 @@ class MediaProjectionService : Service() {
             Log.e(TAG, "Error restoring brightness in onDestroy: ${e.message}", e)
         }
 
-        listeners.clear()
         CrashDiagnostics.recordEvent(this, "MediaProjectionService.onDestroy")
         Log.d(TAG, "MediaProjectionService stopped.")
     }
 
-    // ─── Binder State Listeners ──────────────────────────────────────────────────
+    // ─── Service State Publisher ──────────────────────────────────────────────────
 
-    fun registerListener(listener: StateListener) {
-        synchronized(listeners) {
-            listeners.add(listener)
-        }
-        listener.onStateChanged()
-    }
-
-    fun unregisterListener(listener: StateListener) {
-        synchronized(listeners) {
-            listeners.remove(listener)
-        }
-    }
-
-    fun notifyStateChanged() {
-        val targets = synchronized(listeners) { listeners.toList() }
-        mainHandler.post {
-            targets.forEach { it.onStateChanged() }
-        }
-    }
-
-    private fun notifyScreenCapturePermissionRequired() {
-        val targets = synchronized(listeners) { listeners.toList() }
-        mainHandler.post {
-            targets.forEach { it.onScreenCapturePermissionRequired() }
-        }
+    fun updateServiceState() {
+        _serviceState.value = MirrorServiceState(
+            isKtorRunning = server != null,
+            streamQualityMode = streamQualityMode,
+            streamQualityNetwork = streamQualityNetwork,
+            streamQualityProfile = streamQualityProfile,
+            viewerAccessToken = viewerAccessToken,
+            mirrorSessionState = mirrorSessionState,
+            activeSessionId = activeSessionId,
+            screenAwakeSettings = screenAwakeSettings,
+            canWriteSystemSettings = if (::screenBrightnessController.isInitialized) screenBrightnessController.canWriteSystemSettings() else false,
+            screenCapturePermissionRequired = screenCapturePermissionRequired,
+            isMirroringActive = isMirroringActive()
+        )
     }
 
     private fun requestScreenCapturePermissionFromActivity(reason: String) {
         screenCapturePermissionRequired = true
         CrashDiagnostics.recordEvent(this, "Screen capture permission request required: $reason.")
-        notifyScreenCapturePermissionRequired()
-        notifyStateChanged()
+        updateServiceState()
     }
 
     // ─── Public Control API for MainActivity ─────────────────────────────────────
@@ -361,7 +351,7 @@ class MediaProjectionService : Service() {
         screenAwakeSettings = settings
         screenAwakeSettingsStore.write(settings)
         applyScreenAwakeEffectsForCurrentState()
-        notifyStateChanged()
+        updateServiceState()
     }
 
     fun updateStreamQualityMode(mode: StreamQualityMode) {
@@ -369,7 +359,7 @@ class MediaProjectionService : Service() {
         streamQualityMode = mode
         val profile = refreshStreamQualityState()
         applyStreamQualityProfile(profile, reason = "settings")
-        notifyStateChanged()
+        updateServiceState()
     }
 
     fun disconnectMirror() {
@@ -391,7 +381,8 @@ class MediaProjectionService : Service() {
         screenCapturePermissionRequired = false
         isRunning = false
         applyScreenAwakeEffectsForCurrentState()
-        notifyStateChanged()
+        updateServiceState()
+        permissionGrantChannel.trySend(Unit)
     }
 
     private fun stopProjectionCaptureForPolicy(reason: CleanupReason) {
@@ -402,6 +393,7 @@ class MediaProjectionService : Service() {
         isRunning = false
         screenCapturePermissionRequired = false
         applyScreenAwakeEffectsForCurrentState()
+        updateServiceState()
     }
 
     fun isMirroringActive(): Boolean {
@@ -439,16 +431,14 @@ class MediaProjectionService : Service() {
             StreamNetworkTransport.OTHER
         }
 
-    private fun buildStreamQualityStatusJson(): org.json.JSONObject {
+    private fun buildStreamQualityStatusString(): String {
         val network = currentStreamNetworkTransport()
         val profile = AdaptiveStreamQuality.resolve(streamQualityMode, network, viewerActivityState)
-        return org.json.JSONObject(
-            StreamQualityCodec.toStatusJson(
-                selectedMode = streamQualityMode,
-                networkTransport = network,
-                profile = profile,
-                activityState = viewerActivityState,
-            )
+        return StreamQualityCodec.toStatusJson(
+            selectedMode = streamQualityMode,
+            networkTransport = network,
+            profile = profile,
+            activityState = viewerActivityState,
         )
     }
 
@@ -506,7 +496,8 @@ class MediaProjectionService : Service() {
             screenCapturePermissionRequired = true
             isRunning = false
             applyScreenAwakeEffectsForCurrentState()
-            notifyStateChanged()
+            updateServiceState()
+            permissionGrantChannel.trySend(Unit)
         }
     }
 
@@ -524,13 +515,13 @@ class MediaProjectionService : Service() {
                 viewerActivityState = ViewerActivityState.IDLE
                 val idleProfile = refreshStreamQualityState()
                 applyStreamQualityProfile(idleProfile, reason = "viewer idle")
-                notifyStateChanged()
+                updateServiceState()
                 CrashDiagnostics.recordEvent(
                     this@MediaProjectionService,
                     "Viewer idle stream quality applied: ${idleProfile.width}x${idleProfile.height}@${idleProfile.fps}, bitrate=${idleProfile.maxBitrateBps}.",
                 )
             }
-            notifyStateChanged()
+            updateServiceState()
         }
     }
 
@@ -599,34 +590,32 @@ class MediaProjectionService : Service() {
         accessibilityReady: Boolean = GalaxyMirrorAccessibilityService.isReadyForRemoteInput(),
         message: String
     ): String {
-        return org.json.JSONObject().apply {
-            put("type", "STATUS")
-            put("payload", org.json.JSONObject().apply {
-                put("captureReady", captureReady)
-                put("accessibilityReady", accessibilityReady)
-                put("keepScreenAwake", screenAwakeSettings.keepScreenAwakeDuringMirroring)
-                put("brightnessMinimizeEnabled", screenAwakeSettings.minimizeBrightnessDuringMirroring)
-                put("brightnessWriteSettingsReady", screenBrightnessController.canWriteSystemSettings())
-                put("streamQuality", buildStreamQualityStatusJson())
-                put("message", message)
-            })
-        }.toString()
+        val streamQualityJsonStr = buildStreamQualityStatusString()
+        return "{\"type\":\"STATUS\",\"payload\":{" +
+                "\"captureReady\":$captureReady," +
+                "\"accessibilityReady\":$accessibilityReady," +
+                "\"keepScreenAwake\":${screenAwakeSettings.keepScreenAwakeDuringMirroring}," +
+                "\"brightnessMinimizeEnabled\":${screenAwakeSettings.minimizeBrightnessDuringMirroring}," +
+                "\"brightnessWriteSettingsReady\":${screenBrightnessController.canWriteSystemSettings()}," +
+                "\"streamQuality\":$streamQualityJsonStr," +
+                "\"message\":\"$message\"" +
+                "}}"
     }
 
     private fun buildUsbStatusMessage(
         message: String,
         captureReady: Boolean = isRunning,
     ): String {
-        return org.json.JSONObject().apply {
-            put("type", "USB_STATUS")
-            put("payload", org.json.JSONObject().apply {
-                put("transport", MirrorTransport.USB_JPEG.wireValue)
-                put("captureReady", captureReady)
-                put("accessibilityReady", GalaxyMirrorAccessibilityService.isReadyForRemoteInput())
-                put("streamQuality", org.json.JSONObject(UsbStreamProfileCodec.toStatusJson(streamQualityMode)))
-                put("message", message)
-            })
-        }.toString()
+        val streamQualityJsonStr = UsbStreamProfileCodec.toStatusJson(streamQualityMode)
+        val accessibilityReady = GalaxyMirrorAccessibilityService.isReadyForRemoteInput()
+        val transportWireValue = MirrorTransport.USB_JPEG.wireValue
+        return "{\"type\":\"USB_STATUS\",\"payload\":{" +
+                "\"transport\":\"$transportWireValue\"," +
+                "\"captureReady\":$captureReady," +
+                "\"accessibilityReady\":$accessibilityReady," +
+                "\"streamQuality\":$streamQualityJsonStr," +
+                "\"message\":\"$message\"" +
+                "}}"
     }
 
     private fun isViewerAuthorized(call: ApplicationCall): Boolean =
@@ -688,7 +677,7 @@ class MediaProjectionService : Service() {
                         get("/stream/quality") {
                             if (!requireViewerAuthorization(call)) return@get
                             val statusJson = withContext(Dispatchers.Main) {
-                                buildStreamQualityStatusJson().toString()
+                                buildStreamQualityStatusString()
                             }
                             call.respondText(statusJson, ContentType.Application.Json)
                         }
@@ -701,7 +690,7 @@ class MediaProjectionService : Service() {
                                     """{"ok":false,"error":"INVALID_STREAM_QUALITY_MODE"}""",
                                     ContentType.Application.Json,
                                     HttpStatusCode.BadRequest,
-                                )
+                                    )
                                 return@post
                             }
 
@@ -709,7 +698,7 @@ class MediaProjectionService : Service() {
                                 updateStreamQualityMode(mode)
                             }
                             val statusJson = withContext(Dispatchers.Main) {
-                                buildStreamQualityStatusJson().toString()
+                                buildStreamQualityStatusString()
                             }
                             call.respondText(statusJson, ContentType.Application.Json)
                         }
@@ -845,13 +834,21 @@ class MediaProjectionService : Service() {
                                     }
                                 }
 
-                                while (
-                                    withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
-                                            (mediaProjectionResultCode == null || mediaProjectionResultData == null)
+                                // Clear any stale tokens in the channel
+                                while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
+
+                                while (true) {
+                                    val isActive = withContext(Dispatchers.Main) {
+                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                                     }
-                                ) {
-                                    delay(500)
+                                    if (!isActive) break
+
+                                    val hasGrant = withContext(Dispatchers.Main) {
+                                        mediaProjectionResultCode != null && mediaProjectionResultData != null
+                                    }
+                                    if (hasGrant) break
+
+                                    permissionGrantChannel.receive()
                                 }
 
                                 val grant = withContext(Dispatchers.Main) {
@@ -893,19 +890,13 @@ class MediaProjectionService : Service() {
                                 send(Frame.Text(streamingStatus))
 
                                 for (frame in incoming) {
-                                    val active = withContext(Dispatchers.Main) {
-                                        isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                    }
+                                    val active = isActiveSession(sessionId, MirrorTransport.USB_JPEG)
                                     if (!active) break
                                     if (frame is Frame.Text) {
                                         controlEventDispatcher.dispatch(frame.readText()) { result ->
                                             socketSession.launch {
                                                 try {
-                                                    if (
-                                                        withContext(Dispatchers.Main) {
-                                                            isActiveSession(sessionId, MirrorTransport.USB_JPEG)
-                                                        }
-                                                    ) {
+                                                    if (isActiveSession(sessionId, MirrorTransport.USB_JPEG)) {
                                                         socketSession.send(Frame.Text(result.toAckJson()))
                                                     }
                                                 } catch (e: CancellationException) {
@@ -999,7 +990,7 @@ class MediaProjectionService : Service() {
                 stopProjectionCaptureForPolicy(CleanupReason.VIEWER_REPLACED)
             }
             applyScreenAwakeEffectsForCurrentState()
-            notifyStateChanged()
+            updateServiceState()
         }
         return sessionId
     }
@@ -1020,7 +1011,7 @@ class MediaProjectionService : Service() {
 
             if (shouldStopProjection) {
                 stopProjectionCaptureForPolicy(CleanupReason.VIEWER_SOCKET_CLOSED)
-                notifyStateChanged()
+                updateServiceState()
             }
         }
     }
@@ -1068,10 +1059,13 @@ class MediaProjectionService : Service() {
     }
 
     private fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
-        mainHandler.post {
-            if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
+        serviceScope.launch(Dispatchers.Default) {
+            val isActive = withContext(Dispatchers.Main) {
+                isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
+            }
+            if (!isActive) {
                 Log.w("WebRTC", "Ignoring signaling message for inactive session: $sessionId")
-                return@post
+                return@launch
             }
 
             try {
@@ -1080,54 +1074,60 @@ class MediaProjectionService : Service() {
 
                 when (type) {
                     "OFFER" -> {
-                        CrashDiagnostics.recordEvent(this, "Offer received for sessionId=$sessionId.")
+                        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Offer received for sessionId=$sessionId.")
                         Log.d("WebRTC", "Offer received. Creating Answer...")
                         val sdpObj = json.getJSONObject("payload")
-                        val sdpDescription = SessionDescription(
-                            SessionDescription.Type.fromCanonicalForm(sdpObj.getString("type")),
-                            sdpObj.getString("sdp")
-                        )
+                        val sdpType = SessionDescription.Type.fromCanonicalForm(sdpObj.getString("type"))
+                        val originalSdp = sdpObj.getString("sdp")
 
-                        val readiness = ProjectionReadiness.from(
-                            hasProjectionIntent = mediaProjectionResultData != null,
-                            isServiceRunning = isRunning
-                        )
-                        val decision =
-                            SignalingDecision.onOffer(
-                                readiness,
-                                isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC),
+                        // SDP Munging inside Dispatchers.Default
+                        val modifiedOfferSdp = preferH264Codec(originalSdp)
+                        val mungedOfferSdp = SessionDescription(sdpType, modifiedOfferSdp)
+
+                        withContext(Dispatchers.Main) {
+                            val isActiveMain = isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
+                            val readiness = ProjectionReadiness.from(
+                                hasProjectionIntent = mediaProjectionResultData != null,
+                                isServiceRunning = isRunning
                             )
-                        CrashDiagnostics.recordEvent(this, "Signaling decision on OFFER: $decision.")
-                        when (decision) {
-                            SignalingDecision.START_NEGOTIATION -> initializeWebRTC(sessionId, sdpDescription, sendResponse)
-                            SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
-                                queuePendingOffer(sessionId, sdpDescription, sendResponse)
-                                requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
-                                sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                            }
-                            SignalingDecision.QUEUE_AND_SEND_STATUS -> {
-                                queuePendingOffer(sessionId, sdpDescription, sendResponse)
-                                sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                                resumePendingOfferIfReady()
-                            }
-                            SignalingDecision.IGNORE_INACTIVE -> {
-                                CrashDiagnostics.recordEvent(this, "Ignoring offer for inactive sessionId=$sessionId.")
+                            val decision = SignalingDecision.onOffer(readiness, isActiveMain)
+                            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Signaling decision on OFFER: $decision.")
+
+                            when (decision) {
+                                SignalingDecision.START_NEGOTIATION -> {
+                                    initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
+                                }
+                                SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
+                                    queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
+                                    requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
+                                    sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
+                                }
+                                SignalingDecision.QUEUE_AND_SEND_STATUS -> {
+                                    queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
+                                    sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
+                                    resumePendingOfferIfReady()
+                                }
+                                SignalingDecision.IGNORE_INACTIVE -> {
+                                    CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ignoring offer for inactive sessionId=$sessionId.")
+                                }
                             }
                         }
                     }
                     "ICE_CANDIDATE" -> {
-                        CrashDiagnostics.recordEvent(this, "ICE candidate received for sessionId=$sessionId.")
+                        CrashDiagnostics.recordEvent(this@MediaProjectionService, "ICE candidate received for sessionId=$sessionId.")
                         val candidateObj = json.getJSONObject("payload")
                         val candidate = IceCandidate(
                             candidateObj.getString("sdpMid"),
                             candidateObj.getInt("sdpMLineIndex"),
                             candidateObj.getString("candidate")
                         )
-                        addRemoteIceCandidate(candidate)
+                        withContext(Dispatchers.Main) {
+                            addRemoteIceCandidate(candidate)
+                        }
                     }
                 }
             } catch (e: Exception) {
-                CrashDiagnostics.recordCaughtException(this.filesDir, "signaling JSON parse", e)
+                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling JSON parse", e)
                 Log.e("WebRTC", "Error parsing signaling JSON: ${e.message}", e)
             }
         }
@@ -1441,7 +1441,7 @@ class MediaProjectionService : Service() {
             requestScreenCapturePermissionFromActivity(diagnosticReason)
             isRunning = false
             applyScreenAwakeEffectsForCurrentState()
-            notifyStateChanged()
+            updateServiceState()
         }
     }
 
@@ -1580,3 +1580,17 @@ class MediaProjectionService : Service() {
         }
     }
 }
+
+data class MirrorServiceState(
+    val isKtorRunning: Boolean = false,
+    val streamQualityMode: StreamQualityMode = StreamQualityMode.AUTO,
+    val streamQualityNetwork: StreamNetworkTransport = StreamNetworkTransport.OTHER,
+    val streamQualityProfile: StreamQualityProfile = StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
+    val viewerAccessToken: String = "",
+    val mirrorSessionState: MirrorSessionState = MirrorSessionState(),
+    val activeSessionId: Int = 0,
+    val screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
+    val canWriteSystemSettings: Boolean = false,
+    val screenCapturePermissionRequired: Boolean = false,
+    val isMirroringActive: Boolean = false
+)
