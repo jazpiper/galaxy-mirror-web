@@ -14,6 +14,7 @@ const statusDetail = document.getElementById('statusDetail');
 const logBox = document.getElementById('logBox');
 const uploadUsage = document.getElementById('uploadUsage');
 const downloadUsage = document.getElementById('downloadUsage');
+const rtcLatency = document.getElementById('rtcLatency'); // cached: read every 1s in the stats poll loop
 const usbCanvas = document.getElementById('usbCanvas');
 const connectionPlaceholder = document.getElementById('connectionPlaceholder');
 let usbCanvasCtx = null; // Cached 2D context; getContext returns the same object each call, so fetch once
@@ -164,14 +165,32 @@ function formatMegabytes(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+let lastUploadUsageText = null;
+let lastDownloadUsageText = null;
 function updateDataUsageDisplay() {
-    if (uploadUsage) uploadUsage.textContent = formatMegabytes(accumulatedNetworkBytes.sent);
-    if (downloadUsage) downloadUsage.textContent = formatMegabytes(accumulatedNetworkBytes.received);
+    // Called per USB frame (30-60fps); the rounded MB text changes only every ~20 frames, so
+    // skip the DOM write when the formatted value is unchanged (dirty check).
+    if (uploadUsage) {
+        const text = formatMegabytes(accumulatedNetworkBytes.sent);
+        if (text !== lastUploadUsageText) {
+            uploadUsage.textContent = text;
+            lastUploadUsageText = text;
+        }
+    }
+    if (downloadUsage) {
+        const text = formatMegabytes(accumulatedNetworkBytes.received);
+        if (text !== lastDownloadUsageText) {
+            downloadUsage.textContent = text;
+            lastDownloadUsageText = text;
+        }
+    }
 }
 
 function resetDataUsageStats() {
     lastNetworkBytes = null;
     accumulatedNetworkBytes = { sent: 0, received: 0 };
+    lastUploadUsageText = null;
+    lastDownloadUsageText = null;
     updateDataUsageDisplay();
 }
 
@@ -241,12 +260,11 @@ async function sampleWebRtcStats() {
             }
         });
 
-        const latencyEl = document.getElementById('rtcLatency');
-        if (latencyEl) {
+        if (rtcLatency) {
             if (typeof rtt === 'number') {
-                latencyEl.textContent = `${(rtt * 1000).toFixed(0)} ms`;
+                rtcLatency.textContent = `${(rtt * 1000).toFixed(0)} ms`;
             } else {
-                latencyEl.textContent = '확인 중';
+                rtcLatency.textContent = '확인 중';
             }
         }
 
