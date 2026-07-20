@@ -87,6 +87,14 @@ class MediaProjectionService : Service() {
 
         private const val IDLE_QUALITY_DELAY_MS = 6_000L
         private const val MEDIA_PROJECTION_GRANT_POLL_MS = 500L
+
+        // Compiled once and reused; redactSensitiveInfo previously recompiled these on every call.
+        private val REDACT_IPV4 =
+            Regex("(?<!\\d)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?!\\d)")
+        private val REDACT_MAC = Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}")
+        private val REDACT_PATH =
+            Regex("(/data/user/\\d+/|/data/data/|/sdcard/|/storage/emulated/\\d+/)[\\w\\-./]+")
+        private val REDACT_STACK_FRAME = Regex("(?m)^\\s*at .*\\(.*\\)$")
     }
 
     // Service state structure
@@ -499,16 +507,16 @@ class MediaProjectionService : Service() {
         var redacted = input
 
         // Redact IP addresses (IPv4)
-        redacted = redacted.replace(Regex("(?<!\\d)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?!\\d)"), "[REDACTED_IP]")
+        redacted = redacted.replace(REDACT_IPV4, "[REDACTED_IP]")
 
         // Redact MAC addresses
-        redacted = redacted.replace(Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}"), "[REDACTED_MAC]")
+        redacted = redacted.replace(REDACT_MAC, "[REDACTED_MAC]")
 
         // Redact file paths (Android specific)
-        redacted = redacted.replace(Regex("(/data/user/\\d+/|/data/data/|/sdcard/|/storage/emulated/\\d+/)[\\w\\-./]+"), "[REDACTED_PATH]")
+        redacted = redacted.replace(REDACT_PATH, "[REDACTED_PATH]")
 
         // Redact Stack traces. Hide stack frames starting with "at "
-        redacted = redacted.replace(Regex("(?m)^\\s*at .*\\(.*\\)$"), "\t[REDACTED_STACK_FRAME]")
+        redacted = redacted.replace(REDACT_STACK_FRAME, "\t[REDACTED_STACK_FRAME]")
 
         return redacted
     }

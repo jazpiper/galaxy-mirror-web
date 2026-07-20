@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 class UsbH264ScreenStreamer(
@@ -249,8 +250,11 @@ class UsbH264ScreenStreamer(
         if (encoded.hasAnnexBStartCode()) return encoded
         if (encoded.size < 4) return encoded
 
-        val chunks = mutableListOf<ByteArray>()
+        // Build directly into one stream instead of a list + O(n^2) fold: avoids per-NAL
+        // intermediate arrays and the quadratic accumulator on the per-frame encode path.
+        val out = ByteArrayOutputStream(encoded.size + ANNEX_B_START_CODE.size)
         var offset = 0
+        var nalCount = 0
         while (offset + 4 <= encoded.size) {
             val length =
                 ((encoded[offset].toInt() and 0xff) shl 24) or
@@ -259,11 +263,13 @@ class UsbH264ScreenStreamer(
                     (encoded[offset + 3].toInt() and 0xff)
             offset += 4
             if (length <= 0 || offset + length > encoded.size) return encoded
-            chunks += ANNEX_B_START_CODE + encoded.copyOfRange(offset, offset + length)
+            out.write(ANNEX_B_START_CODE)
+            out.write(encoded, offset, length)
             offset += length
+            nalCount++
         }
-        if (offset != encoded.size || chunks.isEmpty()) return encoded
-        return chunks.fold(ByteArray(0)) { acc, chunk -> acc + chunk }
+        if (offset != encoded.size || nalCount == 0) return encoded
+        return out.toByteArray()
     }
 
     private fun ByteArray.hasAnnexBStartCode(): Boolean =

@@ -16,6 +16,11 @@ const uploadUsage = document.getElementById('uploadUsage');
 const downloadUsage = document.getElementById('downloadUsage');
 const usbCanvas = document.getElementById('usbCanvas');
 const connectionPlaceholder = document.getElementById('connectionPlaceholder');
+let usbCanvasCtx = null; // Cached 2D context; getContext returns the same object each call, so fetch once
+function getUsbCanvasContext() {
+    if (!usbCanvasCtx && usbCanvas) usbCanvasCtx = usbCanvas.getContext('2d');
+    return usbCanvasCtx;
+}
 let usbFrame = null; // Dynamically created for legacy fallback
 let bindTouchSurface = null;
 const transportTailscaleBtn = document.getElementById('transportTailscaleBtn');
@@ -1084,7 +1089,7 @@ function drawDecodedUsbFrame(frame) {
         usbCanvas.classList.remove('hidden');
         remoteVideo?.classList.add('hidden');
         rtcStatus.innerText = 'USB 스트리밍';
-        const ctx = usbCanvas.getContext('2d');
+        const ctx = getUsbCanvasContext();
         ctx.drawImage(frame, 0, 0, usbCanvas.width, usbCanvas.height);
     } catch (error) {
         log(`USB H.264 frame render failed: ${error.message}`);
@@ -1111,8 +1116,8 @@ async function renderUsbFrame(blob) {
 
         try {
             const imageBitmap = await createImageBitmap(blob);
-            const ctx = usbCanvas.getContext('2d');
-            
+            const ctx = getUsbCanvasContext();
+
             if (usbCanvas.width !== imageBitmap.width || usbCanvas.height !== imageBitmap.height) {
                 usbCanvas.width = imageBitmap.width;
                 usbCanvas.height = imageBitmap.height;
@@ -1728,7 +1733,8 @@ function setupTouchControl() {
             if (e.buttons !== 1 || !dragStart) return;
             const dx = e.clientX - startClientX;
             const dy = e.clientY - startClientY;
-            if (!isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+            // Compare squared distances to skip the sqrt on every mousemove during a drag.
+            if (!isDragging && (dx * dx + dy * dy) > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
                 isDragging = true;
             }
         };
