@@ -1899,6 +1899,9 @@ function setupKeyControl() {
     // Ensure keyboard control creation is intercepted
     interceptKeyboardControl();
 
+    // Ensure keyboard control creation is intercepted
+    interceptKeyboardControl();
+
     function sendTextCommit(text) {
         if (sendSequencedTextPayload({ type: 'text', action: 'commit', text })) {
             log(`Text sent: length=${text.length}`);
