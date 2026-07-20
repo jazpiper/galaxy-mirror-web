@@ -130,7 +130,7 @@
 
         .status-container,
         .transport-container,
-        .shortcut-container,
+        .tools-container,
         .quality-container,
         .usage-container {
             background: var(--card-bg);
@@ -180,6 +180,53 @@
             gap: 8px;
         }
 
+        .tools-container {
+            overflow: hidden;
+        }
+
+        .tools-container summary {
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .tools-container summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .tools-summary {
+            align-items: center;
+            color: var(--text-main);
+            display: flex;
+            font-size: 11px;
+            font-weight: 800;
+            justify-content: space-between;
+            letter-spacing: 0.3px;
+            opacity: 0.85;
+            text-transform: uppercase;
+        }
+
+        .tools-summary::after {
+            color: var(--text-sub);
+            content: '+';
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .tools-container[open] .tools-summary::after {
+            content: '-';
+        }
+
+        .tools-panel-body {
+            display: grid;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .tool-section {
+            display: grid;
+            gap: 10px;
+        }
+
         .shortcut-btn {
             width: 100%;
             border: 1px solid rgba(255, 255, 255, 0.06);
@@ -215,6 +262,51 @@
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
             margin-top: 12px;
+        }
+
+        .usb-cooling-card {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 14px;
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .usb-cooling-card[hidden] {
+            display: none;
+        }
+
+        .usb-cooling-card .status-label {
+            line-height: 1;
+        }
+
+        .usb-cooling-value {
+            color: var(--text-main);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-start;
+            line-height: 1.45;
+            max-width: 100%;
+            min-width: 0;
+            overflow-wrap: anywhere;
+            text-align: left;
+        }
+
+        .usb-cooling-value .metric-chip {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            color: #e0f2fe;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1.2;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            padding: 5px 7px;
         }
 
         .quality-btn {
@@ -363,6 +455,27 @@
             display: none;
         }
 
+        .connection-placeholder {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 28px;
+            background: rgba(0, 0, 0, 0.72);
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.6;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .connection-placeholder.hidden {
+            display: none;
+        }
+
         #keyboardSink {
             position: fixed;
             width: 1px;
@@ -403,6 +516,15 @@
 
         .btn:active {
             transform: translateY(0);
+        }
+
+        .btn.disconnect {
+            background: linear-gradient(135deg, #f97316 0%, #dc2626 100%);
+            box-shadow: 0 4px 20px rgba(248, 113, 113, 0.25);
+        }
+
+        .btn.disconnect:hover {
+            box-shadow: 0 8px 25px rgba(248, 113, 113, 0.4);
         }
 
         .control-rail {
@@ -601,51 +723,6 @@
             }
         }
 
-        /* Milestone 6 UI Extensions */
-        .capture-controls {
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            display: flex;
-            gap: 8px;
-            z-index: 15;
-        }
-        .capture-btn {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            background: rgba(15, 23, 42, 0.5);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #ffffff;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 14px;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-        .capture-btn:hover {
-            background: rgba(15, 23, 42, 0.75);
-            border-color: rgba(56, 189, 248, 0.4);
-            transform: scale(1.08);
-        }
-        .capture-btn:active {
-            transform: scale(0.95);
-        }
-        .capture-btn.recording {
-            background: rgba(239, 68, 68, 0.2);
-            border-color: rgba(239, 68, 68, 0.5);
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
-            animation: recordPulse 1.5s infinite ease-in-out;
-        }
-        @keyframes recordPulse {
-            0% { opacity: 0.7; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.08); }
-            100% { opacity: 0.7; transform: scale(1); }
-        }
         .toast-container {
             position: fixed;
             top: 24px;
@@ -680,14 +757,6 @@
         }
 
         /* Clipboard History */
-        .clipboard-history-container {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: 20px;
-            padding: 18px;
-            margin-bottom: 16px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
         .clipboard-history-header {
             display: flex;
             justify-content: space-between;
@@ -753,7 +822,7 @@
         <div id="infoPanel">
             <div>
                 <h1>Android Mirror</h1>
-                <p class="subtitle">Tailscale MagicDNS & WebRTC 기반 Android 원격 미러링 뷰어</p>
+                <p class="subtitle">USB 또는 Tailscale로 Android 화면을 미러링합니다.</p>
 
                 <!-- 상태 대시보드 -->
                 <div class="status-container">
@@ -763,11 +832,11 @@
                             <span class="indicator" id="wsIndicator"></span>Offline
                         </span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">WebRTC 스트림</span>
+                    <div class="status-item" id="streamStatusItem">
+                        <span class="status-label" id="streamStatusLabel">WebRTC 스트림</span>
                         <span class="status-value" id="rtcStatus">Offline</span>
                     </div>
-                    <div class="status-item">
+                    <div class="status-item" id="rtcLatencyItem">
                         <span class="status-label">지연 시간 (RTT)</span>
                         <span class="status-value" id="rtcLatency">Offline</span>
                     </div>
@@ -803,9 +872,13 @@
                         <span class="status-label">현재</span>
                         <span class="status-value" id="qualityEffective">확인 중</span>
                     </div>
-                    <div class="status-item">
+                    <div class="status-item" id="qualityNetworkItem">
                         <span class="status-label">네트워크</span>
                         <span class="status-value" id="qualityNetwork">확인 중</span>
+                    </div>
+                    <div id="usbCoolingStatusItem" class="usb-cooling-card" hidden>
+                        <span class="status-label">USB 냉각</span>
+                        <span class="usb-cooling-value" id="usbCoolingStatus">확인 중</span>
                     </div>
                     <div class="quality-actions" aria-label="Stream quality controls">
                         <button class="quality-btn" id="qualityAutoBtn" type="button" data-mode="AUTO">자동</button>
@@ -827,23 +900,27 @@
                     </div>
                 </div>
 
-                <div class="shortcut-container">
-                    <div class="section-title">앱 바로가기</div>
-                    <div class="shortcut-list" id="favoriteAppsList">
-                        <div class="shortcut-empty">Android 앱에서 자주 쓰는 앱을 추가하세요.</div>
-                    </div>
-                </div>
+                <details class="tools-container" id="toolsPanel">
+                    <summary class="tools-summary">도구</summary>
+                    <div class="tools-panel-body">
+                        <div class="tool-section">
+                            <div class="section-title">앱 바로가기</div>
+                            <div class="shortcut-list" id="favoriteAppsList">
+                                <div class="shortcut-empty">Android 앱에서 자주 쓰는 앱을 추가하세요.</div>
+                            </div>
+                        </div>
 
-                <!-- 클립보드 히스토리 뷰어 -->
-                <div class="clipboard-history-container">
-                    <div class="clipboard-history-header">
-                        <div class="section-title" style="margin-bottom: 0;">Clipboard History</div>
-                        <button id="clearClipboardBtn" class="clipboard-clear-btn" type="button">비우기</button>
+                        <div class="tool-section clipboard-history-container">
+                            <div class="clipboard-history-header">
+                                <div class="section-title" style="margin-bottom: 0;">Clipboard History</div>
+                                <button id="clearClipboardBtn" class="clipboard-clear-btn" type="button">비우기</button>
+                            </div>
+                            <div class="clipboard-list" id="clipboardHistoryList">
+                                <div class="clipboard-empty">수신된 클립보드 내역이 없습니다.</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="clipboard-list" id="clipboardHistoryList">
-                        <div class="clipboard-empty">수신된 클립보드 내역이 없습니다.</div>
-                    </div>
-                </div>
+                </details>
             </div>
 
             <!-- 하단 액션 및 라이브 로그 -->
@@ -859,13 +936,10 @@
                 <div id="videoContainer">
                     <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
                     <canvas id="usbCanvas" class="hidden" aria-label="USB mirrored Android screen"></canvas>
-                    <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-
-                    <!-- 플로팅 캡처 컨트롤 -->
-                    <div class="capture-controls">
-                        <button class="capture-btn" id="screenshotBtn" type="button" title="스크린샷 저장">📸</button>
-                        <button class="capture-btn" id="recordBtn" type="button" title="화면 녹화 시작">⏺️</button>
+                    <div id="connectionPlaceholder" class="connection-placeholder">
+                        미러링 연결하기를 누르면 Android 화면이 여기에 표시됩니다.
                     </div>
+                    <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 
                     <!-- 재연결 안내 오버레이 -->
                     <div id="reconnectOverlay" class="reconnect-overlay hidden">
@@ -879,11 +953,8 @@
                 </div>
 
                 <aside class="control-rail" aria-label="Android remote controls">
-                    <!-- 하드웨어 전원/볼륨 원격 제어 -->
+                    <!-- 하드웨어 전원 원격 제어 -->
                     <div class="rail-group system-controls" aria-label="Android system controls">
-                        <button class="system-btn" id="volUpBtn" type="button" title="볼륨 크게" aria-label="볼륨 크게">🔊</button>
-                        <button class="system-btn" id="volDownBtn" type="button" title="볼륨 작게" aria-label="볼륨 작게">🔉</button>
-                        <button class="system-btn" id="muteBtn" type="button" title="음소거 토글" aria-label="음소거 토글">🔇</button>
                         <button class="system-btn" id="powerBtn" type="button" title="화면 잠금" aria-label="화면 잠금">🔒</button>
                     </div>
 
@@ -901,7 +972,7 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <!-- WebRTC 뷰어 자바스크립트 모듈 로드 -->
-    <script src="/viewer-keyboard.js"></script>
-    <script src="/viewer.js"></script>
+    <script src="/viewer-keyboard.js?v=20260706-h264-annexb"></script>
+    <script src="/viewer.js?v=20260706-h264-annexb"></script>
 </body>
 </html>

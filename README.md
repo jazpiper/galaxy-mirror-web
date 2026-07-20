@@ -18,7 +18,7 @@ sequenceDiagram
     
     Note over AndroidApp: 1. Android Mirror 실행<br/>(포트 8080 웹서버 바인딩: 0.0.0.0)
     
-    Mac->>Tailnet: 2. Android 앱에 표시된 http://[Android-MagicDNS-Host]:8080/?token=... 접속
+    Mac->>Tailnet: 2. Android 앱에 표시된 http://[Android-MagicDNS-Host]:8080/?transport=tailscale 접속
     Tailnet-->>AndroidApp: 3. WireGuard 암호화 터널 통과 (5G/Wi-Fi 무관)
     AndroidApp-->>Mac: 4. 웹 뷰어 클라이언트(HTML5/JS) 응답
     
@@ -77,10 +77,10 @@ sequenceDiagram
 * **데이터 절약:** 표준 화질은 `720x1600@15fps`, 저데이터는 `540x1200@12fps`로 캡처 해상도/FPS와 WebRTC bitrate cap을 함께 낮춥니다.
 * **Idle 절약:** Viewer 입력이 잠시 없으면 더 낮은 idle 프로필로 내려갔다가, 새 입력이 들어오면 선택한 active 프로필로 복귀합니다.
 
-### 5. Viewer 접근 토큰
-* Android 앱 메인 화면에 표시되는 Mac 접속 주소에는 로컬 viewer token이 포함됩니다.
-* `/signaling`, `/debug/crash`, 앱 바로가기, 화질 변경 API는 token이 없으면 거부됩니다.
-* HTTP 자체는 Tailscale WireGuard 터널 안에서 흐르는 것을 전제로 하며, viewer token은 같은 Tailnet 안의 오조작을 줄이는 추가 안전장치입니다.
+### 5. 로컬 전용 접근 모델
+* 이 앱은 개인 로컬 사용을 전제로 하며 viewer 접근 토큰을 사용하지 않습니다.
+* Android 앱 메인 화면에 표시되는 Tailscale URL과 USB loopback URL은 모두 `?token=` 없이 접속합니다.
+* `/signaling`, `/usb/session`, `/debug/perf`, 앱 바로가기, 화질 변경 API는 별도 token header/query 없이 동작합니다.
 
 ---
 
@@ -100,11 +100,10 @@ sequenceDiagram
 ### Tailscale / MagicDNS 연결
 
 맥북 브라우저를 열고 Android Mirror 앱 메인 화면에 표시되는 Tailscale URL
-(예: `http://pixel-phone:8080/?token=<token>&transport=tailscale`)로 접속합니다.
+(예: `http://pixel-phone:8080/?transport=tailscale`)로 접속합니다.
 Tailscale 모드는 `/signaling` WebSocket과 WebRTC 비디오 스트림, `control`
 DataChannel을 사용합니다. HTTP 자체는 Tailscale WireGuard 터널 안에서 흐르는 것을
-전제로 하며, URL의 viewer token은 같은 Tailnet 안의 오조작을 줄이는 추가
-안전장치입니다.
+전제로 하며, 별도 viewer token은 사용하지 않습니다.
 
 ### USB 직접 연결
 
@@ -117,5 +116,5 @@ adb forward tcp:8080 tcp:8080
 ```
 
 그 뒤 Mac 브라우저에서 Android 앱 화면의 USB URL
-`http://127.0.0.1:8080/?token=<token>&transport=usb`로 접속합니다.
-USB 모드는 `/usb/session` WebSocket을 통해 JPEG 화면 frame과 원격 입력 JSON을 전송합니다.
+`http://127.0.0.1:8080/?transport=usb`로 접속합니다.
+USB 모드는 Chrome 사용을 기본으로 하며, WebCodecs 지원 시 `/usb/session?codec=h264` WebSocket으로 H.264 frame과 원격 입력 JSON을 전송합니다. H.264 decoder/encoder 설정이 실패하면 `/usb/session?codec=jpeg` JPEG fallback으로 재연결합니다.

@@ -2,12 +2,32 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-07-03
+updated: 2026-07-06
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-07-06
+
+- **USB H.264/WebCodecs Phase 2 구현**
+  - Chrome WebCodecs 지원 시 Mac Viewer가 `/usb/session?codec=h264`를 열고, 미지원 또는 decoder 설정 실패 시 `/usb/session?codec=jpeg`로 재연결하도록 구현했다.
+  - Android Host는 `UsbH264ScreenStreamer`에서 `MediaProjection -> VirtualDisplay Surface -> MediaCodec H.264` 경로를 사용하고, `USB_VIDEO_CONFIG` text frame과 `GH26` header binary frame을 같은 WebSocket으로 전송한다.
+  - H.264 기본 profile은 `AUTO/STANDARD = 720x1600@24fps 3Mbps`, `DATA_SAVER = 540x1200@18fps 1.8Mbps`, `HIGH = 1080x2400@30fps 6Mbps`다. thermal/idle 상태가 악화되면 H.264 profile도 낮은 tier로 clamp된다.
+  - `/debug/perf` JSON과 Mac Viewer USB 냉각 상태에 codec, bitrate, H.264 profile, frame/bytes/encode/thermal 지표를 표시한다.
+  - 기존 JPEG path는 fallback으로 유지하며, control JSON/touch/keyboard/clipboard 흐름은 같은 `/usb/session` WebSocket을 계속 사용한다.
+  - 검증: `node --check android/app/src/main/resources/files/viewer.js`, `node android/app/src/test/js/viewer-keyboard.test.mjs`, targeted `app:testDebugUnitTest` H.264/USB 관련 suite 통과.
+
+- **USB 미러링 발열 최적화 baseline 구현**
+  - USB/JPEG 경로의 기본 프로필을 발열 우선 정책으로 낮췄다. `AUTO`/`STANDARD`는 `BALANCED 540x1200@8fps q60`, `DATA_SAVER`는 `COOL 360x800@4fps q50`, `HIGH`는 `CLEAR 720x1600@10fps q68`로 동작한다.
+  - Android thermal status와 viewer idle 상태를 기준으로 USB profile을 런타임에 clamp한다. `LIGHT`는 최대 `BALANCED`, `MODERATE` 이상은 `COOL`, `SEVERE` 이상은 `COOL 3fps`로 낮춘다.
+  - `UsbPerfMonitor`와 `/debug/perf`를 추가해 USB profile, thermal status/headroom, battery temperature, frame counters, still-frame skip count, encode timing, bytes/sec를 확인할 수 있게 했다.
+  - `UsbScreenStreamer`에 동적 FPS gate, 정지 화면 signature skip, JPEG encode timing 계측을 연결했다.
+  - Mac Viewer는 `USB_STATUS.usbPerf`를 받아 `USB BALANCED 540x1200 8fps q60 | 1.2 MB/s | encode 18ms | thermal NORMAL` 형식의 compact 냉각 상태를 표시한다.
+  - H.264/WebCodecs 전환은 이후 Phase 2로 구현되어 Chrome USB 기본 경로가 되었다.
 
 ---
 
@@ -317,6 +337,18 @@ updated: 2026-07-03
   - 새 미러링 연결에서 화면 공유 권한을 다시 승인해 `MediaProjectionService`가 `isRunning=true`로 전환될 때, 저장된 `화면 켜짐 유지`와 `밝기 최소화 모드`가 즉시 다시 적용되도록 `applyScreenAwakeEffectsForCurrentState()` 경로를 추가했습니다.
   - 기존에는 옵션 토글 시점에는 적용되지만 새 연결/재승인 시점에는 밝기 최소화 재적용이 빠져 있어, 사용자가 토글을 껐다 켜야 다시 반영되는 문제가 있었습니다.
   - `MediaProjectionServiceLifecycleRegressionTest`에 새 grant 시작 시 화면 설정 효과가 재적용되는지 확인하는 회귀 테스트를 추가했습니다.
+
+### 2026-07-06 (USB/Viewer 연결 UX 보강)
+* **연결/해제 상태 UI 정리**
+  - Android Host 메인 화면의 `미러링 연결 해제` 버튼을 `MirrorServiceState.isMirroringActive` 기준으로만 활성화하도록 연결했습니다. 앱이 켜져 있지만 viewer 세션이 없거나 캡처가 중지된 상태에서는 해제 버튼이 비활성화됩니다.
+  - Mac Viewer의 `미러링 연결하기` 버튼을 WebSocket 연결 상태 기반 토글로 변경해, 연결 중에는 `미러링 연결 해제`로 표시하고 클릭 시 USB/Tailscale 현재 transport를 명시적으로 종료하도록 했습니다.
+  - 연결 해제 시 마지막 화면 frame이 그대로 남지 않도록 뷰포트 placeholder를 표시해 `연결이 해제되었습니다` 상태를 명확히 알리도록 했습니다.
+* **USB adb forward 안내**
+  - USB transport 선택 시 `adb forward tcp:8080 tcp:8080` 명령을 표시하고, 복사 버튼으로 Mac 터미널 실행 명령을 클립보드에 넣을 수 있게 했습니다.
+  - 브라우저 웹 UI가 Mac 터미널 명령을 직접 실행할 수는 없으므로, 자동 실행 대신 복사 가능한 인라인 안내를 채택했습니다.
+* **회귀 테스트**
+  - `viewer-keyboard.test.mjs`에 USB 연결 버튼 토글, Tailscale 수동 해제, USB forward 명령 복사 테스트를 추가했습니다.
+  - `MainScreenTest.kt`에 미러링 active 상태에 따른 Android 해제 버튼 활성/비활성 테스트를 추가했습니다.
 
 ---
 

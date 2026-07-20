@@ -5,7 +5,8 @@ enum class MirrorTransport(
     val koreanLabel: String,
 ) {
     TAILSCALE_WEBRTC("tailscale", "Tailscale"),
-    USB_JPEG("usb", "USB");
+    USB_JPEG("usb", "USB JPEG"),
+    USB_H264("usb_h264", "USB H.264");
 
     companion object {
         fun fromWireValue(value: String?): MirrorTransport? =

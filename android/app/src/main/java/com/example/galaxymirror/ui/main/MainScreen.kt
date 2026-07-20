@@ -54,7 +54,6 @@ data class InfoPanelItem(val text: String, val copyText: String? = null)
 fun MainScreen(
   modifier: Modifier = Modifier,
   accessibilityEnabled: Boolean = false,
-  viewerAccessToken: String = "",
   favoriteApps: List<FavoriteApp> = emptyList(),
   launchableApps: List<FavoriteApp> = emptyList(),
   screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
@@ -63,6 +62,7 @@ fun MainScreen(
   streamQualityNetwork: StreamNetworkTransport = StreamNetworkTransport.OTHER,
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
+  isMirroringActive: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit = {},
   onRemoveFavoriteApp: (String) -> Unit = {},
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
@@ -79,7 +79,6 @@ fun MainScreen(
       MirrorHomeScreen(
         modifier = modifier,
         accessibilityEnabled = accessibilityEnabled,
-        viewerAccessToken = viewerAccessToken,
         favoriteApps = favoriteApps,
         launchableApps = launchableApps,
         screenAwakeSettings = screenAwakeSettings,
@@ -87,6 +86,7 @@ fun MainScreen(
         streamQualityMode = streamQualityMode,
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
+        isMirroringActive = isMirroringActive,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
@@ -100,7 +100,6 @@ fun MainScreen(
       MirrorHomeScreen(
         modifier = modifier,
         accessibilityEnabled = accessibilityEnabled,
-        viewerAccessToken = viewerAccessToken,
         favoriteApps = favoriteApps,
         launchableApps = launchableApps,
         screenAwakeSettings = screenAwakeSettings,
@@ -108,6 +107,7 @@ fun MainScreen(
         streamQualityMode = streamQualityMode,
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
+        isMirroringActive = isMirroringActive,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
@@ -121,7 +121,6 @@ fun MainScreen(
       MirrorHomeScreen(
         modifier = modifier,
         accessibilityEnabled = accessibilityEnabled,
-        viewerAccessToken = viewerAccessToken,
         favoriteApps = favoriteApps,
         launchableApps = launchableApps,
         screenAwakeSettings = screenAwakeSettings,
@@ -129,6 +128,7 @@ fun MainScreen(
         streamQualityMode = streamQualityMode,
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
+        isMirroringActive = isMirroringActive,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
@@ -146,7 +146,6 @@ fun MainScreen(
 internal fun MirrorHomeScreen(
   modifier: Modifier = Modifier,
   accessibilityEnabled: Boolean = false,
-  viewerAccessToken: String = "",
   favoriteApps: List<FavoriteApp> = emptyList(),
   launchableApps: List<FavoriteApp> = emptyList(),
   screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
@@ -155,6 +154,7 @@ internal fun MirrorHomeScreen(
   streamQualityNetwork: StreamNetworkTransport = StreamNetworkTransport.OTHER,
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
+  isMirroringActive: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit = {},
   onRemoveFavoriteApp: (String) -> Unit = {},
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
@@ -194,26 +194,21 @@ internal fun MirrorHomeScreen(
       title = "Mac 연결 주소",
       items =
         listOf(
-          InfoPanelItem(MainScreenContent.viewerAddressHint(viewerAccessToken)),
+          InfoPanelItem(MainScreenContent.viewerAddressHint),
           InfoPanelItem(
-            text = MainScreenContent.viewerTokenLine(viewerAccessToken),
-            copyText = if (viewerAccessToken.isBlank()) null else viewerAccessToken
-          ),
-          InfoPanelItem(
-            text = MainScreenContent.viewerTailscaleUrlLine(viewerAccessToken),
-            copyText = if (viewerAccessToken.isBlank()) null else "http://<Android MagicDNS>:8080/?token=$viewerAccessToken&transport=tailscale"
+            text = MainScreenContent.viewerTailscaleUrlLine(),
+            copyText = "http://<Android MagicDNS>:8080/?transport=tailscale"
           ),
           InfoPanelItem(
             text = MainScreenContent.viewerUsbForwardCommand,
             copyText = "adb forward tcp:8080 tcp:8080"
           ),
           InfoPanelItem(
-            text = MainScreenContent.viewerUsbUrlLine(viewerAccessToken),
-            copyText = if (viewerAccessToken.isBlank()) null else "http://127.0.0.1:8080/?token=$viewerAccessToken&transport=usb"
+            text = MainScreenContent.viewerUsbUrlLine(),
+            copyText = "http://127.0.0.1:8080/?transport=usb"
           ),
           InfoPanelItem(MainScreenContent.viewerTransportHint),
           InfoPanelItem("앱이 켜져 있는 동안 Android 내장 서버가 8080 포트에서 대기합니다."),
-          InfoPanelItem(MainScreenContent.viewerTokenHint),
         ),
     )
 
@@ -258,7 +253,11 @@ internal fun MirrorHomeScreen(
           }
         )
       }
-      OutlinedButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) {
+      OutlinedButton(
+        onClick = onDisconnect,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = isMirroringActive,
+      ) {
         Text(MainScreenContent.disconnectButtonLabel)
       }
     }

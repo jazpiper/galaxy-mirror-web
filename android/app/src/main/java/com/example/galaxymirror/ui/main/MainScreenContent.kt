@@ -3,44 +3,13 @@ package com.example.galaxymirror.ui.main
 object MainScreenContent {
     const val title = "Android Mirror"
     const val subtitle = "Android 화면을 Mac 브라우저로 보고, 터치와 키보드를 원격 입력합니다."
-    fun viewerAddressHint(token: String): String =
-        if (token.isBlank()) {
-            "Mac Chrome에서 Android 앱에 표시되는 접속 주소로 이동하세요."
-        } else {
-            "Mac Chrome 주소창에 아래 URL을 입력하세요."
-        }
-
-    private fun obscureToken(token: String): String {
-        if (token.length <= 8) return "***"
-        return "${token.take(4)}...${token.takeLast(4)}"
-    }
-
-    fun viewerTokenLine(token: String): String =
-        if (token.isBlank()) {
-            "접속 토큰: 생성 중"
-        } else {
-            "접속 토큰: ${obscureToken(token)}"
-        }
-
-    fun viewerTailscaleUrlLine(token: String): String =
-        if (token.isBlank()) {
-            "Tailscale URL: http://<Android MagicDNS>:8080/?token=<접속 토큰>&transport=tailscale"
-        } else {
-            "Tailscale URL: http://<Android MagicDNS>:8080/?token=${obscureToken(token)}&transport=tailscale"
-        }
-
-    fun viewerUsbUrlLine(token: String): String =
-        if (token.isBlank()) {
-            "USB URL: http://127.0.0.1:8080/?token=<접속 토큰>&transport=usb"
-        } else {
-            "USB URL: http://127.0.0.1:8080/?token=${obscureToken(token)}&transport=usb"
-        }
-
-    fun viewerUrlLine(token: String): String = viewerTailscaleUrlLine(token)
+    const val viewerAddressHint = "Mac Chrome 주소창에 아래 URL을 입력하세요."
+    fun viewerTailscaleUrlLine(): String = "Tailscale URL: http://<Android MagicDNS>:8080/?transport=tailscale"
+    fun viewerUsbUrlLine(): String = "USB URL: http://127.0.0.1:8080/?transport=usb"
+    fun viewerUrlLine(): String = viewerTailscaleUrlLine()
 
     const val viewerUsbForwardCommand = "Mac 터미널: adb forward tcp:8080 tcp:8080"
     const val viewerTransportHint = "Tailscale은 무선/원격 연결, USB는 adb forward가 켜진 Mac 직접 연결에 사용합니다."
-    const val viewerTokenHint = "토큰은 Tailscale 내부망에서 오접속으로 인한 원격 제어를 막는 보호 장치입니다. USB loopback 접속은 토큰 없이 허용합니다."
     const val appInfoButtonLabel = "앱 정보 열기"
     const val accessibilityButtonLabel = "접근성 설정 열기"
     const val accessibilityEnabledLabel = "접근성 입력 활성화됨"

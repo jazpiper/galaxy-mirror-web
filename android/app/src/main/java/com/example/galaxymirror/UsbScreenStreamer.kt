@@ -12,8 +12,8 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
-import java.io.ByteArrayOutputStream
 
 class UsbScreenStreamer(
     private val context: Context,
@@ -43,11 +43,15 @@ class UsbScreenStreamer(
     fun start(
         resultCode: Int,
         resultData: Intent,
-        profile: UsbStreamProfile,
+        profileProvider: () -> UsbStreamProfile,
+        perfMonitor: UsbPerfMonitor,
+        changeGate: UsbFrameChangeGate = UsbFrameChangeGate(),
         onFrame: (ByteArray) -> Unit,
     ) {
         stop()
 
+        val captureProfile = UsbStreamProfilePolicy.resolveTier(UsbStreamProfileTier.CLEAR)
+        changeGate.reset()
         var startupProjection: MediaProjection? = null
         var startupThread: HandlerThread? = null
         var startupReader: ImageReader? = null
@@ -63,10 +67,10 @@ class UsbScreenStreamer(
             startupThread = streamThread
             val streamHandler = Handler(streamThread.looper)
 
-            val reader = ImageReader.newInstance(profile.width, profile.height, PixelFormat.RGBA_8888, 2)
+            val reader = ImageReader.newInstance(captureProfile.width, captureProfile.height, PixelFormat.RGBA_8888, 2)
             startupReader = reader
 
-            val frameRateGate = UsbFrameRateGate(profile.fps)
+            val frameRateGate = UsbFrameRateGate(captureProfile.fps)
             val callback =
                 object : MediaProjection.Callback() {
                     override fun onStop() {
@@ -80,7 +84,10 @@ class UsbScreenStreamer(
                     handleImageAvailable(
                         imageReader = availableReader,
                         frameRateGate = frameRateGate,
-                        profile = profile,
+                        captureProfile = captureProfile,
+                        profileProvider = profileProvider,
+                        perfMonitor = perfMonitor,
+                        changeGate = changeGate,
                         onFrame = onFrame,
                     )
                 },
@@ -91,8 +98,8 @@ class UsbScreenStreamer(
             val display =
                 projection.createVirtualDisplay(
                     "GalaxyMirrorUsbScreenStreamer",
-                    profile.width,
-                    profile.height,
+                    captureProfile.width,
+                    captureProfile.height,
                     context.resources.displayMetrics.densityDpi,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                     reader.surface,
@@ -158,7 +165,10 @@ class UsbScreenStreamer(
     private fun handleImageAvailable(
         imageReader: ImageReader,
         frameRateGate: UsbFrameRateGate,
-        profile: UsbStreamProfile,
+        captureProfile: UsbStreamProfile,
+        profileProvider: () -> UsbStreamProfile,
+        perfMonitor: UsbPerfMonitor,
+        changeGate: UsbFrameChangeGate,
         onFrame: (ByteArray) -> Unit,
     ) {
         val image =
@@ -170,37 +180,91 @@ class UsbScreenStreamer(
             } ?: return
 
         try {
-            if (!running || !frameRateGate.shouldEmit()) return
-            onFrame(encodeJpeg(image, profile))
+            perfMonitor.recordFrameAcquired()
+            val profile = profileProvider()
+            frameRateGate.updateFps(profile.fps)
+            if (!running || !frameRateGate.shouldEmit()) {
+                perfMonitor.recordFrameDroppedByFps()
+                return
+            }
+            val signature = computeFrameSignature(image, captureProfile)
+            if (changeGate.evaluate(signature) == UsbFrameChangeDecision.SKIP_STILL) {
+                perfMonitor.recordFrameSkippedByStillness()
+                return
+            }
+            val startedAt = SystemClock.elapsedRealtime()
+            val frame = encodeJpeg(image, profile, captureProfile)
+            onFrame(frame)
+            perfMonitor.recordFrameEncoded(
+                bytes = frame.size,
+                encodeMillis = SystemClock.elapsedRealtime() - startedAt,
+            )
         } catch (e: Exception) {
+            perfMonitor.recordEncodeFailure()
             Log.e(TAG, "Unable to encode USB stream frame.", e)
         } finally {
             image.close()
         }
     }
 
-    private fun encodeJpeg(image: Image, profile: UsbStreamProfile): ByteArray {
+    private fun computeFrameSignature(image: Image, profile: UsbStreamProfile): Long {
+        val plane = image.planes.first()
+        val buffer = plane.buffer.duplicate()
+        val pixelStride = plane.pixelStride.coerceAtLeast(1)
+        val rowStride = plane.rowStride
+        val sampleRows = FRAME_SIGNATURE_SAMPLE_ROWS.coerceAtMost(profile.height).coerceAtLeast(1)
+        val sampleColumns = FRAME_SIGNATURE_SAMPLE_COLUMNS.coerceAtMost(profile.width).coerceAtLeast(1)
+        var hash = FRAME_SIGNATURE_HASH_SEED
+
+        for (rowIndex in 0 until sampleRows) {
+            val y =
+                if (sampleRows == 1) {
+                    0
+                } else {
+                    rowIndex * (profile.height - 1) / (sampleRows - 1)
+                }
+            for (columnIndex in 0 until sampleColumns) {
+                val x =
+                    if (sampleColumns == 1) {
+                        0
+                    } else {
+                        columnIndex * (profile.width - 1) / (sampleColumns - 1)
+                    }
+                val offset = y * rowStride + x * pixelStride
+                if (offset in 0 until buffer.limit()) {
+                    hash = (hash xor buffer.get(offset).toLong()) * FRAME_SIGNATURE_HASH_PRIME
+                }
+            }
+        }
+        return hash
+    }
+
+    private fun encodeJpeg(
+        image: Image,
+        profile: UsbStreamProfile,
+        captureProfile: UsbStreamProfile,
+    ): ByteArray {
         val plane = image.planes.first()
         val buffer = plane.buffer
         buffer.rewind()
 
         val pixelStride = plane.pixelStride
         val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * profile.width
-        val bitmapWidth = profile.width + rowPadding / pixelStride
+        val rowPadding = rowStride - pixelStride * captureProfile.width
+        val bitmapWidth = captureProfile.width + rowPadding / pixelStride
 
         val sBitmap: Bitmap
         val jBitmap: Bitmap
 
         synchronized(stateLock) {
             val currentSrc = cachedSourceBitmap
-            if (currentSrc == null || currentSrc.width != bitmapWidth || currentSrc.height != profile.height) {
+            if (currentSrc == null || currentSrc.width != bitmapWidth || currentSrc.height != captureProfile.height) {
                 currentSrc?.recycle()
-                cachedSourceBitmap = Bitmap.createBitmap(bitmapWidth, profile.height, Bitmap.Config.ARGB_8888)
+                cachedSourceBitmap = Bitmap.createBitmap(bitmapWidth, captureProfile.height, Bitmap.Config.ARGB_8888)
             }
             sBitmap = cachedSourceBitmap!!
 
-            if (bitmapWidth == profile.width) {
+            if (bitmapWidth == profile.width && captureProfile.height == profile.height) {
                 cachedJpegBitmap?.recycle()
                 cachedJpegBitmap = null
                 jBitmap = sBitmap
@@ -218,7 +282,7 @@ class UsbScreenStreamer(
 
         if (jBitmap !== sBitmap) {
             val canvas = android.graphics.Canvas(jBitmap)
-            val srcRect = android.graphics.Rect(0, 0, profile.width, profile.height)
+            val srcRect = android.graphics.Rect(0, 0, captureProfile.width, captureProfile.height)
             val destRect = android.graphics.Rect(0, 0, profile.width, profile.height)
             canvas.drawBitmap(sBitmap, srcRect, destRect, null)
         }
@@ -363,5 +427,9 @@ class UsbScreenStreamer(
         private const val TAG = "UsbScreenStreamer"
         private const val MIN_JPEG_QUALITY = 1
         private const val MAX_JPEG_QUALITY = 100
+        private const val FRAME_SIGNATURE_SAMPLE_ROWS = 8
+        private const val FRAME_SIGNATURE_SAMPLE_COLUMNS = 8
+        private const val FRAME_SIGNATURE_HASH_SEED = -3750763034362895579L
+        private const val FRAME_SIGNATURE_HASH_PRIME = 1099511628211L
     }
 }

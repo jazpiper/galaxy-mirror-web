@@ -90,6 +90,15 @@ class MirrorSessionStateTest {
     }
 
     @Test
+    fun h264UsbSessionUsesDedicatedTransportOwnership() {
+        val state = MirrorSessionState().beginSession(22, MirrorTransport.USB_H264)
+
+        assertTrue(state.isActive(22, MirrorTransport.USB_H264))
+        assertFalse(state.isActive(22, MirrorTransport.USB_JPEG))
+        assertEquals(MirrorTransport.USB_H264, state.activeTransport)
+    }
+
+    @Test
     fun projectionStoppedRequiresReauthorizationAndClearsPendingOffer() {
         val state =
             MirrorSessionState()
@@ -277,7 +286,58 @@ class MirrorSessionStateTest {
         assertTrue(
             "USB projection stop handler must ignore callbacks not owned by the active USB session.",
             handler.contains("activeUsbProjectionSessionId == sessionId") &&
-                handler.contains("mirrorSessionState.isActive(sessionId, MirrorTransport.USB_JPEG)"),
+            handler.contains("mirrorSessionState.isActive(sessionId, MirrorTransport.USB_JPEG)") &&
+            handler.contains("mirrorSessionState.isActive(sessionId, MirrorTransport.USB_H264)"),
+        )
+    }
+
+    @Test
+    fun serviceExposesUsbPerfDebugEndpoint() {
+        val source = readMediaProjectionServiceSource()
+
+        assertTrue(source.contains("private val usbPerfMonitor"))
+        assertTrue(source.contains("get(\"/debug/perf\")"))
+        assertTrue(source.contains("currentUsbPerfSnapshot().toJson().toString()"))
+    }
+
+    @Test
+    fun serviceStartsUsbStreamerWithThermalPolicyProfileProvider() {
+        val source = readMediaProjectionServiceSource()
+
+        assertTrue(source.contains("UsbThermalPolicy.resolve("))
+        assertTrue(source.contains("profileProvider = ::resolveCurrentUsbProfile"))
+        assertTrue(source.contains("perfMonitor = usbPerfMonitor"))
+    }
+
+    @Test
+    fun serviceRoutesUsbSessionCodecQueryToH264Streamer() {
+        val source = readMediaProjectionServiceSource()
+
+        assertTrue(source.contains("call.request.queryParameters[\"codec\"]"))
+        assertTrue(source.contains("UsbVideoCodec.fromWireValue"))
+        assertTrue(source.contains("UsbH264ScreenStreamer"))
+        assertTrue(source.contains("onVideoConfig = { configJson ->"))
+        assertTrue(source.contains("send(Frame.Text(configJson))"))
+        assertTrue(source.contains("MirrorTransport.USB_H264"))
+        assertTrue(source.contains("profileProvider = ::resolveCurrentUsbH264Profile"))
+    }
+
+    @Test
+    fun usbGrantWaitLoopPollsCachedGrantWhenStaleSessionConsumesSignal() {
+        val source = readMediaProjectionServiceSource()
+        val usbRouteStart = source.indexOf("webSocket(\"/usb/session\")")
+        assertTrue("USB route should exist", usbRouteStart >= 0)
+        val waitLoopStart = source.indexOf("while (true) {", usbRouteStart)
+        assertTrue("USB grant wait loop should exist", waitLoopStart >= 0)
+        val consumeStart = source.indexOf("consumeMediaProjectionGrant()", waitLoopStart)
+        assertTrue("USB grant consumption should exist after wait loop", consumeStart >= 0)
+        val waitLoop = source.substring(waitLoopStart, consumeStart)
+
+        assertTrue(
+            "USB grant wait must periodically re-check cached MediaProjection data even if a stale session consumes the grant signal.",
+            waitLoop.contains("mediaProjectionResultCode != null && mediaProjectionResultData != null") &&
+                waitLoop.contains("withTimeoutOrNull(MEDIA_PROJECTION_GRANT_POLL_MS)") &&
+                waitLoop.contains("permissionGrantChannel.receive()"),
         )
     }
 

@@ -6,33 +6,44 @@ import org.junit.Test
 
 class UsbStreamProfileTest {
     @Test
-    fun autoUsesStandardUsbProfile() {
-        val profile = UsbStreamProfilePolicy.resolve(StreamQualityMode.AUTO)
-
-        assertEquals(720, profile.width)
-        assertEquals(1600, profile.height)
-        assertEquals(10, profile.fps)
-        assertEquals(70, profile.jpegQuality)
+    fun videoCodecDefaultsToJpegForUnknownWireValues() {
+        assertEquals(UsbVideoCodec.H264, UsbVideoCodec.preferredForChrome())
+        assertEquals(UsbVideoCodec.H264, UsbVideoCodec.fromWireValue("H264"))
+        assertEquals(UsbVideoCodec.JPEG, UsbVideoCodec.fromWireValue(null))
+        assertEquals(UsbVideoCodec.JPEG, UsbVideoCodec.fromWireValue("unknown"))
     }
 
     @Test
-    fun dataSaverUsesLowerUsbProfile() {
-        val profile = UsbStreamProfilePolicy.resolve(StreamQualityMode.DATA_SAVER)
+    fun autoResolvesToBalancedCoolingProfile() {
+        val profile = UsbStreamProfilePolicy.resolve(StreamQualityMode.AUTO)
 
+        assertEquals(UsbStreamProfileTier.BALANCED, profile.tier)
         assertEquals(540, profile.width)
         assertEquals(1200, profile.height)
         assertEquals(8, profile.fps)
-        assertEquals(65, profile.jpegQuality)
+        assertEquals(60, profile.jpegQuality)
     }
 
     @Test
-    fun highUsesCappedUsbProfile() {
+    fun dataSaverResolvesToCoolProfile() {
+        val profile = UsbStreamProfilePolicy.resolve(StreamQualityMode.DATA_SAVER)
+
+        assertEquals(UsbStreamProfileTier.COOL, profile.tier)
+        assertEquals(360, profile.width)
+        assertEquals(800, profile.height)
+        assertEquals(4, profile.fps)
+        assertEquals(50, profile.jpegQuality)
+    }
+
+    @Test
+    fun highResolvesToClearCoolingProfile() {
         val profile = UsbStreamProfilePolicy.resolve(StreamQualityMode.HIGH)
 
-        assertEquals(1080, profile.width)
-        assertEquals(2400, profile.height)
-        assertEquals(12, profile.fps)
-        assertEquals(75, profile.jpegQuality)
+        assertEquals(UsbStreamProfileTier.CLEAR, profile.tier)
+        assertEquals(720, profile.width)
+        assertEquals(1600, profile.height)
+        assertEquals(10, profile.fps)
+        assertEquals(68, profile.jpegQuality)
     }
 
     @Test
@@ -42,9 +53,57 @@ class UsbStreamProfileTest {
         assertEquals("AUTO", json.getString("selectedMode"))
         assertEquals("STANDARD", json.getString("effectiveMode"))
         assertEquals("표준", json.getString("effectiveLabel"))
+        assertEquals("BALANCED", json.getString("effectiveTier"))
+        assertEquals(540, json.getInt("effectiveWidth"))
+        assertEquals(1200, json.getInt("effectiveHeight"))
+        assertEquals(8, json.getInt("effectiveFps"))
+        assertEquals(60, json.getInt("jpegQuality"))
+        assertEquals("heat-first", json.getString("policy"))
+    }
+
+    @Test
+    fun h264ModeLadderMapsQualityModesToEncoderProfiles() {
+        val dataSaver = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.DATA_SAVER)
+        val auto = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.AUTO)
+        val standard = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.STANDARD)
+        val high = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.HIGH)
+
+        assertEquals(UsbStreamProfileTier.COOL, dataSaver.tier)
+        assertEquals(540, dataSaver.width)
+        assertEquals(1200, dataSaver.height)
+        assertEquals(18, dataSaver.fps)
+        assertEquals(1_800_000, dataSaver.bitrateBps)
+
+        assertEquals(UsbStreamProfileTier.BALANCED, auto.tier)
+        assertEquals(UsbStreamProfileTier.BALANCED, standard.tier)
+        assertEquals(720, standard.width)
+        assertEquals(1600, standard.height)
+        assertEquals(24, standard.fps)
+        assertEquals(3_000_000, standard.bitrateBps)
+
+        assertEquals(UsbStreamProfileTier.CLEAR, high.tier)
+        assertEquals(1080, high.width)
+        assertEquals(2400, high.height)
+        assertEquals(30, high.fps)
+        assertEquals(6_000_000, high.bitrateBps)
+    }
+
+    @Test
+    fun h264StatusJsonReportsSelectedModeAndEncoderProfile() {
+        val json = JSONObject(UsbH264StreamProfileCodec.toStatusJson(StreamQualityMode.AUTO))
+
+        assertEquals("h264", json.getString("codec"))
+        assertEquals("AUTO", json.getString("selectedMode"))
+        assertEquals("자동", json.getString("selectedLabel"))
+        assertEquals("STANDARD", json.getString("effectiveMode"))
+        assertEquals("표준", json.getString("effectiveLabel"))
+        assertEquals("BALANCED", json.getString("effectiveTier"))
         assertEquals(720, json.getInt("width"))
         assertEquals(1600, json.getInt("height"))
-        assertEquals(10, json.getInt("fps"))
-        assertEquals(70, json.getInt("jpegQuality"))
+        assertEquals(24, json.getInt("fps"))
+        assertEquals(3_000_000, json.getInt("bitrateBps"))
+        assertEquals(1, json.getInt("keyFrameIntervalSeconds"))
+        assertEquals("video/avc", json.getString("mime"))
+        assertEquals("hardware-h264", json.getString("policy"))
     }
 }
