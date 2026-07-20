@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -166,8 +167,13 @@ internal fun MirrorHomeScreen(
   warning: String? = null,
 ) {
   var showAppPicker by rememberSaveable { mutableStateOf(false) }
-  val favoritePackages = favoriteApps.map { it.packageName }.toSet()
-  val selectableApps = launchableApps.filterNot { it.packageName in favoritePackages }
+  // Memoize across recompositions; these only change when the app lists change, not on every
+  // serviceState-driven recomposition.
+  val favoritePackages = remember(favoriteApps) { favoriteApps.map { it.packageName }.toSet() }
+  val selectableApps =
+    remember(launchableApps, favoritePackages) {
+      launchableApps.filterNot { it.packageName in favoritePackages }
+    }
 
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -212,8 +218,8 @@ internal fun MirrorHomeScreen(
         ),
     )
 
-    InfoPanel(title = "처음 설정", items = MainScreenContent.setupSteps.map { InfoPanelItem(it) })
-    InfoPanel(title = "조작 방법", items = MainScreenContent.controlTips.map { InfoPanelItem(it) })
+    InfoPanel(title = "처음 설정", items = remember { MainScreenContent.setupSteps.map { InfoPanelItem(it) } })
+    InfoPanel(title = "조작 방법", items = remember { MainScreenContent.controlTips.map { InfoPanelItem(it) } })
     ScreenAwakeSettingsPanel(
       settings = screenAwakeSettings,
       canWriteSystemSettings = canWriteSystemSettings,

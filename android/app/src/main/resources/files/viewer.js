@@ -1595,9 +1595,11 @@ function getNormalizedCoords(e, surface = remoteVideo) {
         return null;
     }
 
+    // Round to 4 decimals without the toFixed()->parseFloat() string round-trip; x,y are already
+    // clamped to [0,1] above, so Math.round is equivalent here and runs per mousemove/wheel event.
     return {
-        x: parseFloat(x.toFixed(4)),
-        y: parseFloat(y.toFixed(4))
+        x: Math.round(x * 10000) / 10000,
+        y: Math.round(y * 10000) / 10000
     };
 }
 

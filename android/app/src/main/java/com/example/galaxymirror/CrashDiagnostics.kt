@@ -220,7 +220,12 @@ object CrashDiagnostics {
         }
     }
 
+    // SimpleDateFormat is not thread-safe and is expensive to construct; reuse one per thread
+    // instead of allocating a new formatter on every recordEvent/recordCaughtException call.
+    private val timestampFormat: ThreadLocal<SimpleDateFormat> =
+        ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ", Locale.US) }
+
     private fun timestamp(timeMillis: Long = System.currentTimeMillis()): String {
-        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ", Locale.US).format(Date(timeMillis))
+        return timestampFormat.get().format(Date(timeMillis))
     }
 }
