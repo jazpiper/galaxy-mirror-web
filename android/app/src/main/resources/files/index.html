@@ -352,14 +352,14 @@
             display: none;
         }
 
-        #usbFrame {
+        #usbCanvas, #usbFrame {
             width: 100%;
             height: 100%;
             object-fit: contain;
             display: block;
         }
 
-        #usbFrame.hidden {
+        #usbCanvas.hidden, #usbFrame.hidden {
             display: none;
         }
 
@@ -858,7 +858,7 @@
             <div id="mirrorStage">
                 <div id="videoContainer">
                     <video id="remoteVideo" autoplay playsinline muted tabindex="0"></video>
-                    <img id="usbFrame" class="hidden" alt="USB mirrored Android screen">
+                    <canvas id="usbCanvas" class="hidden" aria-label="USB mirrored Android screen"></canvas>
                     <textarea id="keyboardSink" aria-hidden="true" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 
                     <!-- 플로팅 캡처 컨트롤 -->
