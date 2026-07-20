@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-07-03
+updated: 2026-07-06
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -83,6 +83,7 @@ updated: 2026-07-03
   - [x] USB `/usb/session` WebSocket 기반 JPEG frame 및 control event 경로 구현
   - [x] 실제 Galaxy 단말에서 USB `adb forward` smoke test
   - [x] Tailscale/WebRTC와 USB 전환 반복 smoke test
+  - [x] Android Host와 Mac Viewer의 연결/해제 UI를 실제 세션 상태 기준으로 정리하고, USB 모드에서 `adb forward tcp:8080 tcp:8080` 복사 안내 추가
 
 ### 🚀 Milestone 4: 2차 전체 코드 리뷰 및 시스템 안정성 하드닝 (Completed)
 - [x] **T4.1: WebRTC 라이프사이클 누수 및 크래시 제거**
@@ -111,6 +112,10 @@ updated: 2026-07-03
 
 ### 1. 현재 개발 상태 요약
 * **2026-07-03 업데이트**: 대기 상태였던 16개의 open PR (PR 1 ~ PR 16)을 모두 `main` 브랜치에 통합 병합 완료했습니다. 병합 과정에서의 모든 충돌 해소 및 통합 단위 테스트, 빌드, 린트 검사 통과를 완수하여 소스 트리 안정성을 검증했습니다.
+* **2026-07-06 업데이트**: Android 앱의 `미러링 연결 해제` 버튼을 실제 미러링 세션 활성 상태에서만 켜도록 조정하고, Mac Viewer의 `미러링 연결하기` 버튼을 연결/해제 토글로 변경했습니다. USB 모드에는 Mac 터미널에서 필요한 `adb forward tcp:8080 tcp:8080` 명령 복사 UI를 추가했으며, 연결 해제 시 마지막 화면 대신 해제 안내 placeholder가 표시됩니다.
+* **2026-07-06 USB 발열 최적화 업데이트**: USB/JPEG fallback 기본 프로필은 발열 우선 정책으로 변경되었습니다. `AUTO`/`STANDARD`는 `BALANCED 540x1200@8fps q60`, `DATA_SAVER`는 `COOL 360x800@4fps q50`, `HIGH`는 `CLEAR 720x1600@10fps q68`입니다. Android thermal 상태와 viewer idle 상태가 악화되면 런타임에 `COOL` 또는 `COOL 3fps`로 내려갑니다.
+* **2026-07-06 USB H.264 Phase 2 업데이트**: Chrome USB viewer는 WebCodecs 지원 시 `/usb/session?codec=h264`를 열고, Android는 `MediaCodec` H.264 encoder input surface를 `VirtualDisplay`에 연결해 `GH26` binary packet으로 전송합니다. 기본 목표 프로필은 `BALANCED 720x1600@24fps 3Mbps`이며, decoder/encoder 실패 시 `/usb/session?codec=jpeg` fallback을 사용합니다.
+* `/debug/perf`에서 USB codec, profile, bitrate, thermal status/headroom, battery temperature, frame/skip/encode/bytes-per-second 지표를 확인할 수 있습니다. USB 접속 전 `adb forward tcp:8080 tcp:8080`는 여전히 필요합니다.
 * WebRTC 스트리밍 및 시그널링 채널(Ktor WebSocket 기반) 구현 완료 (Milestone 3).
 * Tailscale/WebRTC 기존 경로와 USB/ADB 직접 연결 경로를 transport 선택 모델로 정리하고 구현을 완료했습니다. 실제 Galaxy 단말에서 USB `adb forward` smoke test 및 Tailscale/WebRTC와의 전환 반복 검증, 그리고 Post-review hardening에 대한 최종 검증까지 모두 통과하였습니다.
 * 64개의 로컬 JVM 단위 테스트 및 3개의 Android 에뮬레이터 기반 Compose UI 계측 테스트 통과 완료 (Milestone 4). 최근 추가된 WebRTC 해제 누수 보강 및 USB 뷰어 사용성/화면 설정 재적용 개선에 대한 단위/회귀 테스트도 모두 통과했습니다.
@@ -158,7 +163,7 @@ updated: 2026-07-03
 * Android Host는 projection 중단 시 `SCREEN_CAPTURE_REAUTH_REQUIRED`를 송신합니다. Mac Viewer는 호환성 차원에서 `PROJECTION_STOPPED_LOCKED`도 복구 가능한 상태로 보고, Android 잠금 해제와 화면 공유 재승인 후 재연결하라는 안내를 표시합니다.
 * 밝기 최소화 모드는 로컬 Android 화면 보호 목적입니다. `WRITE_SETTINGS` 권한이 없으면 Android 설정의 시스템 설정 수정 화면에서 Android Mirror를 허용해야 하며, 연결 해제 시 이전 밝기와 밝기 모드 복원 여부를 Galaxy S26 Android 16 등 실기기에서 확인해야 합니다.
 * 스트림 화질 `AUTO` 모드는 현재 Android 네트워크를 보고 Wi-Fi/Ethernet이면 고화질, 4G/5G cellular이면 표준 화질을 적용합니다. Mac Viewer와 Android 앱 양쪽 버튼에서 수동으로 저데이터/표준/고화질을 고정할 수 있습니다.
-* Tailscale viewer 접속 주소는 Android 앱 메인 화면의 토큰 포함 URL을 사용해야 합니다. USB loopback 접속은 `adb forward tcp:8080 tcp:8080` 후 `http://127.0.0.1:8080/?transport=usb`로 토큰 없이 접속할 수 있습니다.
+* Tailscale viewer 접속 주소와 USB loopback 접속 주소는 모두 viewer token 없이 사용합니다. USB loopback 접속은 Mac 터미널에서 `adb forward tcp:8080 tcp:8080` 실행 후 `http://127.0.0.1:8080/?transport=usb`로 접속합니다.
 * viewer 연결 종료나 세션 교체 후에는 Android 14+ projection token 재사용 예외를 피하기 위해 화면 공유 권한을 다시 승인해야 할 수 있습니다.
 * 재연결 중 이전 viewer session의 WebSocket/DataChannel/MediaProjection callback이 늦게 도착해도 현재 session state와 입력 ACK 큐를 건드리지 않도록 인스턴스/세션 id guard가 들어가 있습니다.
 

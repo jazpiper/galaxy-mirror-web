@@ -123,7 +123,6 @@ class MainActivity : ComponentActivity() {
 
                     MainNavigation(
                         accessibilityEnabled = accessibilityEnabled,
-                        viewerAccessToken = serviceState.viewerAccessToken,
                         favoriteApps = favoriteApps,
                         launchableApps = launchableApps,
                         screenAwakeSettings = serviceState.screenAwakeSettings,
@@ -131,6 +130,7 @@ class MainActivity : ComponentActivity() {
                         streamQualityMode = serviceState.streamQualityMode,
                         streamQualityNetwork = serviceState.streamQualityNetwork,
                         streamQualityProfile = serviceState.streamQualityProfile,
+                        isMirroringActive = serviceState.isMirroringActive,
                         onAddFavoriteApp = ::addFavoriteApp,
                         onRemoveFavoriteApp = ::removeFavoriteApp,
                         onScreenAwakeSettingsChange = ::updateScreenAwakeSettings,

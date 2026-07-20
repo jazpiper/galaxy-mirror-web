@@ -8,15 +8,13 @@ import org.junit.Test
 class MainScreenContentTest {
     @Test
     fun viewerConnectionLinesShowTailscaleAndUsbOptions() {
-        val token = "abc123"
-
         assertEquals(
-            "Tailscale URL: http://<Android MagicDNS>:8080/?token=***&transport=tailscale",
-            MainScreenContent.viewerTailscaleUrlLine(token),
+            "Tailscale URL: http://<Android MagicDNS>:8080/?transport=tailscale",
+            MainScreenContent.viewerTailscaleUrlLine(),
         )
         assertEquals(
-            "USB URL: http://127.0.0.1:8080/?token=***&transport=usb",
-            MainScreenContent.viewerUsbUrlLine(token),
+            "USB URL: http://127.0.0.1:8080/?transport=usb",
+            MainScreenContent.viewerUsbUrlLine(),
         )
         assertEquals(
             "Mac 터미널: adb forward tcp:8080 tcp:8080",
@@ -30,13 +28,11 @@ class MainScreenContentTest {
             listOf(
                 MainScreenContent.title,
                 MainScreenContent.subtitle,
-                MainScreenContent.viewerAddressHint("abc123"),
-                MainScreenContent.viewerTokenLine("abc123"),
-                MainScreenContent.viewerTailscaleUrlLine("abc123"),
+                MainScreenContent.viewerAddressHint,
+                MainScreenContent.viewerTailscaleUrlLine(),
                 MainScreenContent.viewerUsbForwardCommand,
-                MainScreenContent.viewerUsbUrlLine("abc123"),
+                MainScreenContent.viewerUsbUrlLine(),
                 MainScreenContent.viewerTransportHint,
-                MainScreenContent.viewerTokenHint,
                 MainScreenContent.appInfoButtonLabel,
                 MainScreenContent.accessibilityButtonLabel,
                 MainScreenContent.accessibilityEnabledLabel,
@@ -64,8 +60,9 @@ class MainScreenContentTest {
         assertTrue(allText.any { it.contains("연결 해제") })
         assertTrue(allText.any { it.contains("Mac") })
         assertTrue(allText.any { it.contains("8080") })
-        assertTrue(allText.any { it.contains("접속 토큰") })
-        assertTrue(allText.any { it.contains("***") })
+        assertFalse(allText.any { it.contains("토큰") })
+        assertFalse(allText.any { it.contains("?token") })
+        assertFalse(allText.any { it.contains("***") })
         assertTrue(allText.any { it.contains("애플리케이션") })
         assertTrue(allText.any { it.contains("제한된 설정") })
         assertTrue(allText.any { it.contains("허용") })

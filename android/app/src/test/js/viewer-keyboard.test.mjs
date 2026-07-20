@@ -435,6 +435,8 @@ function loadViewer(options = {}) {
         requestAnimationFrame: (callback) => clock.setTimeout(callback, 16),
         cancelAnimationFrame: (id) => clock.clearTimeout(id),
         createImageBitmap: undefined,
+        VideoDecoder: options.VideoDecoder,
+        EncodedVideoChunk: options.EncodedVideoChunk,
         fetch: async (url, options = {}) => {
             fetchCalls.push({ url, options });
             return {
@@ -450,6 +452,8 @@ function loadViewer(options = {}) {
     context.window.MediaRecorder = context.MediaRecorder;
     context.window.Blob = context.Blob;
     context.window.URL = context.URL;
+    context.window.VideoDecoder = context.VideoDecoder;
+    context.window.EncodedVideoChunk = context.EncodedVideoChunk;
     vm.createContext(context);
 
     const keyboardHelperPath = path.join(filesDir, 'viewer-keyboard.js');
@@ -647,9 +651,17 @@ await test('control DataChannel uses reliable delivery', () => {
     assert.doesNotMatch(viewerSource, /maxPacketLifeTime\s*:/);
 });
 
+await test('web UI cache-busts viewer scripts after app updates', () => {
+    const appRoot = path.resolve(import.meta.dirname, '../../..');
+    const html = fs.readFileSync(path.join(appRoot, 'src/main/resources/files/index.html'), 'utf8');
+
+    assert.match(html, /src="\/viewer-keyboard\.js\?v=[^"]+"/);
+    assert.match(html, /src="\/viewer\.js\?v=[^"]+"/);
+});
+
 await test('initial transport follows explicit usb query parameter', () => {
     const { context } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+        url: 'http://127.0.0.1:8080/?transport=usb'
     });
 
     assert.equal(vm.runInContext('selectedTransport', context), 'usb');
@@ -657,10 +669,24 @@ await test('initial transport follows explicit usb query parameter', () => {
 
 await test('initial transport defaults to tailscale for phone hostnames', () => {
     const { context } = loadViewer({
-        url: 'http://phone.ts.net:8080/?token=abc'
+        url: 'http://phone.ts.net:8080/'
     });
 
     assert.equal(vm.runInContext('selectedTransport', context), 'tailscale');
+});
+
+await test('viewer no longer reads token query or sends auth headers', () => {
+    const { context, fetchCalls, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?token=legacy&transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onopen?.();
+
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?codec=jpeg');
+    assert.equal(vm.runInContext('typeof viewerAccessToken', context), 'undefined');
+    assert.equal(fetchCalls.at(-1).url, '/debug/perf');
+    assert.deepEqual(fetchCalls.at(-1).options.headers || {}, {});
 });
 
 await test('USB mode opens local session socket and sends raw control JSON', () => {
@@ -671,7 +697,7 @@ await test('USB mode opens local session socket and sends raw control JSON', () 
     vm.runInContext('connectMirror();', context);
 
     assert.equal(webSockets.length, 1);
-    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session');
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?codec=jpeg');
 
     assert.equal(vm.runInContext('sendControlPayload({ type: "key", keyCode: 4 });', context), true);
     assert.deepEqual(webSockets[0].sentMessages, [
@@ -679,9 +705,421 @@ await test('USB mode opens local session socket and sends raw control JSON', () 
     ]);
 });
 
+await test('USB mode requests h264 session when WebCodecs are available', () => {
+    class FakeVideoDecoder {
+        static async isConfigSupported(config) {
+            return { supported: true, config };
+        }
+    }
+    class FakeEncodedVideoChunk {}
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+
+    assert.equal(webSockets.length, 1);
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?codec=h264');
+    assert.equal(webSockets[0].binaryType, 'arraybuffer');
+});
+
+await test('connect button toggles between USB connect and disconnect', () => {
+    const { document, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb'
+    });
+    const connectButton = document.getElementById('connectBtn');
+
+    assert.equal(connectButton.textContent, '미러링 연결하기');
+
+    connectButton.dispatchEvent({ type: 'click' });
+
+    assert.equal(webSockets.length, 1);
+    assert.equal(connectButton.textContent, '미러링 연결 해제');
+    assert.equal(connectButton.classList.contains('disconnect'), true);
+
+    connectButton.dispatchEvent({ type: 'click' });
+
+    assert.equal(webSockets[0].readyState, 3);
+    assert.equal(connectButton.textContent, '미러링 연결하기');
+    assert.equal(connectButton.classList.contains('disconnect'), false);
+    assert.match(document.getElementById('connectionPlaceholder').textContent, /연결이 해제되었습니다/);
+});
+
+await test('web UI does not render redundant USB forward helper', () => {
+    const appRoot = path.resolve(import.meta.dirname, '../../..');
+    const html = fs.readFileSync(path.join(appRoot, 'src/main/resources/files/index.html'), 'utf8');
+
+    for (const removedText of ['usbForwardPanel', 'usbForwardCommand', 'copyUsbForwardBtn', 'adb forward tcp:8080 tcp:8080']) {
+        assert.equal(html.includes(removedText), false, `${removedText} should be removed from index.html`);
+    }
+});
+
+await test('renders USB thermal and perf status from USB_STATUS', () => {
+    const { context, document } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb'
+    });
+
+    vm.runInContext(`
+        handleUsbTextMessage(JSON.stringify({
+            type: 'USB_STATUS',
+            payload: {
+                captureReady: true,
+                accessibilityReady: true,
+                streamQuality: {
+                    selectedMode: 'AUTO',
+                    effectiveTier: 'BALANCED',
+                    effectiveWidth: 540,
+                    effectiveHeight: 1200,
+                    effectiveFps: 8,
+                    jpegQuality: 60,
+                    policy: 'heat-first'
+                },
+                usbPerf: {
+                    thermalStatus: 'NORMAL',
+                    bytesPerSecond: 1200000,
+                    lastEncodeMillis: 18,
+                    averageEncodeMillis: 20,
+                    framesSkippedByStillness: 5
+                },
+                message: 'USB_STREAMING'
+            }
+        }));
+    `, context);
+
+    const status = document.getElementById('usbCoolingStatus');
+    assert.equal(document.getElementById('usbCoolingStatusItem').hidden, false);
+    assert.match(status.textContent, /USB BALANCED/);
+    assert.match(status.textContent, /540x1200/);
+    assert.match(status.textContent, /8fps/);
+    assert.match(status.textContent, /q60/);
+    assert.match(status.textContent, /1.2 MB\/s/);
+    assert.match(status.textContent, /encode 18ms/);
+    assert.match(status.textContent, /thermal NORMAL/);
+});
+
+await test('USB_VIDEO_CONFIG configures WebCodecs decoder and decodes one key packet', async () => {
+    const supportedConfigs = [];
+    const configuredDecoders = [];
+    const decodedChunks = [];
+    class FakeVideoDecoder {
+        constructor(init) {
+            this.init = init;
+            this.decodeQueueSize = 0;
+            configuredDecoders.push(this);
+        }
+
+        static async isConfigSupported(config) {
+            supportedConfigs.push(config);
+            return { supported: true, config };
+        }
+
+        configure(config) {
+            this.config = config;
+        }
+
+        decode(chunk) {
+            decodedChunks.push(chunk);
+        }
+
+        close() {
+            this.closed = true;
+        }
+    }
+    class FakeEncodedVideoChunk {
+        constructor(init) {
+            Object.assign(this, init);
+        }
+    }
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onmessage({
+        data: JSON.stringify({
+            type: 'USB_VIDEO_CONFIG',
+            payload: {
+                codec: 'h264',
+                codecString: 'avc1.42E01F',
+                chunkFormat: 'annexb',
+                codedWidth: 360,
+                codedHeight: 800,
+                fps: 30,
+                maxBitrateBps: 3000000
+            }
+        })
+    });
+    await flushAsyncWork();
+
+    vm.runInContext(`
+        const packet = new ArrayBuffer(20);
+        const bytes = new Uint8Array(packet);
+        bytes[0] = 0x47; bytes[1] = 0x48; bytes[2] = 0x32; bytes[3] = 0x36;
+        bytes[4] = 0x01;
+        bytes[5] = 0x01;
+        bytes[6] = 0x01;
+        new DataView(packet).setBigInt64(8, 123456n, false);
+        bytes.set([9, 8, 7, 6], 16);
+        usbSocket.onmessage({ data: packet });
+    `, context);
+
+    assert.equal(supportedConfigs[0].codec, 'avc1.42E01F');
+    assert.equal(supportedConfigs[0].codedWidth, 360);
+    assert.equal(supportedConfigs[0].codedHeight, 800);
+    assert.equal(supportedConfigs[0].optimizeForLatency, true);
+    assert.equal(supportedConfigs[0].avc.format, 'annexb');
+    assert.equal(configuredDecoders[0].config.codec, 'avc1.42E01F');
+    assert.equal(configuredDecoders[0].config.avc.format, 'annexb');
+    assert.equal(decodedChunks.length, 1);
+    assert.equal(decodedChunks[0].type, 'key');
+    assert.equal(decodedChunks[0].timestamp, 123456);
+    assert.deepEqual([...new Uint8Array(decodedChunks[0].data)], [9, 8, 7, 6]);
+});
+
+await test('USB H.264 drops delta packets before first keyframe without JPEG fallback', async () => {
+    const decodedChunks = [];
+    class FakeVideoDecoder {
+        constructor() {
+            this.decodeQueueSize = 0;
+        }
+
+        static async isConfigSupported(config) {
+            return { supported: true, config };
+        }
+
+        configure(config) {
+            this.config = config;
+        }
+
+        decode(chunk) {
+            decodedChunks.push(chunk);
+            if (chunk.type === 'delta') {
+                throw new Error(
+                    "Failed to execute 'decode' on 'VideoDecoder': A key frame is required after configure() or flush()."
+                );
+            }
+        }
+
+        close() {}
+    }
+    class FakeEncodedVideoChunk {
+        constructor(init) {
+            Object.assign(this, init);
+        }
+    }
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onmessage({
+        data: JSON.stringify({
+            type: 'USB_VIDEO_CONFIG',
+            payload: {
+                codecString: 'avc1.42E01F',
+                codedWidth: 360,
+                codedHeight: 800
+            }
+        })
+    });
+    await flushAsyncWork();
+
+    vm.runInContext(`
+        const packet = new ArrayBuffer(20);
+        const bytes = new Uint8Array(packet);
+        bytes[0] = 0x47; bytes[1] = 0x48; bytes[2] = 0x32; bytes[3] = 0x36;
+        bytes[4] = 0x01;
+        bytes[5] = 0x01;
+        bytes[6] = 0x00;
+        new DataView(packet).setBigInt64(8, 123456n, false);
+        bytes.set([1, 2, 3, 4], 16);
+        usbSocket.onmessage({ data: packet });
+    `, context);
+
+    assert.equal(decodedChunks.length, 0);
+    assert.equal(webSockets.length, 1);
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?codec=h264');
+});
+
+await test('USB H.264 decodes codec config packets before first keyframe without JPEG fallback', async () => {
+    const decodedChunks = [];
+    class FakeVideoDecoder {
+        constructor() {
+            this.decodeQueueSize = 0;
+        }
+
+        static async isConfigSupported(config) {
+            return { supported: true, config };
+        }
+
+        configure(config) {
+            this.config = config;
+        }
+
+        decode(chunk) {
+            decodedChunks.push(chunk);
+            if (this.config?.avc?.format !== 'annexb') {
+                throw new Error(
+                    "Failed to execute 'decode' on 'VideoDecoder': AVC formatted H.264 requires a description field."
+                );
+            }
+        }
+
+        close() {}
+    }
+    class FakeEncodedVideoChunk {
+        constructor(init) {
+            Object.assign(this, init);
+        }
+    }
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onmessage({
+        data: JSON.stringify({
+            type: 'USB_VIDEO_CONFIG',
+            payload: {
+                codecString: 'avc1.42E01F',
+                chunkFormat: 'annexb',
+                codedWidth: 360,
+                codedHeight: 800
+            }
+        })
+    });
+    await flushAsyncWork();
+
+    vm.runInContext(`
+        const packet = new ArrayBuffer(20);
+        const bytes = new Uint8Array(packet);
+        bytes[0] = 0x47; bytes[1] = 0x48; bytes[2] = 0x32; bytes[3] = 0x36;
+        bytes[4] = 0x01;
+        bytes[5] = 0x01;
+        bytes[6] = 0x03;
+        new DataView(packet).setBigInt64(8, 123456n, false);
+        bytes.set([0, 0, 0, 1], 16);
+        usbSocket.onmessage({ data: packet });
+    `, context);
+
+    assert.equal(decodedChunks.length, 1);
+    assert.equal(decodedChunks[0].type, 'key');
+    assert.equal(decodedChunks[0].timestamp, 123456);
+    assert.deepEqual([...new Uint8Array(decodedChunks[0].data)], [0, 0, 0, 1]);
+    assert.equal(webSockets.length, 1);
+    assert.equal(webSockets[0].url, 'ws://127.0.0.1:8080/usb/session?codec=h264');
+});
+
+await test('USB H.264 unsupported config reconnects as JPEG', async () => {
+    class FakeVideoDecoder {
+        static async isConfigSupported(config) {
+            return { supported: false, config };
+        }
+    }
+    class FakeEncodedVideoChunk {}
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onmessage({
+        data: JSON.stringify({
+            type: 'USB_VIDEO_CONFIG',
+            payload: {
+                codec: 'avc1.42E01F',
+                codedWidth: 360,
+                codedHeight: 800
+            }
+        })
+    });
+    await flushAsyncWork();
+
+    assert.equal(webSockets.length, 2);
+    assert.equal(webSockets[0].readyState, 3);
+    assert.equal(webSockets[1].url, 'ws://127.0.0.1:8080/usb/session?codec=jpeg');
+    assert.equal(webSockets[1].binaryType, 'blob');
+});
+
+await test('USB H.264 startup failure status reconnects as JPEG', async () => {
+    class FakeVideoDecoder {}
+    class FakeEncodedVideoChunk {}
+    const { context, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb',
+        VideoDecoder: FakeVideoDecoder,
+        EncodedVideoChunk: FakeEncodedVideoChunk
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onmessage({
+        data: JSON.stringify({
+            type: 'USB_STATUS',
+            payload: {
+                captureReady: false,
+                message: 'H264_START_FAILED'
+            }
+        })
+    });
+
+    assert.equal(webSockets.length, 2);
+    assert.equal(webSockets[1].url, 'ws://127.0.0.1:8080/usb/session?codec=jpeg');
+});
+
+await test('USB H.264 status renders compact resolution fps and Mbps chips', () => {
+    const { context, document } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb'
+    });
+
+    vm.runInContext(`
+        handleUsbTextMessage(JSON.stringify({
+            type: 'USB_STATUS',
+            payload: {
+                streamQuality: {
+                    codec: 'h264',
+                    effectiveTier: 'HIGH',
+                    effectiveWidth: 720,
+                    effectiveHeight: 1600,
+                    effectiveFps: 30,
+                    maxBitrateBps: 3000000
+                },
+                usbPerf: {
+                    bytesPerSecond: 375000
+                }
+            }
+        }));
+    `, context);
+
+    const status = document.getElementById('usbCoolingStatus');
+    assert.match(status.textContent, /H\.264/);
+    assert.match(status.textContent, /720x1600/);
+    assert.match(status.textContent, /30fps/);
+    assert.match(status.textContent, /3\.0Mbps/);
+});
+
+await test('USB perf polling requests debug perf while USB socket is active', () => {
+    const { context, fetchCalls, webSockets } = loadViewer({
+        url: 'http://127.0.0.1:8080/?transport=usb'
+    });
+
+    vm.runInContext('connectMirror();', context);
+    webSockets[0].onopen?.();
+
+    assert.equal(fetchCalls.at(-1).url, '/debug/perf');
+    assert.deepEqual(fetchCalls.at(-1).options.headers || {}, {});
+});
+
 await test('USB binary frame renders blob image and updates download usage', () => {
     const { context, document, webSockets, objectUrls } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+        url: 'http://127.0.0.1:8080/?transport=usb'
     });
 
     vm.runInContext('connectMirror();', context);
@@ -698,7 +1136,7 @@ await test('USB binary frame renders blob image and updates download usage', () 
 
 await test('USB frame taps send normalized tap controls through USB socket', () => {
     const { context, document, webSockets } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+        url: 'http://127.0.0.1:8080/?transport=usb'
     });
 
     vm.runInContext('connectMirror();', context);
@@ -729,7 +1167,7 @@ await test('USB frame taps send normalized tap controls through USB socket', () 
 
 await test('USB frame mouse wheel sends swipe controls through USB socket', () => {
     const { context, document, webSockets, clock } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb'
+        url: 'http://127.0.0.1:8080/?transport=usb'
     });
 
     vm.runInContext('connectMirror();', context);
@@ -860,7 +1298,43 @@ await test('stream quality buttons post selected mode to Android host', async ()
     assert.equal(qualityCall.options.body, JSON.stringify({ mode: 'STANDARD' }));
 });
 
-await test('system control buttons send volume and power key events', () => {
+await test('web UI does not render capture or audio controls', () => {
+    const appRoot = path.resolve(import.meta.dirname, '../../..');
+    const html = fs.readFileSync(path.join(appRoot, 'src/main/resources/files/index.html'), 'utf8');
+
+    for (const removedId of ['screenshotBtn', 'recordBtn', 'volUpBtn', 'volDownBtn', 'muteBtn']) {
+        assert.equal(html.includes(`id="${removedId}"`), false, `${removedId} should be removed from index.html`);
+    }
+});
+
+await test('USB cooling status uses stacked non-overlapping layout', () => {
+    const appRoot = path.resolve(import.meta.dirname, '../../..');
+    const html = fs.readFileSync(path.join(appRoot, 'src/main/resources/files/index.html'), 'utf8');
+
+    assert.match(html, /id="usbCoolingStatusItem"[^>]*class="usb-cooling-card"/);
+    assert.match(html, /\.usb-cooling-card\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+    assert.match(html, /\.usb-cooling-value\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+});
+
+await test('USB mode hides Tailscale-only rows', () => {
+    const { document } = loadViewer({ url: 'http://127.0.0.1:8080/?transport=usb' });
+
+    assert.equal(document.getElementById('streamStatusLabel').textContent, 'USB 스트림');
+    assert.equal(document.getElementById('rtcLatencyItem').hidden, true);
+    assert.equal(document.getElementById('qualityNetworkItem').hidden, true);
+    assert.equal(document.getElementById('toolsPanel').open, false);
+});
+
+await test('Tailscale mode hides USB-only helper and keeps network rows visible', () => {
+    const { document } = loadViewer({ url: 'http://phone.tailnet.ts.net:8080/?transport=tailscale' });
+
+    assert.equal(document.getElementById('streamStatusLabel').textContent, 'WebRTC 스트림');
+    assert.equal(document.getElementById('rtcLatencyItem').hidden, false);
+    assert.equal(document.getElementById('qualityNetworkItem').hidden, false);
+    assert.equal(document.getElementById('usbCoolingStatusItem').hidden, true);
+});
+
+await test('system controls send only the remaining power key event', () => {
     const { document, messages } = loadViewer();
 
     document.getElementById('volUpBtn').dispatchEvent({ type: 'click', preventDefault() {} });
@@ -869,9 +1343,6 @@ await test('system control buttons send volume and power key events', () => {
     document.getElementById('powerBtn').dispatchEvent({ type: 'click', preventDefault() {} });
 
     assert.deepEqual(messages, [
-        { type: 'key', keyCode: 24 },
-        { type: 'key', keyCode: 25 },
-        { type: 'key', keyCode: 164 },
         { type: 'key', keyCode: 26 }
     ]);
 });
@@ -899,7 +1370,7 @@ await test('copy event sends clipboard payload through dataChannel once', async 
 
 await test('copy event sends clipboard payload through USB socket in usb mode', async () => {
     const { context, webSockets, clock } = loadViewer({
-        url: 'http://127.0.0.1:8080/?token=abc&transport=usb',
+        url: 'http://127.0.0.1:8080/?transport=usb',
         navigator: {
             clipboard: {
                 readText: async () => 'copied-over-usb',
@@ -953,7 +1424,7 @@ await test('received clipboard text uses manual fallback when Clipboard API is u
     assert.match(toastContainer.children[0].textContent, /클립보드 수신/);
 });
 
-await test('manual connect click refreshes an existing signaling session immediately', async () => {
+await test('manual connect click disconnects an existing signaling session', async () => {
     const { context, document, webSockets } = loadViewer();
 
     vm.runInContext('connectSignaling();', context);
@@ -962,7 +1433,9 @@ await test('manual connect click refreshes an existing signaling session immedia
 
     document.getElementById('connectBtn').dispatchEvent({ type: 'click', preventDefault() {} });
 
-    assert.equal(webSockets.length, 2);
+    assert.equal(webSockets.length, 1);
+    assert.equal(webSockets[0].readyState, 3);
+    assert.equal(document.getElementById('connectBtn').textContent, '미러링 연결하기');
 });
 
 await test('auto reconnect schedules backoff after closing an open signaling socket', async () => {
@@ -996,13 +1469,4 @@ await test('waiting for screen capture stops reconnect overlay and clears stale 
     assert.equal(remoteVideo.srcObject, null);
     assert.equal(document.getElementById('controlStatus').innerText, '대기');
     assert.match(document.getElementById('statusDetail').textContent, /화면 공유 권한/);
-});
-
-await test('record button handles missing MediaRecorder without throwing', () => {
-    const { document, remoteVideo } = loadViewer({ MediaRecorder: undefined });
-    remoteVideo.srcObject = {};
-
-    assert.doesNotThrow(() => {
-        document.getElementById('recordBtn').dispatchEvent({ type: 'click', preventDefault() {} });
-    });
 });

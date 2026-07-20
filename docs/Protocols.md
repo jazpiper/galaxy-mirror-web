@@ -7,21 +7,21 @@ updated: 2026-06-09
 
 # 🔌 Android Mirror Web: 시그널링 & 제어 입력 프로토콜 상세 명세서
 
-본 문서는 맥북 브라우저 클라이언트와 Android Host가 Tailscale/WebRTC 또는 USB/JPEG transport로 화면 스트림과 원격 제어 이벤트를 송수신하기 위한 통신 프로토콜 상세 명세입니다.
+본 문서는 맥북 브라우저 클라이언트와 Android Host가 Tailscale/WebRTC 또는 USB/H.264/JPEG transport로 화면 스트림과 원격 제어 이벤트를 송수신하기 위한 통신 프로토콜 상세 명세입니다.
 
 ---
 
 ## 1. Ktor 1:1 WebSocket 시그널링 규격 (Signaling Protocol)
 
-Tailscale 가상 메시 VPN 내부에서 맥북 브라우저가 Android 내장 Ktor 웹서버(`ws://[MagicDNS-Android-Host]:8080/signaling?token=...`)로 직접 소켓 연결을 시도합니다. 1:1 전용 연결이므로 방(Room) 관리 없이 단일 통신 파이프라인으로 작동합니다.
+Tailscale 가상 메시 VPN 내부에서 맥북 브라우저가 Android 내장 Ktor 웹서버(`ws://[MagicDNS-Android-Host]:8080/signaling`)로 직접 소켓 연결을 시도합니다. 1:1 전용 연결이므로 방(Room) 관리 없이 단일 통신 파이프라인으로 작동합니다.
 
-### 1.0 Viewer 접근 토큰
-Android Host는 앱 시작 시 로컬 저장소에 viewer 접근 토큰을 만들고, Tailscale 접속 주소에 `?token=...` 형태로 표시합니다. 브라우저 정적 리소스와 `/status`는 진단 편의를 위해 공개되지만, 원격 입력/디버그/앱 실행/화질 변경에 쓰이는 API와 `/signaling` WebSocket은 토큰이 필요합니다. 단, `adb forward`로 접속하는 `127.0.0.1`/`localhost` loopback 요청은 로컬 USB 운용 편의를 위해 토큰 없이 허용합니다.
+### 1.0 Viewer 접근 모델
+현재 앱은 개인 로컬 사용을 전제로 하며 viewer 접근 토큰을 사용하지 않습니다. Android 앱에 표시되는 Tailscale URL과 USB loopback URL 모두 query token 없이 접속합니다.
 
-* HTTP API: `X-Android-Mirror-Token` 헤더 또는 `token` query parameter 중 하나가 Android Host의 현재 토큰과 일치해야 합니다.
-* WebSocket: `/signaling?token=...` query parameter가 필요합니다.
-* Loopback USB: `http://127.0.0.1:8080/?transport=usb` 및 `ws://127.0.0.1:8080/usb/session`은 토큰 없이 사용할 수 있습니다.
-* 토큰이 없거나 맞지 않으면 HTTP API는 `401 {"ok":false,"error":"UNAUTHORIZED_VIEWER"}`를 반환하고, WebSocket은 policy violation close reason `UNAUTHORIZED_VIEWER`로 종료됩니다.
+* Tailscale/WebRTC: `http://<MagicDNS-host>:8080/?transport=tailscale`
+* USB loopback: `adb forward tcp:8080 tcp:8080` 후 `http://127.0.0.1:8080/?transport=usb`
+* WebSocket: `/signaling`, `/usb/session?codec=h264`, `/usb/session?codec=jpeg`
+* HTTP API: 앱 실행, 스트림 화질, debug endpoint 모두 token header/query 없이 동작합니다.
 
 ### 1.1 WebRTC SDP Offer (맥 브라우저 $\rightarrow$ 안드로이드)
 맥 브라우저가 WebRTC PeerConnection을 생성하고 로컬 미디어 디스크립션(SDP)을 생성해 전송합니다.
@@ -230,7 +230,7 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 
 ---
 
-## 3. USB 직접 연결 모드 (ADB Port Forward + JPEG WebSocket)
+## 3. USB 직접 연결 모드 (ADB Port Forward + H.264/JPEG WebSocket)
 
 USB 연결은 같은 Mac에 Android 단말을 USB로 연결한 뒤 ADB port forwarding으로 Android
 내장 서버를 Mac localhost에 노출하는 모드입니다. Tailscale 연결이 불안정하거나 같은
@@ -242,9 +242,12 @@ adb forward tcp:8080 tcp:8080
 ```
 
 Mac Viewer URL은 `http://127.0.0.1:8080/?transport=usb`입니다.
-브라우저는 정적 viewer 로드 후 `ws://127.0.0.1:8080/usb/session`
-WebSocket을 열고, Android Host는 같은 소켓으로 JSON text frame과 JPEG binary frame을
-주고받습니다. loopback이 아닌 host로 USB session을 열면 viewer 접근 토큰 검증을 통과해야 합니다.
+브라우저는 정적 viewer 로드 후 Chrome WebCodecs 지원 여부에 따라 다음 WebSocket 중 하나를 엽니다.
+
+* 기본 Chrome 경로: `ws://127.0.0.1:8080/usb/session?codec=h264`
+* fallback 경로: `ws://127.0.0.1:8080/usb/session?codec=jpeg`
+
+Android Host는 같은 소켓으로 JSON text frame과 binary video frame을 주고받습니다. viewer 접근 토큰은 필요하지 않습니다.
 
 ### 3.1 Android -> Browser text frame (`USB_STATUS`)
 
@@ -263,23 +266,64 @@ text frame으로 보냅니다.
       "selectedLabel": "자동",
       "effectiveMode": "STANDARD",
       "effectiveLabel": "표준",
+      "codec": "h264",
       "width": 720,
       "height": 1600,
-      "fps": 10,
-      "jpegQuality": 70
+      "fps": 24,
+      "bitrateBps": 3000000
+    },
+    "usbPerf": {
+      "codec": "h264",
+      "bitrateBps": 3000000,
+      "bytesPerSecond": 375000,
+      "lastEncodeMillis": 4,
+      "thermalStatus": "NORMAL"
     },
     "message": "USB_STREAMING"
   }
 }
 ```
 
-### 3.2 Android -> Browser binary frame
+### 3.2 Android -> Browser text frame (`USB_VIDEO_CONFIG`)
 
-각 binary frame은 독립 JPEG 이미지입니다. Browser는 수신한 binary payload를 Blob으로
-만들어 새 Object URL을 생성하고 `#usbFrame` 이미지에 표시합니다. 이전 frame Object
-URL이 있으면 다음 frame을 표시하기 전에 `URL.revokeObjectURL(...)`로 해제합니다.
+H.264 session에서는 binary chunk보다 먼저 decoder 설정용 text frame을 보냅니다.
 
-### 3.3 Browser -> Android text frame
+```json
+{
+  "type": "USB_VIDEO_CONFIG",
+  "payload": {
+    "codec": "h264",
+    "mime": "video/avc",
+    "chunkFormat": "annexb",
+    "codecString": "avc1.42E01F",
+    "width": 720,
+    "height": 1600,
+    "fps": 24,
+    "bitrateBps": 3000000,
+    "keyFrameIntervalSeconds": 1
+  }
+}
+```
+
+### 3.3 Android -> Browser binary frame
+
+H.264 session의 각 binary frame은 16-byte `GH26` header와 encoded AVC payload로 구성됩니다.
+
+| Offset | Value |
+| :--- | :--- |
+| `0..3` | ASCII `GH26` |
+| `4` | version, 현재 `1` |
+| `5` | codec, `1` = H.264 |
+| `6` | flags, bit0 keyframe, bit1 codec config |
+| `7` | reserved, `0` |
+| `8..15` | presentation timestamp microseconds, big-endian signed Int64 |
+| `16..n` | Annex B H.264 payload |
+
+Chrome Viewer는 `VideoDecoder`와 `EncodedVideoChunk`로 payload를 디코딩하고 기존 `usbCanvas`에 그립니다. decoder queue가 밀리면 delta frame을 버리고 keyframe을 기다립니다.
+
+JPEG fallback session의 각 binary frame은 독립 JPEG 이미지입니다. Browser는 수신한 binary payload를 Blob으로 만들고 `createImageBitmap(blob)`으로 `usbCanvas`에 그립니다.
+
+### 3.4 Browser -> Android text frame
 
 USB 제어 입력은 WebRTC `control` DataChannel과 같은 JSON shape을 사용합니다.
 브라우저는 같은 `/usb/session` WebSocket에 text frame으로 전송합니다.
@@ -308,9 +352,9 @@ Android Host는 처리 결과를 기존 `CONTROL_ACK` JSON과 같은 shape의 te
 }
 ```
 
-### 3.4 Transport 전환 정책
+### 3.5 Transport 전환 정책
 
-Tailscale/WebRTC와 USB/JPEG는 동시에 활성화하지 않습니다. 새 transport 세션이
+Tailscale/WebRTC와 USB/H.264/JPEG는 동시에 활성화하지 않습니다. 새 transport 세션이
 시작되면 기존 transport의 영상 capture와 control channel을 정리하고, stale callback은
 현재 session id/transport와 일치할 때만 상태를 갱신합니다. 세션 교체나 transport 전환 뒤
 Android 14+ MediaProjection single-use 제약에 따라 화면 공유 권한 재승인이 필요할 수
@@ -320,7 +364,7 @@ Android 14+ MediaProjection single-use 제약에 따라 화면 공유 권한 재
 
 ## 4. Android 앱 바로가기 HTTP API
 
-자주 쓰는 앱 관리는 Android Host 앱에서만 수행하고, Mac 뷰어는 저장된 바로가기 목록을 조회하거나 실행 요청만 보냅니다. 모든 요청은 viewer 접근 토큰이 필요합니다.
+자주 쓰는 앱 관리는 Android Host 앱에서만 수행하고, Mac 뷰어는 저장된 바로가기 목록을 조회하거나 실행 요청만 보냅니다. 현재 로컬 전용 모델에서는 viewer 접근 토큰이 필요하지 않습니다.
 
 ### 4.1 즐겨찾기 앱 목록 조회 (`GET /apps/favorites`)
 
@@ -358,7 +402,7 @@ Android 14+ MediaProjection single-use 제약에 따라 화면 공유 권한 재
 
 ## 5. WebRTC 스트림 화질 HTTP API
 
-스트림 화질은 Android Host가 저장한 선택 모드와 현재 네트워크 종류를 조합해 결정합니다. 기본 선택값은 `AUTO`이며, `AUTO`는 Wi-Fi 또는 Ethernet에서 `HIGH`, 4G/5G 등 cellular 네트워크와 기타 네트워크에서 `STANDARD`로 해석됩니다. `DATA_SAVER`, `STANDARD`, `HIGH`를 직접 선택하면 네트워크 종류와 무관하게 해당 프로필을 사용합니다. 모든 요청은 viewer 접근 토큰이 필요합니다.
+스트림 화질은 Android Host가 저장한 선택 모드와 현재 네트워크 종류를 조합해 결정합니다. 기본 선택값은 `AUTO`이며, `AUTO`는 Wi-Fi 또는 Ethernet에서 `HIGH`, 4G/5G 등 cellular 네트워크와 기타 네트워크에서 `STANDARD`로 해석됩니다. `DATA_SAVER`, `STANDARD`, `HIGH`를 직접 선택하면 네트워크 종류와 무관하게 해당 프로필을 사용합니다. 현재 로컬 전용 모델에서는 viewer 접근 토큰이 필요하지 않습니다.
 
 | mode | 캡처 해상도/FPS | 송신 bitrate 상한 | 용도 |
 | :--- | :--- | :--- | :--- |
@@ -405,13 +449,13 @@ Android Host는 WebRTC 세션 시작 시 선택된 프로필의 해상도/FPS로
 Android 14+ 계열에서는 화면 공유 승인 결과 Intent를 같은 projection 세션 재생성에 재사용할
 수 없습니다. Galaxy Mirror는 보수적인 개인정보 보호 정책을 따릅니다. viewer WebSocket이
 닫히거나 새 viewer 세션이 기존 세션을 교체하면 Android Host는 현재 transport에 맞춰
-WebRTC peer connection/DataChannel 또는 USB JPEG streamer, ScreenCapturerAndroid,
+WebRTC peer connection/DataChannel 또는 USB H.264/JPEG streamer, ScreenCapturerAndroid,
 VideoSource/VideoTrack, EGL/PeerConnectionFactory, 저장된 projection Intent를 정리합니다.
 
 이후 새 WebRTC Offer가 들어오거나 USB session이 시작되면 Android Host는
 `WAITING_FOR_SCREEN_CAPTURE` 또는 transport별 상태를 보내고, 바인딩된 `MainActivity`에
 화면 공유 권한 요청을 트리거합니다. Android 사용자가 화면 공유를 승인하면 새 projection
-token으로 선택된 transport의 capture pipeline을 시작합니다. 화면 잠금, 화면 꺼짐, 시스템
+선택된 transport의 capture pipeline을 시작합니다. 화면 잠금, 화면 꺼짐, 시스템
 projection 중단, `startCapture()` 실패는 모두 `SCREEN_CAPTURE_REAUTH_REQUIRED` 상태로
 귀결되며, 기존 capturer나 USB streamer는 재사용하지 않습니다.
 

@@ -32,6 +32,30 @@ class UsbScreenStreamerSourceTest {
     }
 
     @Test
+    fun sourceRecordsUsbPerfCounters() {
+        val source = readSource()
+
+        assertTrue(source.contains("perfMonitor.recordFrameAcquired()"))
+        assertTrue(source.contains("perfMonitor.recordFrameDroppedByFps()"))
+        assertTrue(source.contains("perfMonitor.recordFrameSkippedByStillness()"))
+        assertTrue(source.contains("perfMonitor.recordFrameEncoded("))
+        assertTrue(source.contains("perfMonitor.recordEncodeFailure()"))
+    }
+
+    @Test
+    fun sourceUsesDynamicProfileProviderAndChangeGate() {
+        val source = readSource()
+
+        assertTrue(source.contains("profileProvider: () -> UsbStreamProfile"))
+        assertTrue(source.contains("UsbStreamProfilePolicy.resolveTier(UsbStreamProfileTier.CLEAR)"))
+        assertTrue(source.contains("frameRateGate.updateFps(profile.fps)"))
+        assertTrue(source.contains("UsbFrameChangeGate"))
+        assertTrue(source.contains("computeFrameSignature("))
+        assertTrue(source.contains("encodeJpeg(image, profile, captureProfile)"))
+        assertTrue(source.contains("canvas.drawBitmap(sBitmap, srcRect, destRect, null)"))
+    }
+
+    @Test
     fun streamerSeparatesProjectionCallbackUnregisterFromStop() {
         val source = readSource()
 

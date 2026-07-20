@@ -2,23 +2,19 @@ package com.example.galaxymirror
 
 import org.json.JSONObject
 
-data class UsbStreamProfile(
+data class UsbH264StreamProfile(
     val tier: UsbStreamProfileTier,
     val width: Int,
     val height: Int,
     val fps: Int,
-    val jpegQuality: Int,
-    val policy: String = "heat-first",
+    val bitrateBps: Int,
+    val keyFrameIntervalSeconds: Int = 1,
+    val mime: String = "video/avc",
+    val policy: String = "hardware-h264",
 )
 
-enum class UsbStreamProfileTier {
-    COOL,
-    BALANCED,
-    CLEAR,
-}
-
-object UsbStreamProfilePolicy {
-    fun resolve(selectedMode: StreamQualityMode): UsbStreamProfile =
+object UsbH264StreamProfilePolicy {
+    fun resolve(selectedMode: StreamQualityMode): UsbH264StreamProfile =
         when (selectedMode) {
             StreamQualityMode.DATA_SAVER ->
                 resolveTier(UsbStreamProfileTier.COOL)
@@ -29,39 +25,36 @@ object UsbStreamProfilePolicy {
                 resolveTier(UsbStreamProfileTier.BALANCED)
         }
 
-    fun resolveTier(
-        tier: UsbStreamProfileTier,
-        emergencyFps: Boolean = false,
-    ): UsbStreamProfile =
+    fun resolveTier(tier: UsbStreamProfileTier): UsbH264StreamProfile =
         when (tier) {
             UsbStreamProfileTier.COOL ->
-                UsbStreamProfile(
-                    tier = tier,
-                    width = 360,
-                    height = 800,
-                    fps = if (emergencyFps) 3 else 4,
-                    jpegQuality = 50,
-                )
-            UsbStreamProfileTier.BALANCED ->
-                UsbStreamProfile(
+                UsbH264StreamProfile(
                     tier = tier,
                     width = 540,
                     height = 1200,
-                    fps = 8,
-                    jpegQuality = 60,
+                    fps = 18,
+                    bitrateBps = 1_800_000,
                 )
-            UsbStreamProfileTier.CLEAR ->
-                UsbStreamProfile(
+            UsbStreamProfileTier.BALANCED ->
+                UsbH264StreamProfile(
                     tier = tier,
                     width = 720,
                     height = 1600,
-                    fps = 10,
-                    jpegQuality = 68,
+                    fps = 24,
+                    bitrateBps = 3_000_000,
+                )
+            UsbStreamProfileTier.CLEAR ->
+                UsbH264StreamProfile(
+                    tier = tier,
+                    width = 1080,
+                    height = 2400,
+                    fps = 30,
+                    bitrateBps = 6_000_000,
                 )
         }
 }
 
-object UsbStreamProfileCodec {
+object UsbH264StreamProfileCodec {
     fun toStatusJson(selectedMode: StreamQualityMode): String {
         val effectiveMode =
             if (selectedMode == StreamQualityMode.AUTO) {
@@ -69,9 +62,11 @@ object UsbStreamProfileCodec {
             } else {
                 selectedMode
             }
-        val profile = UsbStreamProfilePolicy.resolve(selectedMode)
+        val profile = UsbH264StreamProfilePolicy.resolve(selectedMode)
 
         return JSONObject()
+            .put("codec", UsbVideoCodec.H264.wireValue)
+            .put("codecLabel", UsbVideoCodec.H264.label)
             .put("selectedMode", selectedMode.wireValue)
             .put("selectedLabel", selectedMode.koreanLabel)
             .put("effectiveMode", effectiveMode.wireValue)
@@ -83,7 +78,9 @@ object UsbStreamProfileCodec {
             .put("width", profile.width)
             .put("height", profile.height)
             .put("fps", profile.fps)
-            .put("jpegQuality", profile.jpegQuality)
+            .put("bitrateBps", profile.bitrateBps)
+            .put("keyFrameIntervalSeconds", profile.keyFrameIntervalSeconds)
+            .put("mime", profile.mime)
             .put("policy", profile.policy)
             .toString()
     }

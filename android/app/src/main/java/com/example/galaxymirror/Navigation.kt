@@ -13,7 +13,6 @@ import com.example.galaxymirror.ui.main.MainScreen
 @Composable
 fun MainNavigation(
   accessibilityEnabled: Boolean,
-  viewerAccessToken: String = "",
   favoriteApps: List<FavoriteApp>,
   launchableApps: List<FavoriteApp>,
   screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
@@ -22,6 +21,7 @@ fun MainNavigation(
   streamQualityNetwork: StreamNetworkTransport = StreamNetworkTransport.OTHER,
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
+  isMirroringActive: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit,
   onRemoveFavoriteApp: (String) -> Unit,
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
@@ -42,7 +42,6 @@ fun MainNavigation(
           MainScreen(
             modifier = Modifier.safeDrawingPadding().padding(16.dp),
             accessibilityEnabled = accessibilityEnabled,
-            viewerAccessToken = viewerAccessToken,
             favoriteApps = favoriteApps,
             launchableApps = launchableApps,
             screenAwakeSettings = screenAwakeSettings,
@@ -50,6 +49,7 @@ fun MainNavigation(
             streamQualityMode = streamQualityMode,
             streamQualityNetwork = streamQualityNetwork,
             streamQualityProfile = streamQualityProfile,
+            isMirroringActive = isMirroringActive,
             onAddFavoriteApp = onAddFavoriteApp,
             onRemoveFavoriteApp = onRemoveFavoriteApp,
             onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
