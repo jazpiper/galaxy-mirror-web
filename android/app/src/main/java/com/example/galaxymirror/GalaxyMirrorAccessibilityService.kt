@@ -585,7 +585,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                 val text = clip.getItemAt(0).coerceToText(this)?.toString()
                 if (text != null && text != lastInjectedClipboardText) {
                     val service = MediaProjectionService.instance
-                    val channel = service?.controlChannel
+                    val channel = service?.webRtcManager?.controlChannel
                     if (service != null && channel != null && channel.state() == org.webrtc.DataChannel.State.OPEN) {
                         try {
                             val json = org.json.JSONObject().apply {

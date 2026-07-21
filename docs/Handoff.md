@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-07-06
+updated: 2026-07-21
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
@@ -155,8 +155,17 @@ updated: 2026-07-06
 - [x] Volume up/down/mute verified on physical device
 
 ### 2. 다음 개발 단계 핵심 미션 (Backlog / Future Enhancements)
-1. **오디오 스트리밍 미러링**: Android 10+ MediaProjection 오디오 캡처 파이프라인 및 WebRTC 오디오 트랙 뷰어 연동.
-2. [x] **원격 클립보드 히스토리 뷰어**: 뷰어 사이드바에 수신된 클립보드 텍스트 히스토리를 간직하는 목록 UI 구현 완료.
+* **오디오 스트리밍 미러링 제외 결정**: 사용성 대비 구현 복잡도 등을 고려하여 해당 기능은 보류 및 구현 제외하기로 확정했습니다.
+* 현재 기획된 M1~M6 마일스톤이 모두 완수되었으며, 프로젝트는 신규 기능 추가에서 **안정화 및 유지보수 모드**로 공식 전환되었습니다.
+* [x] **원격 클립보드 히스토리 뷰어**: 뷰어 사이드바에 수신된 클립보드 텍스트 히스토리를 간직하는 목록 UI 구현 완료.
+
+### 🚀 Milestone 7: 대규모 리팩토링 (Active)
+- [x] **T7.1: Phase 1 - Ktor API 및 WebSocket 라우팅 계층 분리**
+  - [x] `MediaProjectionService.kt` 내부의 라우팅 로직을 `MirrorRouting.kt`로 분리 완료
+  - [x] 테스트 실패 원인 파악 및 `MirrorSessionStateTest.kt`의 정적 텍스트 검색 우회 수정 완료
+  - [x] 모든 단위 테스트(`app:testDebugUnitTest`) 통과 확인
+- [ ] **T7.2: Phase 2 - MediaProjectionService.kt 도메인 분리**
+- [ ] **T7.3: Phase 3 - Mac Viewer 프론트엔드 ES 모듈화**
 
 ### 3. 화면 켜짐/밝기 최소화 확인 포인트
 * 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.

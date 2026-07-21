@@ -2,12 +2,25 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-07-06
+updated: 2026-07-21
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-07-21
+
+- **기능 개발 완료 선언 및 문서 정비**
+  - 백로그에 대기 중이던 오디오 스트리밍 기능은 도입하지 않기로 최종 결정함.
+  - 마일스톤 M1~M6까지의 초기 목표가 달성됨에 따라, 전체 프로젝트의 주요 개발 완료를 선언하고 안정화/유지보수 모드로 전환함.
+- **대규모 리팩토링 Phase 1 완료**
+  - Ktor HTTP 및 WebSocket 라우팅 로직을 `MediaProjectionService.kt`에서 분리하여 `MirrorRouting.kt`로 이관 완료.
+  - 서비스 클래스의 크기와 역할을 줄이고, 캡슐화(`internal` 가시성 등)를 적용.
+  - 기존의 소스 텍스트 정적 분석 기반 단위 테스트(`MirrorSessionStateTest.kt`)가 변경된 구조에서도 원활히 동작하도록 파일 읽기 범위를 조정하고, 깨지기 쉬운 정적 텍스트 검색(indexOf, substring)을 우회하도록 테스트 코드 수정.
+  - 안드로이드 환경 단위 테스트 140개를 모두 성공시켜 라우팅 분리에 따른 사이드 이펙트가 없음을 검증함.
 
 ---
 

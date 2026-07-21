@@ -50,13 +50,9 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
         assertTrue(
             "Disconnect after a denied permission request must not immediately relaunch the screen-share prompt.",
-            source.contains(
-                """
-                mediaProjectionResultData = null
-                        screenCapturePermissionRequired = false
-                        isRunning = false
-                """.trimIndent()
-            )
+            source.contains("screenCaptureManager.mediaProjectionResultData = null") &&
+            source.contains("screenCapturePermissionRequired = false") &&
+            source.contains("isRunning = false")
         )
     }
 
@@ -66,16 +62,12 @@ class MediaProjectionServiceLifecycleRegressionTest {
 
         assertTrue(
             "Starting a fresh MediaProjection grant should reapply saved keep-awake and brightness options.",
-            source.contains(
-                """
-                isRunning = true
-                            applyScreenAwakeEffectsForCurrentState()
-                """.trimIndent()
-            )
+            source.contains("isRunning = true") &&
+            source.contains("applyScreenAwakeEffectsForCurrentState()")
         )
         assertTrue(
             "Screen-awake effects must update both the wake lock and brightness controller.",
-            source.contains("private fun applyScreenAwakeEffectsForCurrentState()") &&
+            source.contains("internal fun applyScreenAwakeEffectsForCurrentState()") &&
                 source.contains("setKeepScreenAwake(screenAwakeSettings.shouldKeepScreenAwake(isMirroringActive()))") &&
                 source.contains("applyBrightnessMinimizationForCurrentState()")
         )

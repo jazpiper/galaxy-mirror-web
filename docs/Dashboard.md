@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Dashboard
 related: [Log.md, Handoff.md, Protocols.md, Coordinates.md, PerformanceOptimizationReport.md]
-updated: 2026-06-19
+updated: 2026-07-21
 ---
 
 # 🌌 Galaxy Mirror Web Dashboard
@@ -61,6 +61,8 @@ updated: 2026-06-19
   - [x] 물리 하드웨어 키(볼륨, 잠금) 제어 주입
   - [x] 브라우저 내 스크린샷 및 미디어 레코더 녹화 기능 구현
   - [x] 코드 리뷰 후속 하드닝: HTTP origin 클립보드 fallback, 볼륨 AudioManager 라우팅, MediaProjection privacy-first 재승인 정책 반영
+
+*※ 2026-07-21 업데이트: 오디오 스트리밍 기능은 최종 제외되었으며, 초기 기획된 전체 마일스톤이 달성되어 프로젝트는 안정화/유지보수 모드로 전환되었습니다.*
 
 ---
 

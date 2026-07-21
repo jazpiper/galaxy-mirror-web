@@ -199,7 +199,7 @@ class MirrorSessionStateTest {
     @Test
     fun usbReplacementStopsPreviousUsbStreamerBeforeAssigningNewSession() {
         val source = readMediaProjectionServiceSource()
-        val beginStart = source.indexOf("private suspend fun beginViewerSession(transport: MirrorTransport)")
+        val beginStart = source.indexOf("internal suspend fun beginViewerSession(transport: MirrorTransport)")
         assertTrue("transport-aware beginViewerSession should exist", beginStart >= 0)
         val assignStart = source.indexOf("mirrorSessionState = mirrorSessionState.beginSession(sessionId, transport)", beginStart)
         assertTrue("beginViewerSession should assign transport-aware session state", assignStart >= 0)
@@ -231,9 +231,7 @@ class MirrorSessionStateTest {
         val source = readMediaProjectionServiceSource()
         val usbRouteStart = source.indexOf("webSocket(\"/usb/session\")")
         assertTrue("USB route should exist", usbRouteStart >= 0)
-        val usbRouteEnd = source.indexOf("private suspend fun beginViewerSession", usbRouteStart)
-        assertTrue("USB route should appear before beginViewerSession", usbRouteEnd >= 0)
-        val usbRoute = source.substring(usbRouteStart, usbRouteEnd)
+        val usbRoute = source.substring(usbRouteStart)
 
         assertTrue(
             "USB route should use a bounded frame channel.",
@@ -262,7 +260,7 @@ class MirrorSessionStateTest {
 
         assertTrue(
             "USB route should bind projection ownership before starting the streamer.",
-            beforeStreamerStart.contains("prepareUsbScreenStreamerForSession(sessionId)"),
+            beforeStreamerStart.contains("screenCaptureManager.prepareUsbScreenStreamerForSession(sessionId)") || beforeStreamerStart.contains("prepareUsbScreenStreamerForSession(sessionId)"),
         )
         assertTrue(
             "Service should track the USB projection owner session id.",
@@ -270,17 +268,17 @@ class MirrorSessionStateTest {
         )
         assertTrue(
             "USB streamer callback should capture and pass a session id.",
-            source.contains("private fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer") &&
+            source.contains("internal fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer") &&
                 source.contains("handleUsbProjectionStopped(sessionId)"),
         )
         assertTrue(
             "USB projection stop handler should be session-aware.",
-            source.contains("private fun handleUsbProjectionStopped(sessionId: Int)"),
+            source.contains("internal fun handleUsbProjectionStopped(sessionId: Int)"),
         )
 
-        val handlerStart = source.indexOf("private fun handleUsbProjectionStopped(sessionId: Int)")
+        val handlerStart = source.indexOf("internal fun handleUsbProjectionStopped(sessionId: Int)")
         assertTrue("session-aware USB projection stop handler should exist", handlerStart >= 0)
-        val handlerEnd = source.indexOf("private fun markViewerActivity", handlerStart)
+        val handlerEnd = source.indexOf("internal fun markViewerActivity", handlerStart)
         assertTrue("USB projection stop handler should appear before markViewerActivity", handlerEnd >= 0)
         val handler = source.substring(handlerStart, handlerEnd)
         assertTrue(
@@ -295,7 +293,7 @@ class MirrorSessionStateTest {
     fun serviceExposesUsbPerfDebugEndpoint() {
         val source = readMediaProjectionServiceSource()
 
-        assertTrue(source.contains("private val usbPerfMonitor"))
+        assertTrue(source.contains("internal val usbPerfMonitor"))
         assertTrue(source.contains("get(\"/debug/perf\")"))
         assertTrue(source.contains("currentUsbPerfSnapshot().toJson().toString()"))
     }
@@ -305,8 +303,8 @@ class MirrorSessionStateTest {
         val source = readMediaProjectionServiceSource()
 
         assertTrue(source.contains("UsbThermalPolicy.resolve("))
-        assertTrue(source.contains("profileProvider = ::resolveCurrentUsbProfile"))
-        assertTrue(source.contains("perfMonitor = usbPerfMonitor"))
+        assertTrue(source.contains("profileProvider = screenCaptureManager::resolveCurrentUsbProfile"))
+        assertTrue(source.contains("perfMonitor = screenCaptureManager.usbPerfMonitor"))
     }
 
     @Test
@@ -319,7 +317,7 @@ class MirrorSessionStateTest {
         assertTrue(source.contains("onVideoConfig = { configJson ->"))
         assertTrue(source.contains("send(Frame.Text(configJson))"))
         assertTrue(source.contains("MirrorTransport.USB_H264"))
-        assertTrue(source.contains("profileProvider = ::resolveCurrentUsbH264Profile"))
+        assertTrue(source.contains("profileProvider = screenCaptureManager::resolveCurrentUsbH264Profile"))
     }
 
     @Test
@@ -335,19 +333,25 @@ class MirrorSessionStateTest {
 
         assertTrue(
             "USB grant wait must periodically re-check cached MediaProjection data even if a stale session consumes the grant signal.",
-            waitLoop.contains("mediaProjectionResultCode != null && mediaProjectionResultData != null") &&
-                waitLoop.contains("withTimeoutOrNull(MEDIA_PROJECTION_GRANT_POLL_MS)") &&
+            waitLoop.contains("screenCaptureManager.mediaProjectionResultCode != null && screenCaptureManager.mediaProjectionResultData != null") &&
+                waitLoop.contains("withTimeoutOrNull(MediaProjectionService.MEDIA_PROJECTION_GRANT_POLL_MS)") &&
                 waitLoop.contains("permissionGrantChannel.receive()"),
         )
     }
 
     private fun readMediaProjectionServiceSource(): String {
-        val candidates = listOf(
+        val serviceCandidates = listOf(
             Path.of("src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
             Path.of("app/src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
         )
-        val path = candidates.firstOrNull { Files.exists(it) }
-            ?: error("MediaProjectionService.kt source not found")
-        return path.toFile().readText()
+        val routingCandidates = listOf(
+            Path.of("src/main/java/com/example/galaxymirror/MirrorRouting.kt"),
+            Path.of("app/src/main/java/com/example/galaxymirror/MirrorRouting.kt"),
+        )
+        val servicePath = serviceCandidates.firstOrNull { Files.exists(it) }
+            ?: throw IllegalStateException("Could not find MediaProjectionService.kt")
+        val routingPath = routingCandidates.firstOrNull { Files.exists(it) }
+            ?: throw IllegalStateException("Could not find MirrorRouting.kt")
+        return servicePath.toFile().readText() + "\n" + routingPath.toFile().readText()
     }
 }

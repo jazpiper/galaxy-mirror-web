@@ -59,11 +59,11 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MediaProjectionService : Service() {
 
-    private val binder = LocalBinder()
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val permissionGrantChannel = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val controlEventDispatcher =
+    internal val binder = LocalBinder()
+    internal val mainHandler = Handler(Looper.getMainLooper())
+    internal val permissionGrantChannel = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    internal val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    internal val controlEventDispatcher =
         ControlEventDispatcher(
             serviceProvider = { GalaxyMirrorAccessibilityService.instance },
             onViewerActivity = { markViewerActivity() },
@@ -86,19 +86,19 @@ class MediaProjectionService : Service() {
         }
 
         private const val IDLE_QUALITY_DELAY_MS = 6_000L
-        private const val MEDIA_PROJECTION_GRANT_POLL_MS = 500L
+        internal const val MEDIA_PROJECTION_GRANT_POLL_MS = 500L
 
         // Compiled once and reused; redactSensitiveInfo previously recompiled these on every call.
-        private val REDACT_IPV4 =
+        internal val REDACT_IPV4 =
             Regex("(?<!\\d)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?!\\d)")
-        private val REDACT_MAC = Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}")
-        private val REDACT_PATH =
+        internal val REDACT_MAC = Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}")
+        internal val REDACT_PATH =
             Regex("(/data/user/\\d+/|/data/data/|/sdcard/|/storage/emulated/\\d+/)[\\w\\-./]+")
-        private val REDACT_STACK_FRAME = Regex("(?m)^\\s*at .*\\(.*\\)$")
+        internal val REDACT_STACK_FRAME = Regex("(?m)^\\s*at .*\\(.*\\)$")
     }
 
     // Service state structure
-    private val _serviceState = MutableStateFlow(MirrorServiceState())
+    internal val _serviceState = MutableStateFlow(MirrorServiceState())
     val serviceState: StateFlow<MirrorServiceState> = _serviceState.asStateFlow()
 
     var screenCapturePermissionRequired = false
@@ -119,63 +119,274 @@ class MediaProjectionService : Service() {
         private set
     lateinit var networkTransportDetector: NetworkTransportDetector
         private set
-    private lateinit var usbScreenStreamer: UsbScreenStreamer
-    private var usbH264ScreenStreamer: UsbH264ScreenStreamer? = null
-    private lateinit var usbThermalReader: UsbThermalReader
-    private val usbPerfMonitor = UsbPerfMonitor()
-    private var activeUsbProjectionSessionId = 0
-
     var streamQualityMode = StreamQualityMode.AUTO
         private set
     var streamQualityNetwork = StreamNetworkTransport.OTHER
         private set
     var streamQualityProfile = StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER)
         private set
-    @Volatile private var lastUsbProfile = UsbStreamProfilePolicy.resolve(StreamQualityMode.AUTO)
-    @Volatile private var lastUsbCodec = UsbVideoCodec.JPEG
-    @Volatile private var lastUsbH264Profile = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.AUTO)
-    var viewerActivityState = ViewerActivityState.ACTIVE
+                var viewerActivityState = ViewerActivityState.ACTIVE
         private set
     @Volatile var mirrorSessionState = MirrorSessionState()
         private set
     var activeSessionId = 0
         private set
 
-    private var keepScreenAwake = false
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var idleQualityJob: Job? = null
-    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    internal var keepScreenAwake = false
+    internal var wakeLock: PowerManager.WakeLock? = null
+    internal var idleQualityJob: Job? = null
+    internal var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
     // WebRTC and Capturer cache
-    @Volatile private var peerConnectionFactory: PeerConnectionFactory? = null
-    @Volatile var peerConnection: PeerConnection? = null
-        private set
-    @Volatile private var videoSource: VideoSource? = null
-    @Volatile private var videoTrack: VideoTrack? = null
-    @Volatile private var videoSender: RtpSender? = null
-    @Volatile private var surfaceTextureHelper: SurfaceTextureHelper? = null
-    @Volatile private var videoCapturer: VideoCapturer? = null
-    @Volatile var controlChannel: DataChannel? = null
-        private set
-    @Volatile private var eglBase: EglBase? = null
-    private val sessionCounter = AtomicInteger(0)
-    private val sessionLock = Any()
-    @Volatile private var remoteDescriptionSet = false
-    private val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
-
-    var mediaProjectionResultCode: Int? = null
-        private set
-    var mediaProjectionResultData: Intent? = null
-        private set
-    private var pendingOffer: PendingOffer? = null
-    private var videoCapturerLastWidth = 0
-    private var videoCapturerLastHeight = 0
-
-    private data class PendingOffer(
+                                        internal val sessionCounter = AtomicInteger(0)
+    internal val sessionLock = Any()
+        
+                    
+    internal data class PendingOffer(
         val sessionId: Int,
         val remoteSdp: SessionDescription,
         val sendResponse: (String) -> Unit
     )
+
+    
+    val webRtcManager = InnerWebRtcManager()
+    val screenCaptureManager = InnerScreenCaptureManager()
+
+    inner class InnerWebRtcManager {
+@Volatile internal var peerConnectionFactory: PeerConnectionFactory? = null
+@Volatile var peerConnection: PeerConnection? = null
+@Volatile internal var videoSource: VideoSource? = null
+@Volatile internal var videoTrack: VideoTrack? = null
+@Volatile internal var videoSender: RtpSender? = null
+@Volatile internal var surfaceTextureHelper: SurfaceTextureHelper? = null
+@Volatile internal var videoCapturer: VideoCapturer? = null
+@Volatile var controlChannel: DataChannel? = null
+@Volatile internal var eglBase: EglBase? = null
+@Volatile internal var remoteDescriptionSet = false
+internal val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
+internal var videoCapturerLastWidth = 0
+internal var videoCapturerLastHeight = 0
+internal fun initializeWebRTC(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
+        if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Skipping WebRTC initialization for inactive sessionId=$sessionId.")
+            return
+        }
+
+        val readiness = ProjectionReadiness.from(
+            hasProjectionIntent = screenCaptureManager.mediaProjectionResultData != null,
+            isServiceRunning = isRunning
+        )
+        if (readiness != ProjectionReadiness.READY) {
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Capture not ready; deferring offer for sessionId=$sessionId.")
+            queuePendingOffer(sessionId, remoteSdp, sendResponse)
+            if (readiness == ProjectionReadiness.MISSING_PERMISSION) {
+                requestScreenCapturePermissionFromActivity("Negotiation attempted without active MediaProjection grant")
+            }
+            sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
+            return
+        }
+
+        try {
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Initializing WebRTC for sessionId=$sessionId.")
+
+            // 1. Initialize PeerConnectionFactory if needed
+            initializePeerConnectionFactoryIfNeeded()
+
+            val iceServers = listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+            )
+            val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
+                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            }
+            remoteDescriptionSet = false
+
+            // 2. Create PeerConnection
+            peerConnection = peerConnectionFactory?.createPeerConnection(
+                rtcConfig,
+                createPeerConnectionObserver(sessionId, sendResponse)
+            )
+
+            // 3. Setup Screen Capture pipeline (Reuses capture elements if active)
+            if (!setupScreenCapturePipeline(sessionId, sendResponse)) {
+                return
+            }
+
+            val streamNetwork = currentStreamNetworkTransport()
+            val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
+            streamQualityNetwork = streamNetwork
+            streamQualityProfile = streamProfile
+
+            // 4. Add video track to PeerConnection
+            videoSender = peerConnection?.addTrack(videoTrack, listOf("video_stream_id"))
+            applyStreamQualityProfile(streamProfile, reason = "WebRTC start")
+
+            // 5 & 6. Handle SDP Exchange
+            handleSdpExchange(sessionId, remoteSdp, sendResponse)
+
+        } catch (e: Exception) {
+            CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "WebRTC initialization", e)
+            Log.e("WebRTC", "Error during WebRTC initialization: ${e.message}", e)
+        }
+    }
+internal fun cleanupWebRTCResources(stopProjectionService: Boolean, stopCapturer: Boolean) {
+        val steps = mutableListOf<CleanupStep>()
+        steps.add(CleanupStep("control channel close") { controlChannel?.close() })
+        steps.add(CleanupStep("control channel dispose") { controlChannel?.dispose() })
+
+        if (stopCapturer) {
+            steps.add(CleanupStep("video capturer stop") { videoCapturer?.stopCapture() })
+            steps.add(CleanupStep("video capturer dispose") { videoCapturer?.dispose() })
+            steps.add(CleanupStep("video track dispose") { videoTrack?.dispose() })
+            steps.add(CleanupStep("video source dispose") { videoSource?.dispose() })
+            steps.add(CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() })
+        }
+
+        steps.add(CleanupStep("peer connection close") { peerConnection?.close() })
+        steps.add(CleanupStep("peer connection dispose") { peerConnection?.dispose() })
+
+        if (stopCapturer) {
+            steps.add(CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() })
+            steps.add(CleanupStep("egl release") { eglBase?.release() })
+        }
+
+        val failures = CleanupStepRunner.run(steps)
+        failures.forEach { failure ->
+            CrashDiagnostics.recordCaughtException(filesDir, "WebRTC cleanup ${failure.name}", failure.throwable)
+            Log.e(TAG, "Error during WebRTC cleanup step ${failure.name}", failure.throwable)
+        }
+
+        synchronized(pendingRemoteIceCandidates) {
+            pendingRemoteIceCandidates.clear()
+        }
+        controlChannel = null
+        videoSender = null
+        peerConnection = null
+        remoteDescriptionSet = false
+
+        if (stopCapturer) {
+            videoCapturer = null
+            videoTrack = null
+            videoSource = null
+            surfaceTextureHelper = null
+            peerConnectionFactory = null
+            eglBase = null
+            videoCapturerLastWidth = 0
+            videoCapturerLastHeight = 0
+        }
+
+        if (stopProjectionService) {
+            screenCaptureManager.mediaProjectionResultCode = null
+            screenCaptureManager.mediaProjectionResultData = null
+        }
+
+        Log.d("WebRTC", "WebRTC session clean up completed with ${failures.size} failures. stopCapturer=$stopCapturer")
+    }
+
+    }
+
+    inner class InnerScreenCaptureManager {
+lateinit var usbScreenStreamer: UsbScreenStreamer
+    internal fun isUsbScreenStreamerInitialized() = this::usbScreenStreamer.isInitialized
+internal var usbH264ScreenStreamer: UsbH264ScreenStreamer? = null
+lateinit var usbThermalReader: UsbThermalReader
+    internal fun isUsbThermalReaderInitialized() = this::usbThermalReader.isInitialized
+    internal val usbPerfMonitor = UsbPerfMonitor()
+internal var activeUsbProjectionSessionId = 0
+var mediaProjectionResultCode: Int? = null
+var mediaProjectionResultData: Intent? = null
+@Volatile internal var lastUsbProfile = UsbStreamProfilePolicy.resolve(StreamQualityMode.AUTO)
+@Volatile internal var lastUsbCodec = UsbVideoCodec.JPEG
+@Volatile internal var lastUsbH264Profile = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.AUTO)
+internal var pendingOffer: PendingOffer? = null
+internal fun resolveCurrentUsbProfile(): UsbStreamProfile {
+        val profile =
+            UsbThermalPolicy.resolve(
+                selectedMode = streamQualityMode,
+                thermalStatus = currentUsbThermalStatus(),
+                viewerIdle = viewerActivityState == ViewerActivityState.IDLE,
+            )
+        lastUsbProfile = profile
+        return profile
+    }
+internal fun resolveCurrentUsbH264Profile(): UsbH264StreamProfile {
+        val selected = UsbH264StreamProfilePolicy.resolve(streamQualityMode)
+        val thermalStatus = currentUsbThermalStatus()
+        val tier =
+            when {
+                viewerActivityState == ViewerActivityState.IDLE -> UsbStreamProfileTier.COOL
+                thermalStatus == UsbThermalStatus.LIGHT -> minOfUsbTier(selected.tier, UsbStreamProfileTier.BALANCED)
+                thermalStatus == UsbThermalStatus.MODERATE -> UsbStreamProfileTier.COOL
+                isUsbThermalSevereOrWorse(thermalStatus) -> UsbStreamProfileTier.COOL
+                else -> selected.tier
+            }
+        val profile = UsbH264StreamProfilePolicy.resolveTier(tier)
+        lastUsbH264Profile = profile
+        return profile
+    }
+internal fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer =
+        UsbScreenStreamer(applicationContext) {
+            handleUsbProjectionStopped(sessionId)
+        }
+internal fun createUsbH264ScreenStreamer(sessionId: Int): UsbH264ScreenStreamer =
+        UsbH264ScreenStreamer(applicationContext) {
+            handleUsbProjectionStopped(sessionId)
+        }
+internal fun prepareUsbScreenStreamerForSession(sessionId: Int) {
+        synchronized(sessionLock) {
+            activeUsbProjectionSessionId = sessionId
+        }
+        usbScreenStreamer = createUsbScreenStreamer(sessionId)
+    }
+internal fun prepareUsbH264ScreenStreamerForSession(sessionId: Int): UsbH264ScreenStreamer {
+        synchronized(sessionLock) {
+            activeUsbProjectionSessionId = sessionId
+        }
+        val streamer = createUsbH264ScreenStreamer(sessionId)
+        usbH264ScreenStreamer = streamer
+        return streamer
+    }
+internal fun clearActiveUsbProjectionSession(sessionId: Int) {
+        synchronized(sessionLock) {
+            if (activeUsbProjectionSessionId == sessionId) {
+                activeUsbProjectionSessionId = 0
+            }
+        }
+    }
+internal fun handleUsbProjectionStopped(sessionId: Int) {
+        mainHandler.post {
+            val shouldHandle =
+                synchronized(sessionLock) {
+                    activeUsbProjectionSessionId == sessionId &&
+                        (
+                            mirrorSessionState.isActive(sessionId, MirrorTransport.USB_JPEG) ||
+                                mirrorSessionState.isActive(sessionId, MirrorTransport.USB_H264)
+                        )
+                }
+            if (!shouldHandle) {
+                CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ignoring stale USB MediaProjection stop for sessionId=$sessionId.")
+                return@post
+            }
+
+            clearActiveUsbProjectionSession(sessionId)
+            mediaProjectionResultCode = null
+            mediaProjectionResultData = null
+            screenCapturePermissionRequired = true
+            isRunning = false
+            applyScreenAwakeEffectsForCurrentState()
+            updateServiceState()
+            permissionGrantChannel.trySend(Unit)
+        }
+    }
+internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
+        val resultCode = mediaProjectionResultCode
+        val resultData = mediaProjectionResultData
+        if (resultCode == null || resultData == null) return null
+        mediaProjectionResultCode = null
+        mediaProjectionResultData = null
+        return resultCode to resultData
+    }
+
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): MediaProjectionService = this@MediaProjectionService
@@ -184,7 +395,7 @@ class MediaProjectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        CrashDiagnostics.recordEvent(this, "MediaProjectionService.onCreate")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjectionService.onCreate")
         createNotificationChannel()
 
         // Initialize repositories and state stores
@@ -194,8 +405,8 @@ class MediaProjectionService : Service() {
         screenBrightnessController = ScreenBrightnessController(applicationContext)
         streamQualitySettingsStore = StreamQualitySettingsStore(StreamQualitySettingsStore.SharedPreferencesStore(applicationContext))
         networkTransportDetector = NetworkTransportDetector(applicationContext)
-        usbThermalReader = UsbThermalReader(applicationContext)
-        usbScreenStreamer = createUsbScreenStreamer(sessionId = 0)
+        screenCaptureManager.usbThermalReader = UsbThermalReader(applicationContext)
+        screenCaptureManager.usbScreenStreamer = screenCaptureManager.createUsbScreenStreamer(sessionId = 0)
         streamQualityMode = streamQualitySettingsStore.readMode()
 
         refreshStreamQualityState()
@@ -226,7 +437,7 @@ class MediaProjectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        CrashDiagnostics.recordEvent(this, "MediaProjectionService.onStartCommand startId=$startId.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjectionService.onStartCommand startId=$startId.")
         Log.d(TAG, "onStartCommand called.")
 
         val resultCode = intent?.getIntExtra("resultCode", RESULT_CODE_MISSING) ?: RESULT_CODE_MISSING
@@ -248,13 +459,13 @@ class MediaProjectionService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
 
-            cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
-            mediaProjectionResultCode = resultCode
-            mediaProjectionResultData = resultData
+            webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+            screenCaptureManager.mediaProjectionResultCode = resultCode
+            screenCaptureManager.mediaProjectionResultData = resultData
             screenCapturePermissionRequired = false
             isRunning = true
             applyScreenAwakeEffectsForCurrentState()
-            CrashDiagnostics.recordEvent(this, "MediaProjection foreground service is ready.")
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjection foreground service is ready.")
             permissionGrantChannel.trySend(Unit)
 
             // Resume any waiting Offer
@@ -308,14 +519,14 @@ class MediaProjectionService : Service() {
         }
 
         // Cleanup WebRTC (explicit close)
-        if (::usbScreenStreamer.isInitialized) {
-            usbScreenStreamer.stop()
+        if (screenCaptureManager.isUsbScreenStreamerInitialized()) {
+            screenCaptureManager.usbScreenStreamer.stop()
         }
-        usbH264ScreenStreamer?.stop()
+        screenCaptureManager.usbH264ScreenStreamer?.stop()
         synchronized(sessionLock) {
-            activeUsbProjectionSessionId = 0
+            screenCaptureManager.activeUsbProjectionSessionId = 0
         }
-        cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+        webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
 
         try {
             screenBrightnessController.applyForMirroring(
@@ -326,7 +537,7 @@ class MediaProjectionService : Service() {
             Log.e(TAG, "Error restoring brightness in onDestroy: ${e.message}", e)
         }
 
-        CrashDiagnostics.recordEvent(this, "MediaProjectionService.onDestroy")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjectionService.onDestroy")
         Log.d(TAG, "MediaProjectionService stopped.")
     }
 
@@ -347,9 +558,9 @@ class MediaProjectionService : Service() {
         )
     }
 
-    private fun requestScreenCapturePermissionFromActivity(reason: String) {
+    internal fun requestScreenCapturePermissionFromActivity(reason: String) {
         screenCapturePermissionRequired = true
-        CrashDiagnostics.recordEvent(this, "Screen capture permission request required: $reason.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Screen capture permission request required: $reason.")
         updateServiceState()
     }
 
@@ -371,22 +582,22 @@ class MediaProjectionService : Service() {
     }
 
     fun disconnectMirror() {
-        CrashDiagnostics.recordEvent(this, "Manual mirror disconnect requested.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Manual mirror disconnect requested.")
         synchronized(sessionLock) {
             activeSessionId = 0
             mirrorSessionState = MirrorSessionState()
-            pendingOffer = null
-            activeUsbProjectionSessionId = 0
+            screenCaptureManager.pendingOffer = null
+            screenCaptureManager.activeUsbProjectionSessionId = 0
         }
         // Do not stop service entirely, keep Ktor running. Just stop capturing and WebRTC session
         stopForeground(true)
-        if (::usbScreenStreamer.isInitialized) {
-            usbScreenStreamer.stop()
+        if (screenCaptureManager.isUsbScreenStreamerInitialized()) {
+            screenCaptureManager.usbScreenStreamer.stop()
         }
-        usbH264ScreenStreamer?.stop()
-        cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
-        mediaProjectionResultCode = null
-        mediaProjectionResultData = null
+        screenCaptureManager.usbH264ScreenStreamer?.stop()
+        webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+        screenCaptureManager.mediaProjectionResultCode = null
+        screenCaptureManager.mediaProjectionResultData = null
         screenCapturePermissionRequired = false
         isRunning = false
         applyScreenAwakeEffectsForCurrentState()
@@ -394,11 +605,11 @@ class MediaProjectionService : Service() {
         permissionGrantChannel.trySend(Unit)
     }
 
-    private fun stopProjectionCaptureForPolicy(reason: CleanupReason) {
+    internal fun stopProjectionCaptureForPolicy(reason: CleanupReason) {
         if (!CleanupPolicy.shouldStopProjection(reason)) return
-        CrashDiagnostics.recordEvent(this, "Stopping projection capture for cleanup reason: $reason.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Stopping projection capture for cleanup reason: $reason.")
         stopForeground(true)
-        cleanupWebRTCResources(stopProjectionService = true, stopCapturer = true)
+        webRtcManager.cleanupWebRTCResources(stopProjectionService = true, stopCapturer = true)
         isRunning = false
         screenCapturePermissionRequired = false
         applyScreenAwakeEffectsForCurrentState()
@@ -416,16 +627,9 @@ class MediaProjectionService : Service() {
 
     // ─── Internal Helper Methods ───────────────────────────────────────────────
 
-    private fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
-        val resultCode = mediaProjectionResultCode
-        val resultData = mediaProjectionResultData
-        if (resultCode == null || resultData == null) return null
-        mediaProjectionResultCode = null
-        mediaProjectionResultData = null
-        return resultCode to resultData
-    }
+    
 
-    private fun refreshStreamQualityState(): StreamQualityProfile {
+    internal fun refreshStreamQualityState(): StreamQualityProfile {
         val network = currentStreamNetworkTransport()
         val profile = AdaptiveStreamQuality.resolve(streamQualityMode, network, viewerActivityState)
         streamQualityNetwork = network
@@ -433,40 +637,17 @@ class MediaProjectionService : Service() {
         return profile
     }
 
-    private fun resolveCurrentUsbProfile(): UsbStreamProfile {
-        val profile =
-            UsbThermalPolicy.resolve(
-                selectedMode = streamQualityMode,
-                thermalStatus = currentUsbThermalStatus(),
-                viewerIdle = viewerActivityState == ViewerActivityState.IDLE,
-            )
-        lastUsbProfile = profile
-        return profile
-    }
+    
 
-    private fun resolveCurrentUsbH264Profile(): UsbH264StreamProfile {
-        val selected = UsbH264StreamProfilePolicy.resolve(streamQualityMode)
-        val thermalStatus = currentUsbThermalStatus()
-        val tier =
-            when {
-                viewerActivityState == ViewerActivityState.IDLE -> UsbStreamProfileTier.COOL
-                thermalStatus == UsbThermalStatus.LIGHT -> minOfUsbTier(selected.tier, UsbStreamProfileTier.BALANCED)
-                thermalStatus == UsbThermalStatus.MODERATE -> UsbStreamProfileTier.COOL
-                isUsbThermalSevereOrWorse(thermalStatus) -> UsbStreamProfileTier.COOL
-                else -> selected.tier
-            }
-        val profile = UsbH264StreamProfilePolicy.resolveTier(tier)
-        lastUsbH264Profile = profile
-        return profile
-    }
+    
 
-    private fun minOfUsbTier(
+    internal fun minOfUsbTier(
         first: UsbStreamProfileTier,
         second: UsbStreamProfileTier,
     ): UsbStreamProfileTier =
         if (first.ordinal <= second.ordinal) first else second
 
-    private fun isUsbThermalSevereOrWorse(status: UsbThermalStatus): Boolean =
+    internal fun isUsbThermalSevereOrWorse(status: UsbThermalStatus): Boolean =
         when (status) {
             UsbThermalStatus.SEVERE,
             UsbThermalStatus.CRITICAL,
@@ -478,31 +659,31 @@ class MediaProjectionService : Service() {
             UsbThermalStatus.MODERATE -> false
         }
 
-    private fun currentUsbThermalStatus(): UsbThermalStatus =
-        if (::usbThermalReader.isInitialized) {
-            usbThermalReader.readStatus()
+    internal fun currentUsbThermalStatus(): UsbThermalStatus =
+        if (screenCaptureManager.isUsbThermalReaderInitialized()) {
+            screenCaptureManager.usbThermalReader.readStatus()
         } else {
             UsbThermalStatus.UNKNOWN
         }
 
-    private fun currentUsbPerfSnapshot(): UsbPerfSnapshot =
-        usbPerfMonitor.snapshot(
-            profile = lastUsbProfile,
+    internal fun currentUsbPerfSnapshot(): UsbPerfSnapshot =
+        screenCaptureManager.usbPerfMonitor.snapshot(
+            profile = screenCaptureManager.lastUsbProfile,
             thermalStatus = currentUsbThermalStatus(),
-            thermalHeadroom = if (::usbThermalReader.isInitialized) usbThermalReader.readHeadroom() else null,
-            batteryTemperatureC = if (::usbThermalReader.isInitialized) usbThermalReader.readBatteryTemperatureC() else null,
-            codec = lastUsbCodec,
-            h264Profile = if (lastUsbCodec == UsbVideoCodec.H264) lastUsbH264Profile else null,
+            thermalHeadroom = if (screenCaptureManager.isUsbThermalReaderInitialized()) screenCaptureManager.usbThermalReader.readHeadroom() else null,
+            batteryTemperatureC = if (screenCaptureManager.isUsbThermalReaderInitialized()) screenCaptureManager.usbThermalReader.readBatteryTemperatureC() else null,
+            codec = screenCaptureManager.lastUsbCodec,
+            h264Profile = if (screenCaptureManager.lastUsbCodec == UsbVideoCodec.H264) screenCaptureManager.lastUsbH264Profile else null,
         )
 
-    private fun currentStreamNetworkTransport(): StreamNetworkTransport =
+    internal fun currentStreamNetworkTransport(): StreamNetworkTransport =
         if (::networkTransportDetector.isInitialized) {
             networkTransportDetector.currentTransport()
         } else {
             StreamNetworkTransport.OTHER
         }
 
-    private fun redactSensitiveInfo(input: String?): String {
+    internal fun redactSensitiveInfo(input: String?): String {
         if (input == null) return ""
         var redacted = input
 
@@ -521,7 +702,7 @@ class MediaProjectionService : Service() {
         return redacted
     }
 
-    private fun buildStreamQualityStatusString(): String {
+    internal fun buildStreamQualityStatusString(): String {
         val network = currentStreamNetworkTransport()
         val profile = AdaptiveStreamQuality.resolve(streamQualityMode, network, viewerActivityState)
         return StreamQualityCodec.toStatusJson(
@@ -532,7 +713,7 @@ class MediaProjectionService : Service() {
         )
     }
 
-    private fun applyBrightnessMinimizationForCurrentState() {
+    internal fun applyBrightnessMinimizationForCurrentState() {
         try {
             screenBrightnessController.applyForMirroring(
                 settings = screenAwakeSettings,
@@ -543,72 +724,24 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun applyScreenAwakeEffectsForCurrentState() {
+    internal fun applyScreenAwakeEffectsForCurrentState() {
         setKeepScreenAwake(screenAwakeSettings.shouldKeepScreenAwake(isMirroringActive()))
         applyBrightnessMinimizationForCurrentState()
     }
 
-    private fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer =
-        UsbScreenStreamer(applicationContext) {
-            handleUsbProjectionStopped(sessionId)
-        }
+    
 
-    private fun createUsbH264ScreenStreamer(sessionId: Int): UsbH264ScreenStreamer =
-        UsbH264ScreenStreamer(applicationContext) {
-            handleUsbProjectionStopped(sessionId)
-        }
+    
 
-    private fun prepareUsbScreenStreamerForSession(sessionId: Int) {
-        synchronized(sessionLock) {
-            activeUsbProjectionSessionId = sessionId
-        }
-        usbScreenStreamer = createUsbScreenStreamer(sessionId)
-    }
+    
 
-    private fun prepareUsbH264ScreenStreamerForSession(sessionId: Int): UsbH264ScreenStreamer {
-        synchronized(sessionLock) {
-            activeUsbProjectionSessionId = sessionId
-        }
-        val streamer = createUsbH264ScreenStreamer(sessionId)
-        usbH264ScreenStreamer = streamer
-        return streamer
-    }
+    
 
-    private fun clearActiveUsbProjectionSession(sessionId: Int) {
-        synchronized(sessionLock) {
-            if (activeUsbProjectionSessionId == sessionId) {
-                activeUsbProjectionSessionId = 0
-            }
-        }
-    }
+    
 
-    private fun handleUsbProjectionStopped(sessionId: Int) {
-        mainHandler.post {
-            val shouldHandle =
-                synchronized(sessionLock) {
-                    activeUsbProjectionSessionId == sessionId &&
-                        (
-                            mirrorSessionState.isActive(sessionId, MirrorTransport.USB_JPEG) ||
-                                mirrorSessionState.isActive(sessionId, MirrorTransport.USB_H264)
-                        )
-                }
-            if (!shouldHandle) {
-                CrashDiagnostics.recordEvent(this, "Ignoring stale USB MediaProjection stop for sessionId=$sessionId.")
-                return@post
-            }
+    
 
-            clearActiveUsbProjectionSession(sessionId)
-            mediaProjectionResultCode = null
-            mediaProjectionResultData = null
-            screenCapturePermissionRequired = true
-            isRunning = false
-            applyScreenAwakeEffectsForCurrentState()
-            updateServiceState()
-            permissionGrantChannel.trySend(Unit)
-        }
-    }
-
-    private fun markViewerActivity() {
+    internal fun markViewerActivity() {
         mainHandler.post {
             val shouldRestoreActiveQuality = viewerActivityState != ViewerActivityState.ACTIVE
             viewerActivityState = ViewerActivityState.ACTIVE
@@ -632,15 +765,15 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun applyStreamQualityProfile(profile: StreamQualityProfile, reason: String) {
+    internal fun applyStreamQualityProfile(profile: StreamQualityProfile, reason: String) {
         try {
-            val isResolutionChange = videoCapturerLastWidth != profile.width || videoCapturerLastHeight != profile.height
+            val isResolutionChange = webRtcManager.videoCapturerLastWidth != profile.width || webRtcManager.videoCapturerLastHeight != profile.height
             if (isResolutionChange) {
-                videoCapturer?.changeCaptureFormat(profile.width, profile.height, profile.fps)
-                videoCapturerLastWidth = profile.width
-                videoCapturerLastHeight = profile.height
+                webRtcManager.videoCapturer?.changeCaptureFormat(profile.width, profile.height, profile.fps)
+                webRtcManager.videoCapturerLastWidth = profile.width
+                webRtcManager.videoCapturerLastHeight = profile.height
             }
-            val sender = videoSender
+            val sender = webRtcManager.videoSender
             if (sender != null) {
                 val parameters = sender.parameters
                 val encoding = parameters.encodings.firstOrNull()
@@ -655,7 +788,7 @@ class MediaProjectionService : Service() {
                         "Stream quality applied ($reason): ${profile.width}x${profile.height}@${profile.fps}, bitrate=${profile.maxBitrateBps}, senderApplied=$applied, resolutionChanged=$isResolutionChange.",
                     )
                 } else {
-                    CrashDiagnostics.recordEvent(this, "Stream quality bitrate skipped ($reason): sender has no encodings.")
+                    CrashDiagnostics.recordEvent(this@MediaProjectionService, "Stream quality bitrate skipped ($reason): sender has no encodings.")
                 }
             } else {
                 CrashDiagnostics.recordEvent(
@@ -668,31 +801,31 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun resumePendingOfferIfReady() {
-        val offer = synchronized(sessionLock) { pendingOffer } ?: return
+    internal fun resumePendingOfferIfReady() {
+        val offer = synchronized(sessionLock) { screenCaptureManager.pendingOffer } ?: return
         if (!isRunning) {
-            CrashDiagnostics.recordEvent(this, "Pending offer not resumed because capture is not ready yet.")
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Pending offer not resumed because capture is not ready yet.")
             return
         }
         if (!isActiveSession(offer.sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-            CrashDiagnostics.recordEvent(this, "Dropping pending offer for inactive sessionId=${offer.sessionId}.")
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Dropping pending offer for inactive sessionId=${offer.sessionId}.")
             synchronized(sessionLock) {
-                pendingOffer = null
+                screenCaptureManager.pendingOffer = null
                 mirrorSessionState = mirrorSessionState.clearPendingOffer()
             }
             return
         }
 
         synchronized(sessionLock) {
-            pendingOffer = null
+            screenCaptureManager.pendingOffer = null
             mirrorSessionState = mirrorSessionState.clearPendingOffer()
         }
-        CrashDiagnostics.recordEvent(this, "Resuming pending offer for sessionId=${offer.sessionId}.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Resuming pending offer for sessionId=${offer.sessionId}.")
         offer.sendResponse(buildStatusMessage(captureReady = true, message = "SCREEN_CAPTURE_READY"))
-        initializeWebRTC(offer.sessionId, offer.remoteSdp, offer.sendResponse)
+        webRtcManager.initializeWebRTC(offer.sessionId, offer.remoteSdp, offer.sendResponse)
     }
 
-    private fun buildStatusMessage(
+    internal fun buildStatusMessage(
         captureReady: Boolean = isRunning,
         accessibilityReady: Boolean = GalaxyMirrorAccessibilityService.isReadyForRemoteInput(),
         message: String
@@ -709,39 +842,39 @@ class MediaProjectionService : Service() {
                 "}}"
     }
 
-    private fun buildUsbStatusMessage(
+    internal fun buildUsbStatusMessage(
         message: String,
         captureReady: Boolean = isRunning,
     ): String {
         val streamQualityJson =
-            if (lastUsbCodec == UsbVideoCodec.H264) {
+            if (screenCaptureManager.lastUsbCodec == UsbVideoCodec.H264) {
                 JSONObject(UsbH264StreamProfileCodec.toStatusJson(streamQualityMode))
-                    .put("effectiveTier", lastUsbH264Profile.tier.name)
-                    .put("effectiveWidth", lastUsbH264Profile.width)
-                    .put("effectiveHeight", lastUsbH264Profile.height)
-                    .put("effectiveFps", lastUsbH264Profile.fps)
-                    .put("width", lastUsbH264Profile.width)
-                    .put("height", lastUsbH264Profile.height)
-                    .put("fps", lastUsbH264Profile.fps)
-                    .put("bitrateBps", lastUsbH264Profile.bitrateBps)
-                    .put("policy", lastUsbH264Profile.policy)
+                    .put("effectiveTier", screenCaptureManager.lastUsbH264Profile.tier.name)
+                    .put("effectiveWidth", screenCaptureManager.lastUsbH264Profile.width)
+                    .put("effectiveHeight", screenCaptureManager.lastUsbH264Profile.height)
+                    .put("effectiveFps", screenCaptureManager.lastUsbH264Profile.fps)
+                    .put("width", screenCaptureManager.lastUsbH264Profile.width)
+                    .put("height", screenCaptureManager.lastUsbH264Profile.height)
+                    .put("fps", screenCaptureManager.lastUsbH264Profile.fps)
+                    .put("bitrateBps", screenCaptureManager.lastUsbH264Profile.bitrateBps)
+                    .put("policy", screenCaptureManager.lastUsbH264Profile.policy)
             } else {
                 JSONObject(UsbStreamProfileCodec.toStatusJson(streamQualityMode))
                     .put("codec", UsbVideoCodec.JPEG.wireValue)
-                    .put("effectiveTier", lastUsbProfile.tier.name)
-                    .put("effectiveWidth", lastUsbProfile.width)
-                    .put("effectiveHeight", lastUsbProfile.height)
-                    .put("effectiveFps", lastUsbProfile.fps)
-                    .put("width", lastUsbProfile.width)
-                    .put("height", lastUsbProfile.height)
-                    .put("fps", lastUsbProfile.fps)
-                    .put("jpegQuality", lastUsbProfile.jpegQuality)
-                    .put("policy", lastUsbProfile.policy)
+                    .put("effectiveTier", screenCaptureManager.lastUsbProfile.tier.name)
+                    .put("effectiveWidth", screenCaptureManager.lastUsbProfile.width)
+                    .put("effectiveHeight", screenCaptureManager.lastUsbProfile.height)
+                    .put("effectiveFps", screenCaptureManager.lastUsbProfile.fps)
+                    .put("width", screenCaptureManager.lastUsbProfile.width)
+                    .put("height", screenCaptureManager.lastUsbProfile.height)
+                    .put("fps", screenCaptureManager.lastUsbProfile.fps)
+                    .put("jpegQuality", screenCaptureManager.lastUsbProfile.jpegQuality)
+                    .put("policy", screenCaptureManager.lastUsbProfile.policy)
             }
         val usbPerfJson = currentUsbPerfSnapshot().toJson()
         val accessibilityReady = GalaxyMirrorAccessibilityService.isReadyForRemoteInput()
         val transportWireValue =
-            if (lastUsbCodec == UsbVideoCodec.H264) {
+            if (screenCaptureManager.lastUsbCodec == UsbVideoCodec.H264) {
                 MirrorTransport.USB_H264.wireValue
             } else {
                 MirrorTransport.USB_JPEG.wireValue
@@ -756,14 +889,14 @@ class MediaProjectionService : Service() {
                 "}}"
     }
 
-    private fun startKtorServer() {
+    internal fun startKtorServer() {
         serviceScope.launch(Dispatchers.IO) {
             try {
                 Log.d("KtorServer", "Starting Ktor Server on 0.0.0.0:8080...")
                 server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
                     install(WebSockets)
                     routing {
-                        setupRouting()
+                        setupMirrorRouting(this@MediaProjectionService)
                     }
                 }.start(wait = false)
                 CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Ktor server started on 0.0.0.0:8080.")
@@ -775,380 +908,25 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun Routing.setupRouting() {
-        staticResources("/", "files")
 
-        get("/status") {
-            call.respondText("Android Mirror Web Server is active. Port: 8080")
-        }
 
-        get("/debug/crash") {
-            call.respondText(
-                redactSensitiveInfo(CrashDiagnostics.readDebugReport(this@MediaProjectionService.filesDir)),
-                ContentType.Text.Plain
-            )
-        }
-
-        get("/debug/crash/clear") {
-            CrashDiagnostics.clearCrash(this@MediaProjectionService.filesDir)
-            call.respondText(
-                "Cleared saved crash and caught exception. Recent events were kept.\n",
-                ContentType.Text.Plain
-            )
-        }
-
-        get("/debug/perf") {
-            val statusJson = withContext(Dispatchers.Main) {
-                currentUsbPerfSnapshot().toJson().toString()
-            }
-            call.respondText(statusJson, ContentType.Application.Json)
-        }
-
-        get("/apps/favorites") {
-            call.respondText(
-                favoriteAppsRepository.getFavoritesResponseJson(),
-                ContentType.Application.Json
-            )
-        }
-
-        get("/stream/quality") {
-            val statusJson = withContext(Dispatchers.Main) {
-                buildStreamQualityStatusString()
-            }
-            call.respondText(statusJson, ContentType.Application.Json)
-        }
-
-        post("/stream/quality") {
-            val mode = StreamQualityCodec.parseMode(call.receiveText())
-            if (mode == null) {
-                call.respondText(
-                    """{"ok":false,"error":"INVALID_STREAM_QUALITY_MODE"}""",
-                    ContentType.Application.Json,
-                    HttpStatusCode.BadRequest,
-                    )
-                return@post
-            }
-
-            withContext(Dispatchers.Main) {
-                updateStreamQualityMode(mode)
-            }
-            val statusJson = withContext(Dispatchers.Main) {
-                buildStreamQualityStatusString()
-            }
-            call.respondText(statusJson, ContentType.Application.Json)
-        }
-
-        post("/apps/launch") {
-            val packageName = FavoriteAppsCodec.parseLaunchPackageName(call.receiveText())
-            if (packageName == null) {
-                call.respondText(
-                    """{"ok":false,"error":"INVALID_PACKAGE"}""",
-                    ContentType.Application.Json,
-                    HttpStatusCode.BadRequest
-                )
-                return@post
-            }
-
-            val launched = withContext(Dispatchers.Main) {
-                favoriteAppsRepository.launchFavorite(packageName)
-            }
-
-            if (launched) {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launched: $packageName.")
-                call.respondText("""{"ok":true}""", ContentType.Application.Json)
-            } else {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Favorite app launch failed: $packageName.")
-                call.respondText(
-                    """{"ok":false,"error":"APP_NOT_FOUND"}""",
-                    ContentType.Application.Json,
-                    HttpStatusCode.NotFound
-                )
-            }
-        }
-
-        webSocket("/signaling") {
-            val sessionId = beginViewerSession(MirrorTransport.TAILSCALE_WEBRTC)
-            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling WebSocket connected: sessionId=$sessionId.")
-            Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
-
-            val statusJob = launch {
-                while (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-                    delay(2_000)
-                    try {
-                        val statusMsg = withContext(Dispatchers.Main) {
-                            buildStatusMessage(message = "STATUS_TICK")
-                        }
-                        send(Frame.Text(statusMsg))
-                    } catch (e: Throwable) {
-                        CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling status tick", e)
-                        return@launch
-                    }
-                }
-            }
-
-            try {
-                val connectedMsg = withContext(Dispatchers.Main) {
-                    buildStatusMessage(message = "SIGNALING_CONNECTED")
-                }
-                send(Frame.Text(connectedMsg))
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        val text = frame.readText()
-                        Log.d("KtorServer", "Signaling packet received: $text")
-                        handleSignalingMessage(sessionId, text) { response ->
-                            if (isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-                                launch { send(Frame.Text(response)) }
-                            }
-                        }
-                    }
-                }
-            } catch (e: ClosedReceiveChannelException) {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Signaling connection closed by peer: sessionId=$sessionId.")
-            } catch (e: Throwable) {
-                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling session $sessionId", e)
-                Log.e("KtorServer", "Error in signaling session $sessionId: ${e.message}", e)
-            } finally {
-                statusJob.cancel()
-                endViewerSession(sessionId)
-            }
-        }
-
-        webSocket("/usb/session") {
-            val socketSession = this
-            val requestedCodec = UsbVideoCodec.fromWireValue(call.request.queryParameters["codec"])
-            val sessionTransport =
-                when (requestedCodec) {
-                    UsbVideoCodec.H264 -> MirrorTransport.USB_H264
-                    UsbVideoCodec.JPEG -> MirrorTransport.USB_JPEG
-                }
-            val sessionId = beginViewerSession(sessionTransport)
-            val videoConfigSent = CompletableDeferred<Unit>()
-            if (sessionTransport == MirrorTransport.USB_JPEG) {
-                videoConfigSent.complete(Unit)
-            }
-            val frameChannel =
-                Channel<ByteArray>(
-                    capacity = 1,
-                    onBufferOverflow = BufferOverflow.DROP_OLDEST,
-                )
-            val frameSenderJob = launch {
-                for (frameBytes in frameChannel) {
-                    val active = isActiveSession(sessionId, sessionTransport)
-                    if (!active) break
-                    videoConfigSent.await()
-                    try {
-                        send(Frame.Binary(fin = true, data = frameBytes))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        CrashDiagnostics.recordCaughtException(
-                            this@MediaProjectionService.filesDir,
-                            "USB frame send $sessionId",
-                            e,
-                        )
-                        Log.e("KtorServer", "USB frame send error: ${e.message}", e)
-                        break
-                    }
-                }
-            }
-            CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connected: sessionId=$sessionId.")
-            Log.d("KtorServer", "USB session connected: sessionId=$sessionId.")
-
-            try {
-                val hasCachedGrant = withContext(Dispatchers.Main) {
-                    mediaProjectionResultCode != null && mediaProjectionResultData != null
-                }
-                if (!hasCachedGrant) {
-                    val waitingStatus = withContext(Dispatchers.Main) {
-                        buildUsbStatusMessage("WAITING_FOR_SCREEN_CAPTURE", captureReady = false)
-                    }
-                    send(Frame.Text(waitingStatus))
-                    withContext(Dispatchers.Main) {
-                        requestScreenCapturePermissionFromActivity("USB session requested MediaProjection grant")
-                    }
-                }
-
-                // Clear any stale messages in the channel
-                while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
-
-                while (true) {
-                    val isActive = isActiveSession(sessionId, sessionTransport)
-                    if (!isActive) break
-
-                    val hasGrant = withContext(Dispatchers.Main) {
-                        mediaProjectionResultCode != null && mediaProjectionResultData != null
-                    }
-                    if (hasGrant) break
-
-                    withTimeoutOrNull(MEDIA_PROJECTION_GRANT_POLL_MS) {
-                        permissionGrantChannel.receive()
-                    }
-                }
-
-                val grant = withContext(Dispatchers.Main) {
-                    if (isActiveSession(sessionId, sessionTransport)) {
-                        consumeMediaProjectionGrant()
-                    } else {
-                        null
-                    }
-                }
-                if (grant == null) {
-                    val reauthStatus = withContext(Dispatchers.Main) {
-                        buildUsbStatusMessage("SCREEN_CAPTURE_REAUTH_REQUIRED", captureReady = false)
-                    }
-                    send(Frame.Text(reauthStatus))
-                    return@webSocket
-                }
-
-                val (resultCode, resultData) = grant
-                val startingStatus = withContext(Dispatchers.Main) {
-                    lastUsbCodec = requestedCodec
-                    if (requestedCodec == UsbVideoCodec.H264) {
-                        lastUsbH264Profile = resolveCurrentUsbH264Profile()
-                    } else {
-                        lastUsbProfile = resolveCurrentUsbProfile()
-                    }
-                    usbPerfMonitor.reset()
-                    buildUsbStatusMessage("USB_STREAM_STARTING", captureReady = true)
-                }
-                send(Frame.Text(startingStatus))
-                var h264ConfigJson: String? = null
-                try {
-                    withContext(Dispatchers.Main) {
-                        if (requestedCodec == UsbVideoCodec.H264) {
-                            val h264Streamer = prepareUsbH264ScreenStreamerForSession(sessionId)
-                            h264Streamer.start(
-                                resultCode = resultCode,
-                                resultData = resultData,
-                                profileProvider = ::resolveCurrentUsbH264Profile,
-                                perfMonitor = usbPerfMonitor,
-                                onVideoConfig = { configJson ->
-                                    h264ConfigJson = configJson
-                                },
-                                onChunk = { frameBytes ->
-                                    frameChannel.trySend(frameBytes)
-                                },
-                            )
-                        } else {
-                            prepareUsbScreenStreamerForSession(sessionId)
-                            usbScreenStreamer.start(
-                                resultCode = resultCode,
-                                resultData = resultData,
-                                profileProvider = ::resolveCurrentUsbProfile,
-                                perfMonitor = usbPerfMonitor,
-                            ) { frameBytes ->
-                                frameChannel.trySend(frameBytes)
-                            }
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (requestedCodec == UsbVideoCodec.H264) {
-                        CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "USB H.264 start $sessionId", e)
-                        Log.e("KtorServer", "USB H.264 start failed: ${e.message}", e)
-                        val fallbackStatus = withContext(Dispatchers.Main) {
-                            lastUsbCodec = UsbVideoCodec.JPEG
-                            buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
-                        }
-                        send(Frame.Text(fallbackStatus))
-                        return@webSocket
-                    }
-                    throw e
-                }
-                if (requestedCodec == UsbVideoCodec.H264) {
-                    val configJson = h264ConfigJson
-                    if (configJson != null) {
-                        send(Frame.Text(configJson))
-                    } else {
-                        val fallbackStatus = withContext(Dispatchers.Main) {
-                            lastUsbCodec = UsbVideoCodec.JPEG
-                            buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
-                        }
-                        send(Frame.Text(fallbackStatus))
-                        return@webSocket
-                    }
-                    videoConfigSent.complete(Unit)
-                }
-                val streamingStatus = withContext(Dispatchers.Main) {
-                    buildUsbStatusMessage("USB_STREAMING", captureReady = true)
-                }
-                send(Frame.Text(streamingStatus))
-
-                for (frame in incoming) {
-                    val active = isActiveSession(sessionId, sessionTransport)
-                    if (!active) break
-                    if (frame is Frame.Text) {
-                        controlEventDispatcher.dispatch(frame.readText()) { result ->
-                            socketSession.launch {
-                                try {
-                                    if (isActiveSession(sessionId, sessionTransport)) {
-                                        socketSession.send(Frame.Text(result.toAckJson()))
-                                    }
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Throwable) {
-                                    CrashDiagnostics.recordCaughtException(
-                                        this@MediaProjectionService.filesDir,
-                                        "USB control ack send $sessionId",
-                                        e,
-                                    )
-                                    Log.e("KtorServer", "USB control ACK send error: ${e.message}", e)
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e: ClosedReceiveChannelException) {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session connection closed by peer: sessionId=$sessionId.")
-            } catch (e: Throwable) {
-                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "USB session $sessionId", e)
-                Log.e("KtorServer", "USB session error: ${e.message}", e)
-            } finally {
-                frameChannel.close()
-                withContext(NonCancellable) {
-                    frameSenderJob.cancelAndJoin()
-                    withContext(Dispatchers.Main) {
-                        when (sessionTransport) {
-                            MirrorTransport.USB_JPEG ->
-                                if (
-                                    isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
-                                    ::usbScreenStreamer.isInitialized
-                                ) {
-                                    usbScreenStreamer.stop()
-                                }
-                            MirrorTransport.USB_H264 ->
-                                if (isActiveSession(sessionId, MirrorTransport.USB_H264)) {
-                                    usbH264ScreenStreamer?.stop()
-                                }
-                            MirrorTransport.TAILSCALE_WEBRTC -> Unit
-                        }
-                    }
-                    clearActiveUsbProjectionSession(sessionId)
-                    endViewerSession(sessionId)
-                    CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "USB session ended: sessionId=$sessionId.")
-                }
-            }
-        }
-    }
-
-    private suspend fun beginViewerSession(transport: MirrorTransport): Int {
+    internal suspend fun beginViewerSession(transport: MirrorTransport): Int {
         val sessionId = sessionCounter.incrementAndGet()
         withContext(Dispatchers.Main) {
             val previousSessionId = synchronized(sessionLock) { mirrorSessionState.activeSessionId }
             val previousTransport = synchronized(sessionLock) { mirrorSessionState.activeTransport }
             when (previousTransport) {
                 MirrorTransport.TAILSCALE_WEBRTC ->
-                    cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+                    webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
                 MirrorTransport.USB_JPEG -> {
-                    if (::usbScreenStreamer.isInitialized) {
-                        usbScreenStreamer.stop()
+                    if (screenCaptureManager.isUsbScreenStreamerInitialized()) {
+                        screenCaptureManager.usbScreenStreamer.stop()
                     }
-                    clearActiveUsbProjectionSession(previousSessionId)
+                    screenCaptureManager.clearActiveUsbProjectionSession(previousSessionId)
                 }
                 MirrorTransport.USB_H264 -> {
-                    usbH264ScreenStreamer?.stop()
-                    clearActiveUsbProjectionSession(previousSessionId)
+                    screenCaptureManager.usbH264ScreenStreamer?.stop()
+                    screenCaptureManager.clearActiveUsbProjectionSession(previousSessionId)
                 }
                 null -> Unit
             }
@@ -1158,22 +936,22 @@ class MediaProjectionService : Service() {
                     if (
                         previousTransport != MirrorTransport.USB_JPEG &&
                         previousTransport != MirrorTransport.USB_H264 &&
-                        ::usbScreenStreamer.isInitialized
+                        screenCaptureManager.isUsbScreenStreamerInitialized()
                     ) {
-                        usbScreenStreamer.stop()
+                        screenCaptureManager.usbScreenStreamer.stop()
                     }
                 }
                 MirrorTransport.USB_JPEG,
                 MirrorTransport.USB_H264 -> {
                     if (previousTransport != MirrorTransport.TAILSCALE_WEBRTC) {
-                        cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
+                        webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
                     }
                 }
             }
 
             val replacingSessionId = synchronized(sessionLock) {
                 val previous = mirrorSessionState.activeSessionId
-                pendingOffer = null
+                screenCaptureManager.pendingOffer = null
                 mirrorSessionState = mirrorSessionState.beginSession(sessionId, transport)
                 activeSessionId = sessionId
                 previous
@@ -1189,14 +967,14 @@ class MediaProjectionService : Service() {
         return sessionId
     }
 
-    private suspend fun endViewerSession(sessionId: Int) {
+    internal suspend fun endViewerSession(sessionId: Int) {
         withContext(Dispatchers.Main) {
             val shouldStopProjection = synchronized(sessionLock) {
                 if (isActiveSession(sessionId)) {
                     CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ending viewer session: $sessionId.")
                     mirrorSessionState = mirrorSessionState.endSession(sessionId)
                     activeSessionId = mirrorSessionState.activeSessionId
-                    pendingOffer = null
+                    screenCaptureManager.pendingOffer = null
                     true
                 } else {
                     false
@@ -1210,49 +988,49 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun isActiveSession(sessionId: Int): Boolean = mirrorSessionState.isActive(sessionId)
+    internal fun isActiveSession(sessionId: Int): Boolean = mirrorSessionState.isActive(sessionId)
 
-    private fun isActiveSession(sessionId: Int, transport: MirrorTransport): Boolean =
+    internal fun isActiveSession(sessionId: Int, transport: MirrorTransport): Boolean =
         mirrorSessionState.isActive(sessionId, transport)
 
-    private fun queuePendingOffer(
+    internal fun queuePendingOffer(
         sessionId: Int,
         remoteSdp: SessionDescription,
         sendResponse: (String) -> Unit
     ) {
         if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-            CrashDiagnostics.recordEvent(this, "Not queueing offer for inactive sessionId=$sessionId.")
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Not queueing offer for inactive sessionId=$sessionId.")
             return
         }
         synchronized(sessionLock) {
-            pendingOffer = PendingOffer(sessionId, remoteSdp, sendResponse)
+            screenCaptureManager.pendingOffer = PendingOffer(sessionId, remoteSdp, sendResponse)
             mirrorSessionState = mirrorSessionState.queueOffer(sessionId)
         }
-        CrashDiagnostics.recordEvent(this, "Queued offer until capture is ready for sessionId=$sessionId.")
+        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Queued offer until capture is ready for sessionId=$sessionId.")
     }
 
-    private fun addRemoteIceCandidate(candidate: IceCandidate) {
-        synchronized(pendingRemoteIceCandidates) {
-            if (!remoteDescriptionSet || peerConnection == null) {
-                pendingRemoteIceCandidates.add(candidate)
+    internal fun addRemoteIceCandidate(candidate: IceCandidate) {
+        synchronized(webRtcManager.pendingRemoteIceCandidates) {
+            if (!webRtcManager.remoteDescriptionSet || webRtcManager.peerConnection == null) {
+                webRtcManager.pendingRemoteIceCandidates.add(candidate)
                 Log.d("WebRTC", "Queued remote ICE candidate until remote description is set.")
                 return
             }
         }
-        peerConnection?.addIceCandidate(candidate)
+        webRtcManager.peerConnection?.addIceCandidate(candidate)
     }
 
-    private fun flushPendingRemoteIceCandidates() {
-        val candidates = synchronized(pendingRemoteIceCandidates) {
-            pendingRemoteIceCandidates.toList().also { pendingRemoteIceCandidates.clear() }
+    internal fun flushPendingRemoteIceCandidates() {
+        val candidates = synchronized(webRtcManager.pendingRemoteIceCandidates) {
+            webRtcManager.pendingRemoteIceCandidates.toList().also { webRtcManager.pendingRemoteIceCandidates.clear() }
         }
-        candidates.forEach { peerConnection?.addIceCandidate(it) }
+        candidates.forEach { webRtcManager.peerConnection?.addIceCandidate(it) }
         if (candidates.isNotEmpty()) {
             Log.d("WebRTC", "Flushed ${candidates.size} queued remote ICE candidates.")
         }
     }
 
-    private fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
+    internal fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
         serviceScope.launch(Dispatchers.Default) {
             val isActive = withContext(Dispatchers.Main) {
                 isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
@@ -1281,7 +1059,7 @@ class MediaProjectionService : Service() {
                         withContext(Dispatchers.Main) {
                             val isActiveMain = isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
                             val readiness = ProjectionReadiness.from(
-                                hasProjectionIntent = mediaProjectionResultData != null,
+                                hasProjectionIntent = screenCaptureManager.mediaProjectionResultData != null,
                                 isServiceRunning = isRunning
                             )
                             val decision = SignalingDecision.onOffer(readiness, isActiveMain)
@@ -1289,7 +1067,7 @@ class MediaProjectionService : Service() {
 
                             when (decision) {
                                 SignalingDecision.START_NEGOTIATION -> {
-                                    initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
+                                    webRtcManager.initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
                                 }
                                 SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
                                     queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
@@ -1327,7 +1105,7 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun preferH264Codec(sdpDescription: String): String {
+    internal fun preferH264Codec(sdpDescription: String): String {
         val lines = sdpDescription.split("\r\n")
         val videoMediaLineIndex = lines.indexOfFirst { it.startsWith("m=video") }
         if (videoMediaLineIndex == -1) return sdpDescription
@@ -1358,30 +1136,30 @@ class MediaProjectionService : Service() {
         return newLines.joinToString("\r\n")
     }
 
-    private fun initializePeerConnectionFactoryIfNeeded() {
-        if (peerConnectionFactory == null) {
+    internal fun initializePeerConnectionFactoryIfNeeded() {
+        if (webRtcManager.peerConnectionFactory == null) {
             val initOptions = PeerConnectionFactory.InitializationOptions.builder(this)
                 .createInitializationOptions()
             PeerConnectionFactory.initialize(initOptions)
 
-            eglBase = EglBase.create()
-            val eglContext = eglBase!!.eglBaseContext
+            webRtcManager.eglBase = EglBase.create()
+            val eglContext = webRtcManager.eglBase!!.eglBaseContext
 
             val factoryOptions = PeerConnectionFactory.Options()
             val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
             val decoderFactory = DefaultVideoDecoderFactory(eglContext)
 
-            peerConnectionFactory = PeerConnectionFactory.builder()
+            webRtcManager.peerConnectionFactory = PeerConnectionFactory.builder()
                 .setOptions(factoryOptions)
                 .setVideoEncoderFactory(encoderFactory)
                 .setVideoDecoderFactory(decoderFactory)
                 .createPeerConnectionFactory()
 
-            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
+            webRtcManager.surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
         }
     }
 
-    private fun createPeerConnectionObserver(sessionId: Int, sendResponse: (String) -> Unit): PeerConnection.Observer {
+    internal fun createPeerConnectionObserver(sessionId: Int, sendResponse: (String) -> Unit): PeerConnection.Observer {
         return object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
@@ -1415,7 +1193,7 @@ class MediaProjectionService : Service() {
                         dc.close()
                         return
                     }
-                    controlChannel = dc
+                    webRtcManager.controlChannel = dc
                     sendResponse(buildStatusMessage(message = "CONTROL_CHANNEL_ACCEPTED"))
                     Log.d("WebRTC", "DataChannel received: ${dc.label()}")
                     dc.registerObserver(object : DataChannel.Observer {
@@ -1445,11 +1223,11 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun setupScreenCapturePipeline(sessionId: Int, sendResponse: (String) -> Unit): Boolean {
-        if (videoCapturer == null) {
-            val projectionIntent = mediaProjectionResultData ?: return false
-            videoSource = peerConnectionFactory?.createVideoSource(true)
-            videoCapturer = ScreenCapturerAndroid(projectionIntent, object : MediaProjection.Callback() {
+    internal fun setupScreenCapturePipeline(sessionId: Int, sendResponse: (String) -> Unit): Boolean {
+        if (webRtcManager.videoCapturer == null) {
+            val projectionIntent = screenCaptureManager.mediaProjectionResultData ?: return false
+            webRtcManager.videoSource = webRtcManager.peerConnectionFactory?.createVideoSource(true)
+            webRtcManager.videoCapturer = ScreenCapturerAndroid(projectionIntent, object : MediaProjection.Callback() {
                 override fun onStop() {
                     CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "MediaProjection stopped inside service.")
                     handleScreenCaptureReauthorizationRequired(
@@ -1460,15 +1238,15 @@ class MediaProjectionService : Service() {
                     )
                 }
             })
-            videoCapturer?.initialize(surfaceTextureHelper, applicationContext, videoSource?.capturerObserver)
+            webRtcManager.videoCapturer?.initialize(webRtcManager.surfaceTextureHelper, applicationContext, webRtcManager.videoSource?.capturerObserver)
 
             val streamNetwork = currentStreamNetworkTransport()
             val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
 
-            videoCapturerLastWidth = streamProfile.width
-            videoCapturerLastHeight = streamProfile.height
+            webRtcManager.videoCapturerLastWidth = streamProfile.width
+            webRtcManager.videoCapturerLastHeight = streamProfile.height
             try {
-                videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
+                webRtcManager.videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
             } catch (e: Exception) {
                 CrashDiagnostics.recordCaughtException(filesDir, "ScreenCapturerAndroid.startCapture", e)
                 handleScreenCaptureReauthorizationRequired(
@@ -1479,26 +1257,26 @@ class MediaProjectionService : Service() {
                 )
                 return false
             }
-            videoTrack = peerConnectionFactory?.createVideoTrack("video_track_id", videoSource)
+            webRtcManager.videoTrack = webRtcManager.peerConnectionFactory?.createVideoTrack("video_track_id", webRtcManager.videoSource)
         }
         return true
     }
 
-    private fun handleSdpExchange(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
+    internal fun handleSdpExchange(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
         // 5. Apply H.264 optimization to Offer SDP (SDP Munging)
         val modifiedOfferSdp = preferH264Codec(remoteSdp.description)
         val modifiedRemoteSdp = SessionDescription(remoteSdp.type, modifiedOfferSdp)
 
         // 6. Set Remote Description
-        peerConnection?.setRemoteDescription(object : SdpObserver {
+        webRtcManager.peerConnection?.setRemoteDescription(object : SdpObserver {
             override fun onCreateSuccess(desc: SessionDescription?) {}
             override fun onSetSuccess() {
                 if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                remoteDescriptionSet = true
+                webRtcManager.remoteDescriptionSet = true
                 flushPendingRemoteIceCandidates()
 
                 // Create local SDP Answer
-                peerConnection?.createAnswer(object : SdpObserver {
+                webRtcManager.peerConnection?.createAnswer(object : SdpObserver {
                     override fun onCreateSuccess(desc: SessionDescription?) {
                         if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
                         desc?.let {
@@ -1506,7 +1284,7 @@ class MediaProjectionService : Service() {
                             val modifiedAnswerSdp = preferH264Codec(it.description)
                             val modifiedLocalSdp = SessionDescription(it.type, modifiedAnswerSdp)
 
-                            peerConnection?.setLocalDescription(object : SdpObserver {
+                            webRtcManager.peerConnection?.setLocalDescription(object : SdpObserver {
                                 override fun onCreateSuccess(desc: SessionDescription?) {}
                                 override fun onSetSuccess() {
                                     if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
@@ -1535,70 +1313,9 @@ class MediaProjectionService : Service() {
         }, modifiedRemoteSdp)
     }
 
-    private fun initializeWebRTC(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
-        if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-            CrashDiagnostics.recordEvent(this, "Skipping WebRTC initialization for inactive sessionId=$sessionId.")
-            return
-        }
+    
 
-        val readiness = ProjectionReadiness.from(
-            hasProjectionIntent = mediaProjectionResultData != null,
-            isServiceRunning = isRunning
-        )
-        if (readiness != ProjectionReadiness.READY) {
-            CrashDiagnostics.recordEvent(this, "Capture not ready; deferring offer for sessionId=$sessionId.")
-            queuePendingOffer(sessionId, remoteSdp, sendResponse)
-            if (readiness == ProjectionReadiness.MISSING_PERMISSION) {
-                requestScreenCapturePermissionFromActivity("Negotiation attempted without active MediaProjection grant")
-            }
-            sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-            return
-        }
-
-        try {
-            CrashDiagnostics.recordEvent(this, "Initializing WebRTC for sessionId=$sessionId.")
-
-            // 1. Initialize PeerConnectionFactory if needed
-            initializePeerConnectionFactoryIfNeeded()
-
-            val iceServers = listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-            )
-            val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
-                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            }
-            remoteDescriptionSet = false
-
-            // 2. Create PeerConnection
-            peerConnection = peerConnectionFactory?.createPeerConnection(
-                rtcConfig,
-                createPeerConnectionObserver(sessionId, sendResponse)
-            )
-
-            // 3. Setup Screen Capture pipeline (Reuses capture elements if active)
-            if (!setupScreenCapturePipeline(sessionId, sendResponse)) {
-                return
-            }
-
-            val streamNetwork = currentStreamNetworkTransport()
-            val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
-            streamQualityNetwork = streamNetwork
-            streamQualityProfile = streamProfile
-
-            // 4. Add video track to PeerConnection
-            videoSender = peerConnection?.addTrack(videoTrack, listOf("video_stream_id"))
-            applyStreamQualityProfile(streamProfile, reason = "WebRTC start")
-
-            // 5 & 6. Handle SDP Exchange
-            handleSdpExchange(sessionId, remoteSdp, sendResponse)
-
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(this.filesDir, "WebRTC initialization", e)
-            Log.e("WebRTC", "Error during WebRTC initialization: ${e.message}", e)
-        }
-    }
-
-    private fun handleScreenCaptureReauthorizationRequired(
+    internal fun handleScreenCaptureReauthorizationRequired(
         sessionId: Int,
         sendResponse: (String) -> Unit,
         diagnosticReason: String,
@@ -1617,8 +1334,8 @@ class MediaProjectionService : Service() {
                 return@post
             }
 
-            mediaProjectionResultCode = null
-            mediaProjectionResultData = null
+            screenCaptureManager.mediaProjectionResultCode = null
+            screenCaptureManager.mediaProjectionResultData = null
             screenCapturePermissionRequired = true
             sendResponse(
                 buildStatusMessage(
@@ -1627,11 +1344,11 @@ class MediaProjectionService : Service() {
                 ),
             )
             synchronized(sessionLock) {
-                pendingOffer = null
+                screenCaptureManager.pendingOffer = null
                 mirrorSessionState = mirrorSessionState.projectionStopped(sessionId)
                 activeSessionId = mirrorSessionState.activeSessionId
             }
-            cleanupWebRTCResources(stopProjectionService = false, stopCapturer = stopCapturer)
+            webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = stopCapturer)
             requestScreenCapturePermissionFromActivity(diagnosticReason)
             isRunning = false
             applyScreenAwakeEffectsForCurrentState()
@@ -1639,7 +1356,7 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun sendControlAck(channel: DataChannel, result: ControlEventResult) {
+    internal fun sendControlAck(channel: DataChannel, result: ControlEventResult) {
         if (result.seq == null || channel.state() != DataChannel.State.OPEN) return
         try {
             channel.send(
@@ -1654,69 +1371,17 @@ class MediaProjectionService : Service() {
         }
     }
 
-    private fun org.json.JSONObject.controlSeq(): Long? =
+    internal fun org.json.JSONObject.controlSeq(): Long? =
         if (has("seq")) {
             optLong("seq")
         } else {
             null
         }
 
-    private fun cleanupWebRTCResources(stopProjectionService: Boolean, stopCapturer: Boolean) {
-        val steps = mutableListOf<CleanupStep>()
-        steps.add(CleanupStep("control channel close") { controlChannel?.close() })
-        steps.add(CleanupStep("control channel dispose") { controlChannel?.dispose() })
-
-        if (stopCapturer) {
-            steps.add(CleanupStep("video capturer stop") { videoCapturer?.stopCapture() })
-            steps.add(CleanupStep("video capturer dispose") { videoCapturer?.dispose() })
-            steps.add(CleanupStep("video track dispose") { videoTrack?.dispose() })
-            steps.add(CleanupStep("video source dispose") { videoSource?.dispose() })
-            steps.add(CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() })
-        }
-
-        steps.add(CleanupStep("peer connection close") { peerConnection?.close() })
-        steps.add(CleanupStep("peer connection dispose") { peerConnection?.dispose() })
-
-        if (stopCapturer) {
-            steps.add(CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() })
-            steps.add(CleanupStep("egl release") { eglBase?.release() })
-        }
-
-        val failures = CleanupStepRunner.run(steps)
-        failures.forEach { failure ->
-            CrashDiagnostics.recordCaughtException(filesDir, "WebRTC cleanup ${failure.name}", failure.throwable)
-            Log.e(TAG, "Error during WebRTC cleanup step ${failure.name}", failure.throwable)
-        }
-
-        synchronized(pendingRemoteIceCandidates) {
-            pendingRemoteIceCandidates.clear()
-        }
-        controlChannel = null
-        videoSender = null
-        peerConnection = null
-        remoteDescriptionSet = false
-
-        if (stopCapturer) {
-            videoCapturer = null
-            videoTrack = null
-            videoSource = null
-            surfaceTextureHelper = null
-            peerConnectionFactory = null
-            eglBase = null
-            videoCapturerLastWidth = 0
-            videoCapturerLastHeight = 0
-        }
-
-        if (stopProjectionService) {
-            mediaProjectionResultCode = null
-            mediaProjectionResultData = null
-        }
-
-        Log.d("WebRTC", "WebRTC session clean up completed with ${failures.size} failures. stopCapturer=$stopCapturer")
-    }
+    
 
     @Suppress("DEPRECATION")
-    private fun updateWakeLock() {
+    internal fun updateWakeLock() {
         val shouldHoldWakeLock =
             MediaProjectionWakeLockPolicy.shouldHoldWakeLock(
                 serviceRunning = isRunning,
@@ -1733,24 +1398,24 @@ class MediaProjectionService : Service() {
                         setReferenceCounted(false)
                         acquire()
                     }
-            CrashDiagnostics.recordEvent(this, "MediaProjection screen bright wake lock acquired.")
+            CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjection screen bright wake lock acquired.")
             return
         }
 
         releaseWakeLock()
     }
 
-    private fun releaseWakeLock() {
+    internal fun releaseWakeLock() {
         wakeLock?.let { lock ->
             if (lock.isHeld) {
                 lock.release()
-                CrashDiagnostics.recordEvent(this, "MediaProjection partial wake lock released.")
+                CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjection partial wake lock released.")
             }
         }
         wakeLock = null
     }
 
-    private fun createNotification(): Notification {
+    internal fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Android Mirror Active")
             .setContentText("실시간 Mac 브라우저 미러링 및 제어 서비스 작동 중")
@@ -1760,7 +1425,7 @@ class MediaProjectionService : Service() {
             .build()
     }
 
-    private fun createNotificationChannel() {
+    internal fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
