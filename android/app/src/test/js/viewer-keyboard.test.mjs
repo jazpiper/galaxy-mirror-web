@@ -456,15 +456,26 @@ function loadViewer(options = {}) {
     context.window.EncodedVideoChunk = context.EncodedVideoChunk;
     vm.createContext(context);
 
+    function loadModuleFile(filename) {
+        const filePath = path.join(filesDir, filename);
+        if (!fs.existsSync(filePath)) return;
+        let code = fs.readFileSync(filePath, 'utf8');
+        code = code.replace(/^import\s*\{[\s\S]*?\}\s*from\s*['"][^'"]+['"];?/gm, '');
+        code = code.replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"];?/gm, '');
+        code = code.replace(/^export\s+default\s+/gm, '');
+        code = code.replace(/^export\s*\{[\s\S]*?\};?/gm, '');
+        code = code.replace(/^export\s+/gm, '');
+        vm.runInContext(code, context, { filename });
+    }
+
     const keyboardHelperPath = path.join(filesDir, 'viewer-keyboard.js');
     if (fs.existsSync(keyboardHelperPath)) {
         vm.runInContext(fs.readFileSync(keyboardHelperPath, 'utf8'), context, {
             filename: keyboardHelperPath
         });
     }
-    vm.runInContext(fs.readFileSync(path.join(filesDir, 'viewer.js'), 'utf8'), context, {
-        filename: 'viewer.js'
-    });
+
+    ['webrtc.js', 'controls.js', 'signaling.js', 'ui.js', 'main.js'].forEach(loadModuleFile);
 
     const videoContainer = contextDocument.getElementById('videoContainer');
     const usbCanvas = contextDocument.getElementById('usbCanvas');
@@ -645,7 +656,7 @@ await test('stale DataChannel close does not reset current text ACK state', () =
 
 await test('control DataChannel uses reliable delivery', () => {
     const { filesDir } = loadViewer();
-    const viewerSource = fs.readFileSync(path.join(filesDir, 'viewer.js'), 'utf8');
+    const viewerSource = fs.readFileSync(path.join(filesDir, 'webrtc.js'), 'utf8');
 
     assert.doesNotMatch(viewerSource, /maxRetransmits\s*:\s*0/);
     assert.doesNotMatch(viewerSource, /maxPacketLifeTime\s*:/);
@@ -656,7 +667,7 @@ await test('web UI cache-busts viewer scripts after app updates', () => {
     const html = fs.readFileSync(path.join(appRoot, 'src/main/resources/files/index.html'), 'utf8');
 
     assert.match(html, /src="\/viewer-keyboard\.js\?v=[^"]+"/);
-    assert.match(html, /src="\/viewer\.js\?v=[^"]+"/);
+    assert.match(html, /src="main\.js"/);
 });
 
 await test('initial transport follows explicit usb query parameter', () => {

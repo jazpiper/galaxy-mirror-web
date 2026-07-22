@@ -2,12 +2,22 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-07-21
+updated: 2026-07-22
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-07-22
+
+- **Mac Viewer 모듈화에 따른 CI 테스트 빌드 오류 수정**
+  - 모듈화 refactoring 커밋(`5cddfd6`) 이후 GitHub Actions CI에서 `viewer-keyboard.test.mjs` 실행 시 `ENOENT: viewer.js` 오류로 실패했던 문제 해결.
+  - Node.js 테스트 하네스(`viewer-keyboard.test.mjs`)가 이전 단일 `viewer.js` 대신 분리된 ES6 모듈들(`webrtc.js`, `controls.js`, `signaling.js`, `ui.js`, `main.js`)을 `vm.runInContext`로 로드하도록 수정.
+  - `control DataChannel` 및 HTML script 레퍼런스 검증 대상을 `webrtc.js`와 `main.js`에 맞게 동기화.
+  - 검증: `node --test android/app/src/test/js/viewer-keyboard.test.mjs`, `node --check`, `./gradlew app:testDebugUnitTest`, `./gradlew app:lintDebug`, `./gradlew assembleDebug` 모두 통과.
 
 ---
 
