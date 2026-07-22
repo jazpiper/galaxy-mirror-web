@@ -1,8 +1,7 @@
 # Galaxy Mirror Web Agent Guide
 
-> 이 문서는 기존 `AGENTS.md`와 `GEMINI.md`를 하나로 통합한 프로젝트 규칙 파일이다.
-> Antigravity 글로벌 룰과 결합하여, 이 프로젝트에 특화된 아키텍처 제약과 개발 원칙을 정의한다.
-> 저장소 전체에 적용되며, 더 좁은 하위 디렉터리에 별도 `AGENTS.md`가 생기면 그 파일이 우선한다.
+> 이 문서는 프로젝트 특화 아키텍처 제약과 개발 원칙을 정의하는 정본 프로젝트 규칙 파일이다.
+> Antigravity 글로벌 룰과 결합하여 적용되며, 저장소 전체에 우선 적용된다.
 
 ## 1. Project Shape
 
@@ -19,7 +18,8 @@
   - 제어 입력 주입: `AccessibilityService` (터치/스크롤/키보드).
   - Gradle Kotlin DSL, Kotlin 2.x, Jetpack Compose + Material3 + Navigation, `compileSdk`/`targetSdk` 36, `minSdk` 29.
 - **Mac Viewer (Web Client)**
-  - **오직 Vanilla HTML5 / JavaScript / CSS만 사용.** React/Vue 등 프레임워크나 빌드 스텝 도입 금지 — 무설치 단순성 유지.
+  - **오직 Vanilla HTML5 / JavaScript (ES6 Modules) / CSS만 사용.** React/Vue 등 프레임워크나 빌드 스텝 도입 금지 — 무설치 단순성 유지.
+  - 모듈 구조: `main.js`, `ui.js`, `controls.js`, `signaling.js`, `webrtc.js`, `viewer-keyboard.js`.
 - **Dual Transport Network**
   - **Tailscale MagicDNS**: 보안 터널링 + WebRTC (기본 모드, 무선).
   - **USB / ADB Forward**: `adb forward tcp:8080 tcp:8080`로 로컬 유선 연결. WebCodecs 지원 시 `/usb/session?codec=h264`, 실패 시 `/usb/session?codec=jpeg`로 fallback.
@@ -27,12 +27,13 @@
 ## 3. Important Paths
 
 - `android/` : Android Studio/Gradle 프로젝트 루트 (모든 빌드·테스트 명령은 여기서 실행).
-  - `.../MediaProjectionService.kt` : **시스템의 중심.** Ktor 서버 호스팅 + 모든 WebSocket/HTTP 라우트(`setupRouting()`: `/signaling`, `/usb/session`, `/stream/quality`, `/apps/*`, `/debug/perf`) + WebRTC 피어 연결/SDP·ICE 교환 + MediaProjection 라이프사이클을 모두 관장. cross-cutting 변경은 대부분 여기.
+  - `.../MediaProjectionService.kt` : **서비스 코어.** Ktor 서버 라이프사이클 + WebRTC 피어 연결/SDP·ICE 교환 + MediaProjection 캡처 라이프사이클 관장.
+  - `.../MirrorRouting.kt` : **HTTP/WebSocket 라우팅 모듈.** Ktor 엔드포인트 라우팅 (`/signaling`, `/usb/session`, `/stream/quality`, `/apps/*`, `/debug/perf` 등).
   - `.../MainActivity.kt` : Compose UI 진입점. 서비스에 bind하고 화면 캡처 권한을 요청, `MirrorServiceState`(서비스가 발행하는 StateFlow)를 UI에 반영.
   - `.../GalaxyMirrorAccessibilityService.kt` : Viewer 입력(터치 %, 키, 텍스트)을 Android 제스처/전역 액션으로 변환. 입력은 `ControlEventValidator → ControlEventDispatcher → ControlEventApplier → ControlEventResult` 파이프라인을 거친다.
   - `.../MirrorTransport.kt` : `TAILSCALE_WEBRTC` / `USB_JPEG` / `USB_H264` 전송 경로 discriminator (세션 관리 전반에 관통).
   - USB 스트리밍: `UsbH264ScreenStreamer`(MediaCodec H.264, WebCodecs 있을 때 우선) / `UsbScreenStreamer`(JPEG fallback), `UsbStreamProfile`·`UsbH264StreamProfile`(해상도/fps/bitrate tier), `UsbThermalPolicy`+`UsbThermalReader`+viewer-idle로 발열/유휴 시 프로필 clamp, `UsbFrameChangeGate`·`UsbFrameRateGate`(중복 프레임 skip), `UsbPerfMonitor`(`/debug/perf` 피드).
-  - `.../resources/files/` : Ktor가 서빙하는 Mac Viewer 정적 파일(`index.html`, `viewer.js` 등).
+  - `.../resources/files/` : Ktor가 서빙하는 Mac Viewer 정적 ES6 모듈 리소스 (`index.html`, `main.js`, `ui.js`, `controls.js`, `signaling.js`, `webrtc.js`, `viewer-keyboard.js`).
   - `android/gradle/libs.versions.toml` : AGP/Kotlin/Compose/AndroidX 버전 카탈로그.
 - `.github/workflows/android-build.yml` : main/pull_request용 CI.
 - `docs/` : 프로젝트 상태와 규격 문서 허브. `Dashboard.md`(허브/로드맵), `Handoff.md`(현재 상태 보드), `Log.md`(개발 연대기), `Protocols.md`(메시지 규격), `Coordinates.md`(좌표 변환 규격).
@@ -44,7 +45,7 @@
 - **No Viewer Token (의도적)**: 이 앱은 viewer 접근 토큰을 쓰지 않는다. `/signaling`, `/usb/session`, `/debug/perf`, 앱 바로가기·화질 API는 모두 token header/query 없이 동작한다(loopback + WireGuard 터널이 신뢰 경계). `ViewerAccessGuard`/`ViewerAccessTokenStore`는 의도적으로 제거됨 — token 인증을 재도입하지 말 것.
 - **Coordinates & Input Injection**: 모든 클릭/스와이프/키 입력의 안드로이드 해상도 맵핑은 반드시 `docs/Coordinates.md` 스펙(레터박스/필러박스 보정, `object-fit: contain` 기준)을 준수. 텍스트 입력은 `AccessibilityNodeInfo.ACTION_SET_TEXT`를 쓰며, IME 프리징/캐러셀 락업 방지용 지수 백오프/Watchdog 메커니즘(`RemoteTextInputBuffer`, `TextInputTargetSelector`)을 훼손하지 말 것.
 - **Session Cleanup**: WebRTC/WebSocket/MediaProjection 정리 태스크는 session/instance ID를 확인해 Viewer 재연결 중 race condition을 막도록 견고하게 유지한다(`MirrorSessionState`는 단일 활성 세션을 추적하며, 새 세션 시작 시 이전 transport를 정리).
-- **Protocol & Port**: signaling 메시지 타입/payload, USB frame, HTTP API는 `docs/Protocols.md`가 기준. 새 타입 추가나 JSON shape 변경 시 Android 처리 코드·`viewer.js`·문서를 같은 변경 단위로 갱신한다. 포트(`8080`)나 정적 경로를 바꾸면 README/docs/브라우저 클라이언트도 함께 맞춘다.
+- **Protocol & Port**: signaling 메시지 타입/payload, USB frame, HTTP API는 `docs/Protocols.md`가 기준. 새 타입 추가나 JSON shape 변경 시 Android 처리 코드·`main.js` 및 모듈·문서를 같은 변경 단위로 갱신한다. 포트(`8080`)나 정적 경로를 바꾸면 README/docs/브라우저 클라이언트도 함께 맞춘다.
 - **Manifest/Permission**: MediaProjection 라이프사이클, foreground service notification, Android 권한은 OS 버전별 제약이 강하다. 권한/서비스 선언 변경 시 `AndroidManifest.xml`·service 코드·실제 단말 동작을 함께 검증.
 
 ## 5. Build, Test, and Verification
@@ -71,7 +72,7 @@ Mac Viewer의 JS 로직은 **Gradle이 아니라** Node 기반 테스트로 검�
 ```bash
 node --test android/app/src/test/js/viewer-keyboard.test.mjs
 node --test android/app/src/test/js/viewer-layout.test.mjs
-node --check android/app/src/main/resources/files/viewer.js
+node --check android/app/src/main/resources/files/*.js
 ```
 
 - **CI 실행 순서**(`.github/workflows/android-build.yml`, JDK 21, push/PR to `main`): `app:testDebugUnitTest` → JS `viewer-keyboard` 테스트 → `app:lintDebug` → `assembleDebug`. 로컬도 이 순서로 맞춘 뒤 push.
@@ -79,9 +80,9 @@ node --check android/app/src/main/resources/files/viewer.js
 
 ## 6. Implementation Notes
 
-- `MediaProjectionService.kt`가 Ktor·WebRTC·라우팅·권한 흐름을 크게 품고 있으므로, 큰 기능을 추가할 때는 먼저 기존 흐름을 보존하고 필요할 때만 작은 단위로 분리한다.
+- Ktor 엔드포인트 및 라우팅 확장은 `MirrorRouting.kt`에 정의하며, `MediaProjectionService.kt` 코어 라이프사이클을 보존하고 필요할 때만 국소 단위로 조정한다.
 - WebRTC 스트림 화질은 `AdaptiveStreamQuality`가 (사용자 모드 × `NetworkTransportDetector`의 wifi/ethernet vs. cellular × viewer 활동)로 유효 프로필을 산출한다.
-- Mac Viewer 확장은 기존 정적 서빙 구조 안에서 작게. 좌표 변환·tap/swipe/key 규칙은 `docs/Coordinates.md`와 `GalaxyMirrorAccessibilityService.kt`를 함께 확인한다.
+- Mac Viewer 확장은 기존 정적 ES6 서빙 구조 안에서 작게. 좌표 변환·tap/swipe/key 규칙은 `docs/Coordinates.md`와 `GalaxyMirrorAccessibilityService.kt`를 함께 확인한다.
 
 ## 7. Documentation Rules
 
