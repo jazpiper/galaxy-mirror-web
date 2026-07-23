@@ -22,8 +22,10 @@ updated: 2026-07-23
   - **[Med] `isAutoFitActive` import 누락**: `signaling.js`가 stale 전역을 참조하던 문제를 `ui.js` live import 추가로 수정.
   - **[Med] 항상 success ACK**: 접근성 서비스의 `black_overlay`/`resize_display` 핸들러가 service null·실패를 무시하던 것을 실제 결과 기반 ACK로 수정. `ControlEventValidator`에 `resize_display` 경계 검증 추가.
   - **문서 동기화**: USB H.264 codec-config 분리 전송 + 클라이언트 SPS/PPS 병합, `USB_VIDEO_CONFIG.description`(AVCC hex) 필드를 `Protocols.md`에 반영.
-  - **판단 보류(의도적 튜닝 추정)**: `AdaptiveStreamQuality` idle 클램프 5fps/350k→15fps/1.5M(전 티어 ~3배 상향 튜닝의 일부), USB H.264 8Mbps 인코더 capability 미검증 → 사용자 확인 대상으로 남김.
-  - **검증**: `app:testDebugUnitTest` BUILD SUCCESSFUL, JS `viewer-keyboard`/`viewer-layout` 테스트 및 4개 모듈 `node --check` 통과.
+  - **후속 판단 처리 2건**:
+    - **[Med] idle 스트림 절전 무력화 수정**: `AdaptiveStreamQuality` idle 클램프가 15fps/1.5Mbps로 상향되면서, 가장 낮은 active tier인 DATA_SAVER(18fps/1.5Mbps)와 idle bitrate가 동일해져 "idle < active" 설계 불변식([2026-05-27 refactor-hardening plan](./superpowers/plans/2026-05-27-refactor-hardening-performance.md) Task 5)이 깨지고 절전 효과가 사라졌음. 10fps/800kbps로 낮춰 전 tier에서 idle이 strictly 낮도록 복원하고, 구멍이던 DATA_SAVER idle 케이스를 `AdaptiveStreamQualityTest.idleDataSaverStaysBelowActiveDataSaver()`로 가드 추가.
+    - **[No-op] USB H.264 8Mbps 인코더 capability 검증**: 미변경 결정. `UsbH264ScreenStreamer.start()`의 `codec.configure()`가 이미 try-catch로 보호되고, 실패 시 `MirrorRouting`이 `H264_START_FAILED`를 전송 → 클라이언트가 `reconnectUsbAsJpeg()`로 JPEG 재접속하는 반응형 폴백 체인이 완결돼 있음. 대상 기기(Galaxy 플래그십)는 8Mbps H.264를 여유 처리하므로 사전 `MediaCodecInfo` capability 검증은 중복 speculative 코드(YAGNI)로 판단.
+  - **검증**: `app:testDebugUnitTest`·`app:lintDebug`·`assembleDebug` BUILD SUCCESSFUL, JS `viewer-keyboard`/`viewer-layout` 테스트 및 4개 모듈 `node --check` 통과.
 
 ---
 
