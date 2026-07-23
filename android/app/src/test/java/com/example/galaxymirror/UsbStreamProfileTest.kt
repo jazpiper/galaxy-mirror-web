@@ -20,8 +20,8 @@ class UsbStreamProfileTest {
         assertEquals(UsbStreamProfileTier.BALANCED, profile.tier)
         assertEquals(540, profile.width)
         assertEquals(1200, profile.height)
-        assertEquals(8, profile.fps)
-        assertEquals(60, profile.jpegQuality)
+        assertEquals(18, profile.fps)
+        assertEquals(75, profile.jpegQuality)
     }
 
     @Test
@@ -31,8 +31,8 @@ class UsbStreamProfileTest {
         assertEquals(UsbStreamProfileTier.COOL, profile.tier)
         assertEquals(360, profile.width)
         assertEquals(800, profile.height)
-        assertEquals(4, profile.fps)
-        assertEquals(50, profile.jpegQuality)
+        assertEquals(12, profile.fps)
+        assertEquals(65, profile.jpegQuality)
     }
 
     @Test
@@ -42,8 +42,8 @@ class UsbStreamProfileTest {
         assertEquals(UsbStreamProfileTier.CLEAR, profile.tier)
         assertEquals(720, profile.width)
         assertEquals(1600, profile.height)
-        assertEquals(10, profile.fps)
-        assertEquals(68, profile.jpegQuality)
+        assertEquals(24, profile.fps)
+        assertEquals(85, profile.jpegQuality)
     }
 
     @Test
@@ -56,8 +56,8 @@ class UsbStreamProfileTest {
         assertEquals("BALANCED", json.getString("effectiveTier"))
         assertEquals(540, json.getInt("effectiveWidth"))
         assertEquals(1200, json.getInt("effectiveHeight"))
-        assertEquals(8, json.getInt("effectiveFps"))
-        assertEquals(60, json.getInt("jpegQuality"))
+        assertEquals(18, json.getInt("effectiveFps"))
+        assertEquals(75, json.getInt("jpegQuality"))
         assertEquals("heat-first", json.getString("policy"))
     }
 
@@ -71,21 +71,21 @@ class UsbStreamProfileTest {
         assertEquals(UsbStreamProfileTier.COOL, dataSaver.tier)
         assertEquals(540, dataSaver.width)
         assertEquals(1200, dataSaver.height)
-        assertEquals(18, dataSaver.fps)
-        assertEquals(1_800_000, dataSaver.bitrateBps)
+        assertEquals(24, dataSaver.fps)
+        assertEquals(2_500_000, dataSaver.bitrateBps)
 
         assertEquals(UsbStreamProfileTier.BALANCED, auto.tier)
         assertEquals(UsbStreamProfileTier.BALANCED, standard.tier)
         assertEquals(720, standard.width)
         assertEquals(1600, standard.height)
-        assertEquals(24, standard.fps)
-        assertEquals(3_000_000, standard.bitrateBps)
+        assertEquals(30, standard.fps)
+        assertEquals(4_500_000, standard.bitrateBps)
 
         assertEquals(UsbStreamProfileTier.CLEAR, high.tier)
         assertEquals(1080, high.width)
         assertEquals(2400, high.height)
-        assertEquals(30, high.fps)
-        assertEquals(6_000_000, high.bitrateBps)
+        assertEquals(60, high.fps)
+        assertEquals(8_000_000, high.bitrateBps)
     }
 
     @Test
@@ -100,8 +100,8 @@ class UsbStreamProfileTest {
         assertEquals("BALANCED", json.getString("effectiveTier"))
         assertEquals(720, json.getInt("width"))
         assertEquals(1600, json.getInt("height"))
-        assertEquals(24, json.getInt("fps"))
-        assertEquals(3_000_000, json.getInt("bitrateBps"))
+        assertEquals(30, json.getInt("fps"))
+        assertEquals(4_500_000, json.getInt("bitrateBps"))
         assertEquals(1, json.getInt("keyFrameIntervalSeconds"))
         assertEquals("video/avc", json.getString("mime"))
         assertEquals("hardware-h264", json.getString("policy"))

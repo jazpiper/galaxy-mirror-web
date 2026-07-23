@@ -84,11 +84,11 @@ class UsbPerfMonitorTest {
                 ).toJson()
 
         assertEquals("h264", json.getString("codec"))
-        assertEquals(3_000_000, json.getInt("bitrateBps"))
+        assertEquals(4_500_000, json.getInt("bitrateBps"))
         assertEquals(720, json.getJSONObject("profile").getInt("width"))
         assertEquals(1600, json.getJSONObject("profile").getInt("height"))
-        assertEquals(24, json.getJSONObject("profile").getInt("fps"))
-        assertEquals(3_000_000, json.getJSONObject("profile").getInt("bitrateBps"))
+        assertEquals(30, json.getJSONObject("profile").getInt("fps"))
+        assertEquals(4_500_000, json.getJSONObject("profile").getInt("bitrateBps"))
     }
 
     @Test

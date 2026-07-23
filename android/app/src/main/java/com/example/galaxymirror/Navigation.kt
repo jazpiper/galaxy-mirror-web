@@ -22,13 +22,17 @@ fun MainNavigation(
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
   isMirroringActive: Boolean = false,
+  blackOverlayEnabled: Boolean = false,
+  overlayPermissionReady: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit,
   onRemoveFavoriteApp: (String) -> Unit,
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
   onStreamQualityModeChange: (StreamQualityMode) -> Unit = {},
+  onToggleBlackOverlay: (Boolean) -> Unit = {},
   onOpenAppInfoSettings: () -> Unit,
   onOpenAccessibilitySettings: () -> Unit,
   onOpenWriteSettings: () -> Unit = {},
+  onOpenOverlaySettings: () -> Unit = {},
   onDisconnect: () -> Unit,
 ) {
   val backStack = rememberNavBackStack(Main)
@@ -50,13 +54,17 @@ fun MainNavigation(
             streamQualityNetwork = streamQualityNetwork,
             streamQualityProfile = streamQualityProfile,
             isMirroringActive = isMirroringActive,
+            blackOverlayEnabled = blackOverlayEnabled,
+            overlayPermissionReady = overlayPermissionReady,
             onAddFavoriteApp = onAddFavoriteApp,
             onRemoveFavoriteApp = onRemoveFavoriteApp,
             onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
             onStreamQualityModeChange = onStreamQualityModeChange,
+            onToggleBlackOverlay = onToggleBlackOverlay,
             onOpenAppInfoSettings = onOpenAppInfoSettings,
             onOpenAccessibilitySettings = onOpenAccessibilitySettings,
             onOpenWriteSettings = onOpenWriteSettings,
+            onOpenOverlaySettings = onOpenOverlaySettings,
             onDisconnect = onDisconnect,
           )
         }

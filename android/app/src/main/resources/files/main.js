@@ -1,7 +1,8 @@
 import { remoteVideo, keyboardSink, connectBtn, wsIndicator, wsStatus, rtcStatus, streamStatusLabel, rtcLatencyItem, controlStatus, accessibilityStatus, favoriteAppsList, statusDetail, logBox, uploadUsage, downloadUsage, rtcLatency, usbCanvas, connectionPlaceholder, usbCanvasCtx, getUsbCanvasContext, usbFrame, transportTailscaleBtn, transportUsbBtn, qualityMode, qualityEffective, qualityNetwork, qualityNetworkItem, usbCoolingStatusItem, usbCoolingStatus, toolsPanel, qualityAutoBtn, qualityDataSaverBtn, qualityStandardBtn, qualityHighBtn, navRecentsBtn, navHomeBtn, navBackBtn, clipboardHistory, MAX_CLIPBOARD_HISTORY, updateVideoAspectRatio, streamQualityButtons, logQueue, logFrameRequested, flushLogs, log, showStatusDetail, formatMegabytes, lastUploadUsageText, lastDownloadUsageText, updateDataUsageDisplay, resetDataUsageStats, formatBitrate, formatBytesPerSecond, renderStreamQualityStatus, renderUsbCoolingStatus, hideUsbCoolingStatus, setHidden, renderTransportSelection, updateConnectButtonState, showConnectionPlaceholder, hideConnectionPlaceholder, resetConnectionStatus, renderFavoriteApps, renderClipboardHistory, clearClipboardBtn, handleClearClipboardBtnClick, addClipboardToHistory, clearRemoteVideoFrame, clearUsbFrame, showGlowToast } from './ui.js';
 import { peerConnection, dataChannel, remoteDescriptionSet, pendingRemoteCandidates, dataUsagePollId, lastNetworkBytes, accumulatedNetworkBytes, rtcConfig, resetNetworkBytes, extractNetworkBytes, sampleWebRtcStats, startDataUsagePolling, stopDataUsagePolling, setupWebRTC, addRemoteCandidate, flushPendingRemoteCandidates, setupDataChannelHandlers, cleanupPeerConnection } from './webrtc.js';
-import { bindTouchSurface, accessibilityReady, touchControlInitialized, keyControlInitialized, navigationControlInitialized, keyboardControl, nextTextSeq, inFlightTextSeq, queuedTextPayloads, ackTimeoutId, focusKeyboardCapture, sendControlPayload, sendAndroidKey, sendSequencedTextPayload, resetTextControlState, flushNextQueuedTextPayload, handleControlAck, hasClipboardWriteApi, hasClipboardReadApi, showManualClipboardFallback, writeClipboardFromAndroid, readClipboardForAndroid, getNormalizedCoords, unbindTouchSurface, destroyTouchControl, setupTouchControl, documentKeydownHandler, keyboardListeners, createEventInterceptor, interceptKeyboardControl, destroyKeyControl, setupKeyControl, setupNavigationControls, setupStreamQualityControls, setupSystemControls, documentCopyHandler, destroyClipboardSync, setupClipboardSync } from './controls.js';
+import { bindTouchSurface, accessibilityReady, touchControlInitialized, keyControlInitialized, navigationControlInitialized, keyboardControl, nextTextSeq, inFlightTextSeq, queuedTextPayloads, ackTimeoutId, focusKeyboardCapture, sendControlPayload, sendAndroidKey, sendSequencedTextPayload, resetTextControlState, flushNextQueuedTextPayload, handleControlAck, hasClipboardWriteApi, hasClipboardReadApi, showManualClipboardFallback, writeClipboardFromAndroid, readClipboardForAndroid, getNormalizedCoords, unbindTouchSurface, destroyTouchControl, setupTouchControl, documentKeydownHandler, keyboardListeners, createEventInterceptor, interceptKeyboardControl, destroyKeyControl, setupKeyControl, setupNavigationControls, setupStreamQualityControls, setupSystemControls, documentCopyHandler, destroyClipboardSync, setupClipboardSync, sendAutoFitDisplay } from './controls.js';
 import { socket, usbSocket, usbPerfPollId, selectedTransport, lastUsbFrameUrl, activeUsbCodec, forceUsbJpegFallback, usbVideoDecoder, usbVideoDecoderConfigured, usbVideoConfig, usbH264SawKeyframe, shouldAutoReconnect, statusDetailMessage, reconnectAttempts, MAX_RECONNECT_ATTEMPTS, reconnectTimeoutId, isReconnecting, reconnectCloseInProgress, initialTransport, sampleUsbPerfStatus, startUsbPerfPolling, stopUsbPerfPolling, isSocketActive, isMirrorConnectionActive, disconnectMirrorFromButton, setTransport, setupTransportControls, loadStreamQualityStatus, setStreamQualityMode, connectSignaling, handleSignalingMessage, connectMirror, usbSessionUrl, connectUsbSession, handleUsbTextMessage, hasUsbH264Support, preferredUsbCodec, handleUsbVideoConfig, reconnectUsbAsJpeg, closeUsbVideoDecoder, normalizeArrayBuffer, decodeUsbH264Packet, drawDecodedUsbFrame, renderUsbFrame, handleStatusMessage, applyAndroidStatusMessage, loadFavoriteApps, launchFavoriteApp, handleConnectBtnClick, closeUsbSocket, closeSignalingSocket, disconnectCurrentTransport, triggerAutoReconnect, startReconnectSequence, showReconnectOverlayProgress, showReconnectOverlayFailed, hideReconnectOverlay, enterScreenCaptureApprovalWait, handleVisibilityChange } from './signaling.js';
+import { isAutoFitActive } from './ui.js';
 
 remoteVideo.addEventListener('loadedmetadata', updateVideoAspectRatio);
 remoteVideo.addEventListener('resize', updateVideoAspectRatio);
@@ -10,6 +11,22 @@ if (clearClipboardBtn) {
 }
 connectBtn.addEventListener('click', handleConnectBtnClick);
 document.addEventListener('visibilitychange', handleVisibilityChange);
+
+let resizeTimer = null;
+function handleViewportResize() {
+  if (!isAutoFitActive) return;
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const videoContainer = document.getElementById('videoContainer');
+    if (!videoContainer) return;
+    const rect = videoContainer.getBoundingClientRect();
+    sendAutoFitDisplay(rect.width, rect.height);
+  }, 300);
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('resize', handleViewportResize);
+}
+
 renderTransportSelection();
 setupTransportControls();
 setupStreamQualityControls();

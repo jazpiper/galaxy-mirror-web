@@ -73,6 +73,8 @@ Android Host는 화면 캡처 권한/서비스 준비 상태, 접근성 입력 �
   "payload": {
     "captureReady": false,
     "accessibilityReady": true,
+    "blackOverlayEnabled": false,
+    "overlayPermissionReady": true,
     "keepScreenAwake": false,
     "brightnessMinimizeEnabled": true,
     "brightnessWriteSettingsReady": true,
@@ -228,6 +230,48 @@ Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChan
 
 `applied=false`이면 Android Host가 이벤트를 거부했거나 접근성 적용에 실패한 것입니다. 대표 메시지는 `CONTROL_EVENT_REJECTED`, `TEXT_COMMIT_APPLIED`, `TEXT_DELETE_APPLIED`, `KEY_APPLIED`, `GESTURE_DISPATCH_REQUESTED`, `CONTROL_EVENT_EXCEPTION`입니다.
 
+### 2.6 블랙 오버레이 차단 모드 (`black_overlay`)
+Android 실물 기기의 화면을 전면 검은색 뷰(`WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`)로 차단하여 미러링 중 OLED 발열 및 픽셀 전력을 차단합니다. 실물 화면 터치 시 긴급 해제(Emergency Touch Dismiss)가 발동하여 뷰가 자동으로 닫힙니다.
+
+* **요청 예시 (DataChannel / USB WebSocket):**
+```json
+{
+  "type": "black_overlay",
+  "payload": {
+    "enabled": true
+  }
+}
+```
+
+* **HTTP API 엔드포인트 (`POST /stream/overlay`):**
+```json
+{
+  "enabled": true
+}
+```
+* **응답 예시:**
+```json
+{
+  "enabled": true,
+  "permissionReady": true
+}
+```
+
+### 2.7 동적 가상 디스플레이 리사이즈 (`resize_display`)
+Mac Viewer의 브라우저 창 비율(16:9, 16:10 등) 및 픽셀 크기 변경에 맞춰 Android VirtualDisplay 및 비디오 인코더의 가상 해상도를 동적으로 조절합니다.
+
+* **요청 예시 (DataChannel / USB WebSocket):**
+```json
+{
+  "type": "resize_display",
+  "payload": {
+    "width": 1920,
+    "height": 1080,
+    "dpi": 320
+  }
+}
+```
+
 ---
 
 ## 3. USB 직접 연결 모드 (ADB Port Forward + H.264/JPEG WebSocket)
@@ -300,10 +344,13 @@ H.264 session에서는 binary chunk보다 먼저 decoder 설정용 text frame을
     "height": 1600,
     "fps": 24,
     "bitrateBps": 3000000,
-    "keyFrameIntervalSeconds": 1
+    "keyFrameIntervalSeconds": 1,
+    "description": "0164001fffe1..."
   }
 }
 ```
+
+`description`는 선택 필드입니다. AVCC extradata(SPS/PPS를 담은 `avcC` box)를 hex 문자열로 인코딩한 값이며, Viewer는 이를 `Uint8Array`로 변환해 `VideoDecoderConfig.description`으로 전달합니다. `chunkFormat`이 `annexb`이면 SPS/PPS가 binary frame에 inline으로 들어오므로 `description` 없이도 동작합니다.
 
 ### 3.3 Android -> Browser binary frame
 
@@ -319,7 +366,9 @@ H.264 session의 각 binary frame은 16-byte `GH26` header와 encoded AVC payloa
 | `8..15` | presentation timestamp microseconds, big-endian signed Int64 |
 | `16..n` | Annex B H.264 payload |
 
-Chrome Viewer는 `VideoDecoder`와 `EncodedVideoChunk`로 payload를 디코딩하고 기존 `usbCanvas`에 그립니다. decoder queue가 밀리면 delta frame을 버리고 keyframe을 기다립니다.
+flag 규칙: codec config frame(SPS/PPS)은 `bit1=1`, `bit0=0`으로 **keyframe과 별개 packet**으로 전송됩니다(keyframe으로 표시하지 않음). Viewer는 이 codec config payload를 버퍼에 보관했다가, 이어서 도착하는 keyframe(`bit0=1`) payload 앞에 이어붙여(SPS/PPS + IDR) 하나의 `key` chunk로 디코딩합니다. 따라서 `bit0`과 `bit1`이 동시에 1인 packet은 보내지 않습니다.
+
+Chrome Viewer는 `VideoDecoder`와 `EncodedVideoChunk`로 payload를 디코딩하고 기존 `usbCanvas`에 그립니다. keyframe을 아직 보지 못한 상태의 delta frame과, decoder queue가 밀린 경우의 delta frame은 버리고 keyframe을 기다립니다.
 
 JPEG fallback session의 각 binary frame은 독립 JPEG 이미지입니다. Browser는 수신한 binary payload를 Blob으로 만들고 `createImageBitmap(blob)`으로 `usbCanvas`에 그립니다.
 

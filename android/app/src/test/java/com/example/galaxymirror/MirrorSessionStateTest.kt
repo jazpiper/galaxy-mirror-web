@@ -278,8 +278,8 @@ class MirrorSessionStateTest {
 
         val handlerStart = source.indexOf("internal fun handleUsbProjectionStopped(sessionId: Int)")
         assertTrue("session-aware USB projection stop handler should exist", handlerStart >= 0)
-        val handlerEnd = source.indexOf("internal fun markViewerActivity", handlerStart)
-        assertTrue("USB projection stop handler should appear before markViewerActivity", handlerEnd >= 0)
+        val handlerEnd = source.indexOf("internal fun consumeMediaProjectionGrant", handlerStart)
+        assertTrue("USB projection stop handler should appear before consumeMediaProjectionGrant", handlerEnd >= 0)
         val handler = source.substring(handlerStart, handlerEnd)
         assertTrue(
             "USB projection stop handler must ignore callbacks not owned by the active USB session.",
@@ -340,18 +340,20 @@ class MirrorSessionStateTest {
     }
 
     private fun readMediaProjectionServiceSource(): String {
-        val serviceCandidates = listOf(
-            Path.of("src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
-            Path.of("app/src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
+        val files = listOf(
+            "MediaProjectionService.kt",
+            "WebRtcManager.kt",
+            "ScreenCaptureManager.kt",
+            "MirrorRouting.kt"
         )
-        val routingCandidates = listOf(
-            Path.of("src/main/java/com/example/galaxymirror/MirrorRouting.kt"),
-            Path.of("app/src/main/java/com/example/galaxymirror/MirrorRouting.kt"),
-        )
-        val servicePath = serviceCandidates.firstOrNull { Files.exists(it) }
-            ?: throw IllegalStateException("Could not find MediaProjectionService.kt")
-        val routingPath = routingCandidates.firstOrNull { Files.exists(it) }
-            ?: throw IllegalStateException("Could not find MirrorRouting.kt")
-        return servicePath.toFile().readText() + "\n" + routingPath.toFile().readText()
+        return files.joinToString("\n") { filename ->
+            val candidates = listOf(
+                Path.of("src/main/java/com/example/galaxymirror/$filename"),
+                Path.of("app/src/main/java/com/example/galaxymirror/$filename")
+            )
+            val path = candidates.firstOrNull { Files.exists(it) }
+                ?: error("$filename source not found")
+            path.toFile().readText()
+        }
     }
 }

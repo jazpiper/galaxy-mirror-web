@@ -85,7 +85,12 @@ updated: 2026-07-22
   - [x] Tailscale/WebRTC와 USB 전환 반복 smoke test
   - [x] Android Host와 Mac Viewer의 연결/해제 UI를 실제 세션 상태 기준으로 정리하고, USB 모드에서 `adb forward tcp:8080 tcp:8080` 복사 안내 추가
 
-### 🚀 Milestone 4: 2차 전체 코드 리뷰 및 시스템 안정성 하드닝 (Completed)
+### 🚀 Milestone 5: 신규 고도화 및 도메인 모듈화 (Active)
+- [x] **T5.1: MediaProjectionService 도메인 모듈화**
+  - [x] 67KB 거대 코드를 `ScreenCaptureManager.kt`, `WebRtcManager.kt`, `MediaProjectionService.kt` 3개 도메인으로 분리
+  - [x] MediaProjection grant 및 USB 스트리밍/발열 정책 독립 (`ScreenCaptureManager`)
+  - [x] PeerConnectionFactory, SDP Munging, ICE Candidate 시그널링 독립 (`WebRtcManager`)
+  - [x] JVM 유닛 테스트 140개 100% 통과 및 Debug APK/Lint 검증 완료
 - [x] **T4.1: WebRTC 라이프사이클 누수 및 크래시 제거**
   - [x] cleanupWebRTCResources 스레드 격리 및 volatile 변수 가드
   - [x] C++ 네이티브 자원 100% 해제(dispose) 및 EGL 릴리즈 순서 교정
@@ -159,13 +164,26 @@ updated: 2026-07-22
 * 현재 기획된 M1~M6 마일스톤이 모두 완수되었으며, 프로젝트는 신규 기능 추가에서 **안정화 및 유지보수 모드**로 공식 전환되었습니다.
 * [x] **원격 클립보드 히스토리 뷰어**: 뷰어 사이드바에 수신된 클립보드 텍스트 히스토리를 간직하는 목록 UI 구현 완료.
 
-### 🚀 Milestone 7: 대규모 리팩토링 (Active)
+### 🚀 Milestone 7: 대규모 리팩토링 (Completed)
 - [x] **T7.1: Phase 1 - Ktor API 및 WebSocket 라우팅 계층 분리**
   - [x] `MediaProjectionService.kt` 내부의 라우팅 로직을 `MirrorRouting.kt`로 분리 완료
   - [x] 테스트 실패 원인 파악 및 `MirrorSessionStateTest.kt`의 정적 텍스트 검색 우회 수정 완료
   - [x] 모든 단위 테스트(`app:testDebugUnitTest`) 통과 확인
-- [ ] **T7.2: Phase 2 - MediaProjectionService.kt 도메인 분리**
-- [ ] **T7.3: Phase 3 - Mac Viewer 프론트엔드 ES 모듈화**
+
+### 🚀 Milestone 8: 신규 고도화 기능 구현 (Active / Proposed)
+상세 명세서: [FeatureEnhancements.md](./FeatureEnhancements.md)
+- [x] **T8.1: 📱 블랙 오버레이 모드 (P1)**
+  - [x] `BlackOverlayController.kt` 생성 (`TYPE_APPLICATION_OVERLAY` 기반 OLED 픽셀 차단 및 터치 해제)
+  - [x] Android Host `MediaProjectionService`, `MirrorRouting` (`POST /stream/overlay`), `WebRtcManager` 시그널링 연동
+  - [x] Compose UI 설정 카드 토글 및 `Settings.ACTION_MANAGE_OVERLAY_PERMISSION` 권한 이동 버튼 추가
+  - [x] Mac Viewer UI (`index.html`, `ui.js`, `controls.js`, `main.js`, `signaling.js`) 🕶️ 차단 버튼 및 `STATUS` 동기화 연동
+  - [x] `Protocols.md` 프로토콜 규격 갱신 및 JVM/JS/Lint/Assemble 100% 빌드 통과
+- [ ] **T8.2: ⌨️ macOS 전용 단축키 & 핀치 줌 지원 (P2)**
+  - [ ] `Cmd+H`, `Cmd+Delete`, `Cmd+Tab`, `Cmd+Shift+L` 키 커맨드 매핑 및 트랙패드 핀치 투 줌 2핑거 제스처 연동
+- [ ] **T8.3: 📁 드래그 앤 드롭 파일 전송 (P3)**
+  - [ ] 맥 브라우저 Drag&Drop 뷰포트 후킹, DataChannel 바이너리 핑퐁 전송 및 `/files/upload` 엔드포인트 연동
+- [ ] **T8.4: 🏗️ MediaProjectionService 도메인 모듈화 (P4)**
+  - [ ] `ScreenCaptureManager.kt` 및 `WebRtcManager.kt` 독립 분리 및 빌드/테스트 검증 완수
 
 ### 3. 화면 켜짐/밝기 최소화 확인 포인트
 * 미러링 중 화면 켜짐 유지 토글은 Android 자동 화면 꺼짐을 줄이지만, 사용자가 전원 버튼으로 잠그거나 OS가 MediaProjection을 중단하면 화면 공유 재승인이 필요합니다.
@@ -187,3 +205,6 @@ updated: 2026-07-22
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
 | [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |
+| [FeatureEnhancements.md](./FeatureEnhancements.md) | 신규 고도화 기능 상세 명세 및 로드맵 |
+| [AGENTS.md](./AGENTS.md) | 프로젝트 에이전트 가이드 |
+| [Archive/OptimizationSessionHistory.md](./Archive/OptimizationSessionHistory.md) | 이전 센티널 세션 이력 아카이브 |

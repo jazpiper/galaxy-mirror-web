@@ -61,8 +61,11 @@ updated: 2026-07-21
   - [x] 물리 하드웨어 키(볼륨, 잠금) 제어 주입
   - [x] 브라우저 내 스크린샷 및 미디어 레코더 녹화 기능 구현
   - [x] 코드 리뷰 후속 하드닝: HTTP origin 클립보드 fallback, 볼륨 AudioManager 라우팅, MediaProjection privacy-first 재승인 정책 반영
-
-*※ 2026-07-21 업데이트: 오디오 스트리밍 기능은 최종 제외되었으며, 초기 기획된 전체 마일스톤이 달성되어 프로젝트는 안정화/유지보수 모드로 전환되었습니다.*
+- [ ] **M8: 신규 고도화 기능 구현 (진행 예정 / Active)**
+  - [ ] 📱 블랙 오버레이 모드 (OLED 전력/Privacy)
+  - [ ] ⌨️ macOS 전용 단축키 & 핀치 투 줌
+  - [ ] 📁 드래그 앤 드롭 파일 전송
+  - [ ] 🏗️ MediaProjectionService 도메인 모듈화
 
 ---
 
@@ -76,6 +79,9 @@ updated: 2026-07-21
 | [Protocols.md](./Protocols.md) | Specification | `Active` | 1:1 WebSocket 시그널링 및 WebRTC DataChannel 데이터 규격 |
 | [Coordinates.md](./Coordinates.md) | Specification | `Active` | 뷰포트 대비 디바이스 터치 좌표 변환 및 제스처 주입 공식 명세 |
 | [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | Report | `Active` | 라이프사이클 분리, Android 14+ 팝업 제거, H.264 하드웨어 가속, GC Jank 방지 분석 보고서 |
+| [FeatureEnhancements.md](./FeatureEnhancements.md) | Specification | `Active` | 신규 고도화 기능 상세 명세서 및 이행 로드맵 |
+| [AGENTS.md](./AGENTS.md) | Guide | `Active` | 프로젝트 특화 아키텍처 제약 및 개발 규범 가이드 |
+| [Archive/OptimizationSessionHistory.md](./Archive/OptimizationSessionHistory.md) | Archive | `Active` | 이전 오케스트레이션 세션 및 성능 최적화 수립 이력 |
 
 ---
 
@@ -88,3 +94,6 @@ updated: 2026-07-21
 | [Protocols.md](./Protocols.md) | 시그널링 및 제어 메시지 규격 명세 |
 | [Coordinates.md](./Coordinates.md) | 터치 좌표 변환 및 제스처 스트로크 공식 명세 |
 | [PerformanceOptimizationReport.md](./PerformanceOptimizationReport.md) | 성능 분석 및 고도화 보고서 |
+| [FeatureEnhancements.md](./FeatureEnhancements.md) | 신규 고도화 기능 상세 명세 및 로드맵 |
+| [AGENTS.md](./AGENTS.md) | 프로젝트 에이전트 개발 가이드 |
+| [OptimizationSessionHistory.md](./Archive/OptimizationSessionHistory.md) | 이전 세션 최적화 통합 아카이브 |

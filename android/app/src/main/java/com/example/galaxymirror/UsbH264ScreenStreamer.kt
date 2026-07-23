@@ -137,6 +137,27 @@ class UsbH264ScreenStreamer(
         }
     }
 
+    fun changeResolution(newWidth: Int, newHeight: Int, targetDpi: Int = 160) {
+        val clampedWidth = (newWidth.coerceIn(480, 2560) / 2) * 2
+        val clampedHeight = (newHeight.coerceIn(480, 2560) / 2) * 2
+        val calculatedDpi = if (targetDpi != 320) targetDpi else 160
+        synchronized(stateLock) {
+            if (!running || stopping) return
+            try {
+                virtualDisplay?.resize(clampedWidth, clampedHeight, calculatedDpi)
+                try {
+                    val params = android.os.Bundle().apply {
+                        putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
+                    }
+                    encoder?.setParameters(params)
+                } catch (_: Exception) {}
+                Log.d(TAG, "UsbH264ScreenStreamer VirtualDisplay DeX Resized to ${clampedWidth}x${clampedHeight} @ ${calculatedDpi}dpi")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to resize UsbH264ScreenStreamer VirtualDisplay: ${e.message}", e)
+            }
+        }
+    }
+
     fun stop() {
         releaseResources(stopProjection = true)
     }
@@ -189,7 +210,9 @@ class UsbH264ScreenStreamer(
                             onChunk = onChunk,
                         )
                     } else {
-                        codec.releaseOutputBuffer(outputIndex, false)
+                        try {
+                            codec.releaseOutputBuffer(outputIndex, false)
+                        } catch (ignored: Exception) {}
                     }
                 }
                 outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
@@ -216,7 +239,7 @@ class UsbH264ScreenStreamer(
             val packet =
                 UsbH264Packet.encode(
                     presentationTimeUs = bufferInfo.presentationTimeUs,
-                    isKeyFrame = isKeyFrame || isCodecConfig,
+                    isKeyFrame = isKeyFrame && !isCodecConfig,
                     isCodecConfig = isCodecConfig,
                     payload = encoded,
                 )
@@ -230,7 +253,11 @@ class UsbH264ScreenStreamer(
             perfMonitor.recordEncodeFailure()
             Log.e(TAG, "Unable to emit USB H.264 frame.", e)
         } finally {
-            codec.releaseOutputBuffer(outputIndex, false)
+            try {
+                codec.releaseOutputBuffer(outputIndex, false)
+            } catch (ignored: Exception) {
+                // Ignore releaseOutputBuffer exceptions during stop/teardown
+            }
         }
     }
 

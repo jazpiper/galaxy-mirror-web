@@ -39,24 +39,24 @@ object UsbStreamProfilePolicy {
                     tier = tier,
                     width = 360,
                     height = 800,
-                    fps = if (emergencyFps) 3 else 4,
-                    jpegQuality = 50,
+                    fps = if (emergencyFps) 6 else 12,
+                    jpegQuality = 65,
                 )
             UsbStreamProfileTier.BALANCED ->
                 UsbStreamProfile(
                     tier = tier,
                     width = 540,
                     height = 1200,
-                    fps = 8,
-                    jpegQuality = 60,
+                    fps = 18,
+                    jpegQuality = 75,
                 )
             UsbStreamProfileTier.CLEAR ->
                 UsbStreamProfile(
                     tier = tier,
                     width = 720,
                     height = 1600,
-                    fps = 10,
-                    jpegQuality = 68,
+                    fps = 24,
+                    jpegQuality = 85,
                 )
         }
 }

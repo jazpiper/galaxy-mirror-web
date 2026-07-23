@@ -1,4 +1,4 @@
-import { remoteVideo, keyboardSink, connectBtn, wsIndicator, wsStatus, rtcStatus, streamStatusLabel, rtcLatencyItem, controlStatus, accessibilityStatus, favoriteAppsList, statusDetail, logBox, uploadUsage, downloadUsage, rtcLatency, usbCanvas, connectionPlaceholder, usbCanvasCtx, getUsbCanvasContext, usbFrame, transportTailscaleBtn, transportUsbBtn, qualityMode, qualityEffective, qualityNetwork, qualityNetworkItem, usbCoolingStatusItem, usbCoolingStatus, toolsPanel, qualityAutoBtn, qualityDataSaverBtn, qualityStandardBtn, qualityHighBtn, navRecentsBtn, navHomeBtn, navBackBtn, clipboardHistory, MAX_CLIPBOARD_HISTORY, updateVideoAspectRatio, streamQualityButtons, logQueue, logFrameRequested, flushLogs, log, showStatusDetail, formatMegabytes, lastUploadUsageText, lastDownloadUsageText, updateDataUsageDisplay, resetDataUsageStats, formatBitrate, formatBytesPerSecond, renderStreamQualityStatus, renderUsbCoolingStatus, hideUsbCoolingStatus, setHidden, renderTransportSelection, updateConnectButtonState, showConnectionPlaceholder, hideConnectionPlaceholder, resetConnectionStatus, renderFavoriteApps, renderClipboardHistory, clearClipboardBtn, handleClearClipboardBtnClick, addClipboardToHistory, clearRemoteVideoFrame, clearUsbFrame, showGlowToast } from './ui.js';
+import { remoteVideo, keyboardSink, connectBtn, wsIndicator, wsStatus, rtcStatus, streamStatusLabel, rtcLatencyItem, controlStatus, accessibilityStatus, favoriteAppsList, statusDetail, logBox, uploadUsage, downloadUsage, rtcLatency, usbCanvas, connectionPlaceholder, usbCanvasCtx, getUsbCanvasContext, usbFrame, transportTailscaleBtn, transportUsbBtn, qualityMode, qualityEffective, qualityNetwork, qualityNetworkItem, usbCoolingStatusItem, usbCoolingStatus, toolsPanel, qualityAutoBtn, qualityDataSaverBtn, qualityStandardBtn, qualityHighBtn, navRecentsBtn, navHomeBtn, navBackBtn, clipboardHistory, MAX_CLIPBOARD_HISTORY, updateVideoAspectRatio, streamQualityButtons, logQueue, logFrameRequested, flushLogs, log, showStatusDetail, formatMegabytes, lastUploadUsageText, lastDownloadUsageText, updateDataUsageDisplay, resetDataUsageStats, formatBitrate, formatBytesPerSecond, renderStreamQualityStatus, renderUsbCoolingStatus, hideUsbCoolingStatus, setHidden, renderTransportSelection, updateConnectButtonState, showConnectionPlaceholder, hideConnectionPlaceholder, resetConnectionStatus, renderFavoriteApps, renderClipboardHistory, clearClipboardBtn, handleClearClipboardBtnClick, addClipboardToHistory, clearRemoteVideoFrame, clearUsbFrame, showGlowToast, btnBlackOverlay, isBlackOverlayActive, updateBlackOverlayStatus, btnAutoFit, isAutoFitActive, updateAutoFitStatus } from './ui.js';
 import { peerConnection, dataChannel, remoteDescriptionSet, pendingRemoteCandidates, dataUsagePollId, lastNetworkBytes, accumulatedNetworkBytes, rtcConfig, resetNetworkBytes, extractNetworkBytes, sampleWebRtcStats, startDataUsagePolling, stopDataUsagePolling, setupWebRTC, addRemoteCandidate, flushPendingRemoteCandidates, setupDataChannelHandlers, cleanupPeerConnection } from './webrtc.js';
 import { socket, usbSocket, usbPerfPollId, selectedTransport, lastUsbFrameUrl, activeUsbCodec, forceUsbJpegFallback, usbVideoDecoder, usbVideoDecoderConfigured, usbVideoConfig, usbH264SawKeyframe, shouldAutoReconnect, statusDetailMessage, reconnectAttempts, MAX_RECONNECT_ATTEMPTS, reconnectTimeoutId, isReconnecting, reconnectCloseInProgress, initialTransport, sampleUsbPerfStatus, startUsbPerfPolling, stopUsbPerfPolling, isSocketActive, isMirrorConnectionActive, disconnectMirrorFromButton, setTransport, setupTransportControls, loadStreamQualityStatus, setStreamQualityMode, connectSignaling, handleSignalingMessage, connectMirror, usbSessionUrl, connectUsbSession, handleUsbTextMessage, hasUsbH264Support, preferredUsbCodec, handleUsbVideoConfig, reconnectUsbAsJpeg, closeUsbVideoDecoder, normalizeArrayBuffer, decodeUsbH264Packet, drawDecodedUsbFrame, renderUsbFrame, handleStatusMessage, applyAndroidStatusMessage, loadFavoriteApps, launchFavoriteApp, handleConnectBtnClick, closeUsbSocket, closeSignalingSocket, disconnectCurrentTransport, triggerAutoReconnect, startReconnectSequence, showReconnectOverlayProgress, showReconnectOverlayFailed, hideReconnectOverlay, enterScreenCaptureApprovalWait, handleVisibilityChange } from './signaling.js';
 
@@ -583,9 +583,76 @@ export function setupStreamQualityControls() {
     });
   });
 }
+export function sendBlackOverlayToggle(enabled) {
+  const targetEnabled = typeof enabled === 'boolean' ? enabled : !isBlackOverlayActive;
+  const payload = {
+    type: 'black_overlay',
+    payload: { enabled: targetEnabled }
+  };
+  if (sendControlPayload(payload)) {
+    log(`블랙 오버레이 요청 전송: ${targetEnabled ? 'ON' : 'OFF'}`);
+  }
+}
+export function sendAutoFitDisplay(width, height) {
+  const payload = {
+    type: 'resize_display',
+    payload: {
+      width: Math.round(width || 1920),
+      height: Math.round(height || 1080)
+    }
+  };
+  if (sendControlPayload(payload)) {
+    log(`창 맞춤 가상 해상도 전송: ${width}x${height}`);
+  }
+}
+export function toggleAutoFitMode(enabled) {
+  const targetEnabled = typeof enabled === 'boolean' ? enabled : !isAutoFitActive;
+  updateAutoFitStatus(targetEnabled);
+  const videoContainer = document.getElementById('videoContainer');
+  const usbCanvas = document.getElementById('usbCanvas');
+  const remoteVideo = document.getElementById('remoteVideo');
+  if (!videoContainer) return;
+
+  if (targetEnabled) {
+    videoContainer.style.aspectRatio = 'unset';
+    videoContainer.style.width = '100%';
+    videoContainer.style.height = '100%';
+    videoContainer.style.maxWidth = '100%';
+    if (usbCanvas) {
+      usbCanvas.style.width = '100%';
+      usbCanvas.style.height = '100%';
+      usbCanvas.style.objectFit = 'fill';
+    }
+    if (remoteVideo) {
+      remoteVideo.style.width = '100%';
+      remoteVideo.style.height = '100%';
+      remoteVideo.style.objectFit = 'fill';
+    }
+    const rect = videoContainer.getBoundingClientRect();
+    sendAutoFitDisplay(rect.width, rect.height);
+    showGlowToast("창 맞춤 미러링이 활성화되었습니다.");
+  } else {
+    videoContainer.style.aspectRatio = '9 / 19.5';
+    videoContainer.style.width = 'auto';
+    videoContainer.style.height = '100%';
+    videoContainer.style.maxWidth = 'calc(100% - 64px)';
+    if (usbCanvas) {
+      usbCanvas.style.objectFit = 'contain';
+    }
+    if (remoteVideo) {
+      remoteVideo.style.objectFit = 'contain';
+    }
+    sendAutoFitDisplay(1080, 2400);
+    showGlowToast("기본 비율 미러링으로 복원되었습니다.");
+  }
+}
 export function setupSystemControls() {
   const powerBtn = document.getElementById('powerBtn');
   if (powerBtn) powerBtn.addEventListener('click', () => sendAndroidKey(26));
+  const overlayBtn = document.getElementById('btn-black-overlay');
+  if (overlayBtn) overlayBtn.addEventListener('click', () => sendBlackOverlayToggle());
+  const autoFitBtn = document.getElementById('btn-auto-fit');
+  if (autoFitBtn) autoFitBtn.addEventListener('click', () => toggleAutoFitMode());
 }
 export let documentCopyHandler = null;
 export function _set_documentCopyHandler(val) { documentCopyHandler = val; }
@@ -659,6 +726,9 @@ if (typeof globalThis !== 'undefined') globalThis.setupKeyControl = setupKeyCont
 if (typeof globalThis !== 'undefined') globalThis.setupNavigationControls = setupNavigationControls;
 if (typeof globalThis !== 'undefined') globalThis.setupStreamQualityControls = setupStreamQualityControls;
 if (typeof globalThis !== 'undefined') globalThis.setupSystemControls = setupSystemControls;
+if (typeof globalThis !== 'undefined') globalThis.sendBlackOverlayToggle = sendBlackOverlayToggle;
+if (typeof globalThis !== 'undefined') globalThis.sendAutoFitDisplay = sendAutoFitDisplay;
+if (typeof globalThis !== 'undefined') globalThis.toggleAutoFitMode = toggleAutoFitMode;
 if (typeof globalThis !== 'undefined') globalThis.documentCopyHandler = documentCopyHandler;
 if (typeof globalThis !== 'undefined') globalThis.destroyClipboardSync = destroyClipboardSync;
 if (typeof globalThis !== 'undefined') globalThis.setupClipboardSync = setupClipboardSync;

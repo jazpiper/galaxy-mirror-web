@@ -2,7 +2,7 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # 📝 Android Mirror Web Development Log
@@ -11,7 +11,38 @@ updated: 2026-07-22
 
 ---
 
+### 2026-07-23
+
+- **모듈화 리팩토링 병렬 코드 리뷰 및 회귀 수정**
+  - `MediaProjectionService` 분해 + 뷰어 JS 모듈화 리팩토링 전반을 5개 영역(코어 서비스/USB 스트리밍/입력·제어·라우팅/뷰어 프론트엔드/테스트)으로 나눠 병렬 리뷰. 제기된 지적을 old 커밋·실제 코드와 대조해 오탐(채널 hang, `markViewerActivity`, codec-config 플래그)을 걸러내고 실제 회귀만 수정.
+  - **[High] 뷰어 교체 시 프로젝션 미해제**: `beginViewerSession`에서 `stopProjectionCaptureForPolicy(CleanupReason.VIEWER_REPLACED)` 호출이 누락되어 single-use MediaProjection 토큰이 해제되지 않던 회귀 복원. 진단 로그에 `"CleanupReason.VIEWER_REPLACED"` 문자열이 포함돼 `MediaProjectionServiceLifecycleRegressionTest`가 오탐으로 green이던 상태도 해소.
+  - **[High] disconnect 버튼 영구 비활성화**: `MainActivity`가 `MainNavigation`에 `isMirroringActive` 인자를 넘기지 않아(기본값 false) disconnect 버튼(`enabled = isMirroringActive`)이 항상 꺼져 있던 문제 수정.
+  - **[Med] 백그라운드 권한 요청 실패**: `repeatOnLifecycle(CREATED)` → `STARTED` 복원(비가시 상태 launch 실패 및 포그라운드 복귀 시 self-heal 불가 방지).
+  - **[Med] USB 초기 화면 왜곡**: `#usbCanvas/#usbFrame`의 CSS 기본값 `object-fit: fill` → `contain` 복원(auto-fit OFF 기본 상태 및 좌표 매핑 정합).
+  - **[Med] `isAutoFitActive` import 누락**: `signaling.js`가 stale 전역을 참조하던 문제를 `ui.js` live import 추가로 수정.
+  - **[Med] 항상 success ACK**: 접근성 서비스의 `black_overlay`/`resize_display` 핸들러가 service null·실패를 무시하던 것을 실제 결과 기반 ACK로 수정. `ControlEventValidator`에 `resize_display` 경계 검증 추가.
+  - **문서 동기화**: USB H.264 codec-config 분리 전송 + 클라이언트 SPS/PPS 병합, `USB_VIDEO_CONFIG.description`(AVCC hex) 필드를 `Protocols.md`에 반영.
+  - **판단 보류(의도적 튜닝 추정)**: `AdaptiveStreamQuality` idle 클램프 5fps/350k→15fps/1.5M(전 티어 ~3배 상향 튜닝의 일부), USB H.264 8Mbps 인코더 capability 미검증 → 사용자 확인 대상으로 남김.
+  - **검증**: `app:testDebugUnitTest` BUILD SUCCESSFUL, JS `viewer-keyboard`/`viewer-layout` 테스트 및 4개 모듈 `node --check` 통과.
+
+---
+
 ### 2026-07-22
+
+- **📱 블랙 오버레이 모드 (P1) 구현 완료 (FeatureEnhancements P1)**
+  - Android 실물 화면을 전면 검은색 뷰(`WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY`)로 차단하여 미러링 중 OLED 발열 및 픽셀 전력을 절감하는 블랙 오버레이 모드 구현.
+  - `BlackOverlayController.kt`: `WindowManager` 기반 전면 검은색 View 등록/해제 관리 및 화면 터치 감지 시 긴급 해제(Emergency Touch Dismiss) 파이프라인 연동.
+  - Android Host backend 연동: `MediaProjectionService`, `MirrorRouting` (`POST /stream/overlay`), `WebRtcManager` `"black_overlay"` 커맨드 및 `STATUS` JSON 프로토콜 필드 추가.
+  - Compose UI: 화면 설정 카드에 "📱 블랙 오버레이 차단 모드" 토글 및 "다른 앱 위에 그리기 권한 (`Settings.ACTION_MANAGE_OVERLAY_PERMISSION`)" 이동 버튼 연동.
+  - Mac Viewer Web UI: 사이드바 컨트롤 패널에 🕶️ 블랙 차단 원격 버튼 추가 및 Android `STATUS` 수신 시 활성화 상태(`active` 툴팁 및 스타일) 자동 동기화.
+  - 명세 문서 및 검증: `Protocols.md`, `Handoff.md`, `walkthrough.md` 갱신, JVM 유닛 테스트 140개 100% 통과, JS 유닛 테스트/구문 검사 100% 통과, Gradle `app:lintDebug` 및 `assembleDebug` 100% 빌드 성공.
+
+- **MediaProjectionService 도메인 모듈화 리팩토링 (FeatureEnhancements P4)**
+  - 67KB 규모의 거대한 단일 파일 `MediaProjectionService.kt`를 역할과 책임에 맞춰 3개 독립 클래스로 완벽히 분리.
+  - `ScreenCaptureManager.kt`: MediaProjection grant 토큰(`resultCode`, `resultData`) 소비 및 USB 화면 스트리밍/발열/성능 정책(`UsbThermalReader`, `UsbPerfMonitor`) 관리 전담.
+  - `WebRtcManager.kt`: `PeerConnectionFactory`, `PeerConnection`, `VideoCapturer`, `DataChannel` 라이프사이클 및 SDP Munging/ICE Candidate 시그널링 전담.
+  - `MediaProjectionService.kt`: Service 라이프사이클, Ktor embeddedServer 및 Notification/WakeLock 코디네이팅에 집중하도록 경량화.
+  - 검증: `./gradlew app:testDebugUnitTest`(140개 100% 통과), JS 테스트 통과, `./gradlew app:lintDebug assembleDebug` 빌드 성공 확인.
 
 - **Mac Viewer 모듈화에 따른 CI 테스트 빌드 오류 수정**
   - 모듈화 refactoring 커밋(`5cddfd6`) 이후 GitHub Actions CI에서 `viewer-keyboard.test.mjs` 실행 시 `ENOENT: viewer.js` 오류로 실패했던 문제 해결.

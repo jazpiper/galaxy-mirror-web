@@ -7,7 +7,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjection
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -16,46 +15,23 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.cio.CIO
-import io.ktor.server.application.call
 import io.ktor.server.application.install
-import io.ktor.server.request.receiveText
-import io.ktor.server.response.respondText
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.embeddedServer
 import io.ktor.server.routing.routing
-import io.ktor.server.routing.Routing
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.http.content.staticResources
 import io.ktor.server.websocket.WebSockets
-import io.ktor.server.websocket.webSocket
-import io.ktor.websocket.Frame
-import io.ktor.websocket.readText
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONObject
-import org.webrtc.*
-import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicInteger
+import org.webrtc.RtpParameters
 
 class MediaProjectionService : Service() {
 
@@ -77,7 +53,7 @@ class MediaProjectionService : Service() {
         const val RESULT_CODE_MISSING = Int.MIN_VALUE
 
         var isRunning = false
-            private set
+            internal set
         var instance: MediaProjectionService? = null
             private set
 
@@ -88,7 +64,6 @@ class MediaProjectionService : Service() {
         private const val IDLE_QUALITY_DELAY_MS = 6_000L
         internal const val MEDIA_PROJECTION_GRANT_POLL_MS = 500L
 
-        // Compiled once and reused; redactSensitiveInfo previously recompiled these on every call.
         internal val REDACT_IPV4 =
             Regex("(?<!\\d)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?!\\d)")
         internal val REDACT_MAC = Regex("(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}")
@@ -102,7 +77,7 @@ class MediaProjectionService : Service() {
     val serviceState: StateFlow<MirrorServiceState> = _serviceState.asStateFlow()
 
     var screenCapturePermissionRequired = false
-        private set
+        internal set
 
     // Service Managed States
     var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
@@ -119,13 +94,15 @@ class MediaProjectionService : Service() {
         private set
     lateinit var networkTransportDetector: NetworkTransportDetector
         private set
+    lateinit var blackOverlayController: BlackOverlayController
+        private set
     var streamQualityMode = StreamQualityMode.AUTO
         private set
     var streamQualityNetwork = StreamNetworkTransport.OTHER
-        private set
+        internal set
     var streamQualityProfile = StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER)
-        private set
-                var viewerActivityState = ViewerActivityState.ACTIVE
+        internal set
+    var viewerActivityState = ViewerActivityState.ACTIVE
         private set
     @Volatile var mirrorSessionState = MirrorSessionState()
         private set
@@ -137,256 +114,12 @@ class MediaProjectionService : Service() {
     internal var idleQualityJob: Job? = null
     internal var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
 
-    // WebRTC and Capturer cache
-                                        internal val sessionCounter = AtomicInteger(0)
+    internal val sessionCounter = java.util.concurrent.atomic.AtomicInteger(0)
     internal val sessionLock = Any()
-        
-                    
-    internal data class PendingOffer(
-        val sessionId: Int,
-        val remoteSdp: SessionDescription,
-        val sendResponse: (String) -> Unit
-    )
 
-    
-    val webRtcManager = InnerWebRtcManager()
-    val screenCaptureManager = InnerScreenCaptureManager()
-
-    inner class InnerWebRtcManager {
-@Volatile internal var peerConnectionFactory: PeerConnectionFactory? = null
-@Volatile var peerConnection: PeerConnection? = null
-@Volatile internal var videoSource: VideoSource? = null
-@Volatile internal var videoTrack: VideoTrack? = null
-@Volatile internal var videoSender: RtpSender? = null
-@Volatile internal var surfaceTextureHelper: SurfaceTextureHelper? = null
-@Volatile internal var videoCapturer: VideoCapturer? = null
-@Volatile var controlChannel: DataChannel? = null
-@Volatile internal var eglBase: EglBase? = null
-@Volatile internal var remoteDescriptionSet = false
-internal val pendingRemoteIceCandidates = mutableListOf<IceCandidate>()
-internal var videoCapturerLastWidth = 0
-internal var videoCapturerLastHeight = 0
-internal fun initializeWebRTC(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
-        if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Skipping WebRTC initialization for inactive sessionId=$sessionId.")
-            return
-        }
-
-        val readiness = ProjectionReadiness.from(
-            hasProjectionIntent = screenCaptureManager.mediaProjectionResultData != null,
-            isServiceRunning = isRunning
-        )
-        if (readiness != ProjectionReadiness.READY) {
-            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Capture not ready; deferring offer for sessionId=$sessionId.")
-            queuePendingOffer(sessionId, remoteSdp, sendResponse)
-            if (readiness == ProjectionReadiness.MISSING_PERMISSION) {
-                requestScreenCapturePermissionFromActivity("Negotiation attempted without active MediaProjection grant")
-            }
-            sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-            return
-        }
-
-        try {
-            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Initializing WebRTC for sessionId=$sessionId.")
-
-            // 1. Initialize PeerConnectionFactory if needed
-            initializePeerConnectionFactoryIfNeeded()
-
-            val iceServers = listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-            )
-            val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
-                sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            }
-            remoteDescriptionSet = false
-
-            // 2. Create PeerConnection
-            peerConnection = peerConnectionFactory?.createPeerConnection(
-                rtcConfig,
-                createPeerConnectionObserver(sessionId, sendResponse)
-            )
-
-            // 3. Setup Screen Capture pipeline (Reuses capture elements if active)
-            if (!setupScreenCapturePipeline(sessionId, sendResponse)) {
-                return
-            }
-
-            val streamNetwork = currentStreamNetworkTransport()
-            val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
-            streamQualityNetwork = streamNetwork
-            streamQualityProfile = streamProfile
-
-            // 4. Add video track to PeerConnection
-            videoSender = peerConnection?.addTrack(videoTrack, listOf("video_stream_id"))
-            applyStreamQualityProfile(streamProfile, reason = "WebRTC start")
-
-            // 5 & 6. Handle SDP Exchange
-            handleSdpExchange(sessionId, remoteSdp, sendResponse)
-
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "WebRTC initialization", e)
-            Log.e("WebRTC", "Error during WebRTC initialization: ${e.message}", e)
-        }
-    }
-internal fun cleanupWebRTCResources(stopProjectionService: Boolean, stopCapturer: Boolean) {
-        val steps = mutableListOf<CleanupStep>()
-        steps.add(CleanupStep("control channel close") { controlChannel?.close() })
-        steps.add(CleanupStep("control channel dispose") { controlChannel?.dispose() })
-
-        if (stopCapturer) {
-            steps.add(CleanupStep("video capturer stop") { videoCapturer?.stopCapture() })
-            steps.add(CleanupStep("video capturer dispose") { videoCapturer?.dispose() })
-            steps.add(CleanupStep("video track dispose") { videoTrack?.dispose() })
-            steps.add(CleanupStep("video source dispose") { videoSource?.dispose() })
-            steps.add(CleanupStep("surface texture helper dispose") { surfaceTextureHelper?.dispose() })
-        }
-
-        steps.add(CleanupStep("peer connection close") { peerConnection?.close() })
-        steps.add(CleanupStep("peer connection dispose") { peerConnection?.dispose() })
-
-        if (stopCapturer) {
-            steps.add(CleanupStep("peer connection factory dispose") { peerConnectionFactory?.dispose() })
-            steps.add(CleanupStep("egl release") { eglBase?.release() })
-        }
-
-        val failures = CleanupStepRunner.run(steps)
-        failures.forEach { failure ->
-            CrashDiagnostics.recordCaughtException(filesDir, "WebRTC cleanup ${failure.name}", failure.throwable)
-            Log.e(TAG, "Error during WebRTC cleanup step ${failure.name}", failure.throwable)
-        }
-
-        synchronized(pendingRemoteIceCandidates) {
-            pendingRemoteIceCandidates.clear()
-        }
-        controlChannel = null
-        videoSender = null
-        peerConnection = null
-        remoteDescriptionSet = false
-
-        if (stopCapturer) {
-            videoCapturer = null
-            videoTrack = null
-            videoSource = null
-            surfaceTextureHelper = null
-            peerConnectionFactory = null
-            eglBase = null
-            videoCapturerLastWidth = 0
-            videoCapturerLastHeight = 0
-        }
-
-        if (stopProjectionService) {
-            screenCaptureManager.mediaProjectionResultCode = null
-            screenCaptureManager.mediaProjectionResultData = null
-        }
-
-        Log.d("WebRTC", "WebRTC session clean up completed with ${failures.size} failures. stopCapturer=$stopCapturer")
-    }
-
-    }
-
-    inner class InnerScreenCaptureManager {
-lateinit var usbScreenStreamer: UsbScreenStreamer
-    internal fun isUsbScreenStreamerInitialized() = this::usbScreenStreamer.isInitialized
-internal var usbH264ScreenStreamer: UsbH264ScreenStreamer? = null
-lateinit var usbThermalReader: UsbThermalReader
-    internal fun isUsbThermalReaderInitialized() = this::usbThermalReader.isInitialized
-    internal val usbPerfMonitor = UsbPerfMonitor()
-internal var activeUsbProjectionSessionId = 0
-var mediaProjectionResultCode: Int? = null
-var mediaProjectionResultData: Intent? = null
-@Volatile internal var lastUsbProfile = UsbStreamProfilePolicy.resolve(StreamQualityMode.AUTO)
-@Volatile internal var lastUsbCodec = UsbVideoCodec.JPEG
-@Volatile internal var lastUsbH264Profile = UsbH264StreamProfilePolicy.resolve(StreamQualityMode.AUTO)
-internal var pendingOffer: PendingOffer? = null
-internal fun resolveCurrentUsbProfile(): UsbStreamProfile {
-        val profile =
-            UsbThermalPolicy.resolve(
-                selectedMode = streamQualityMode,
-                thermalStatus = currentUsbThermalStatus(),
-                viewerIdle = viewerActivityState == ViewerActivityState.IDLE,
-            )
-        lastUsbProfile = profile
-        return profile
-    }
-internal fun resolveCurrentUsbH264Profile(): UsbH264StreamProfile {
-        val selected = UsbH264StreamProfilePolicy.resolve(streamQualityMode)
-        val thermalStatus = currentUsbThermalStatus()
-        val tier =
-            when {
-                viewerActivityState == ViewerActivityState.IDLE -> UsbStreamProfileTier.COOL
-                thermalStatus == UsbThermalStatus.LIGHT -> minOfUsbTier(selected.tier, UsbStreamProfileTier.BALANCED)
-                thermalStatus == UsbThermalStatus.MODERATE -> UsbStreamProfileTier.COOL
-                isUsbThermalSevereOrWorse(thermalStatus) -> UsbStreamProfileTier.COOL
-                else -> selected.tier
-            }
-        val profile = UsbH264StreamProfilePolicy.resolveTier(tier)
-        lastUsbH264Profile = profile
-        return profile
-    }
-internal fun createUsbScreenStreamer(sessionId: Int): UsbScreenStreamer =
-        UsbScreenStreamer(applicationContext) {
-            handleUsbProjectionStopped(sessionId)
-        }
-internal fun createUsbH264ScreenStreamer(sessionId: Int): UsbH264ScreenStreamer =
-        UsbH264ScreenStreamer(applicationContext) {
-            handleUsbProjectionStopped(sessionId)
-        }
-internal fun prepareUsbScreenStreamerForSession(sessionId: Int) {
-        synchronized(sessionLock) {
-            activeUsbProjectionSessionId = sessionId
-        }
-        usbScreenStreamer = createUsbScreenStreamer(sessionId)
-    }
-internal fun prepareUsbH264ScreenStreamerForSession(sessionId: Int): UsbH264ScreenStreamer {
-        synchronized(sessionLock) {
-            activeUsbProjectionSessionId = sessionId
-        }
-        val streamer = createUsbH264ScreenStreamer(sessionId)
-        usbH264ScreenStreamer = streamer
-        return streamer
-    }
-internal fun clearActiveUsbProjectionSession(sessionId: Int) {
-        synchronized(sessionLock) {
-            if (activeUsbProjectionSessionId == sessionId) {
-                activeUsbProjectionSessionId = 0
-            }
-        }
-    }
-internal fun handleUsbProjectionStopped(sessionId: Int) {
-        mainHandler.post {
-            val shouldHandle =
-                synchronized(sessionLock) {
-                    activeUsbProjectionSessionId == sessionId &&
-                        (
-                            mirrorSessionState.isActive(sessionId, MirrorTransport.USB_JPEG) ||
-                                mirrorSessionState.isActive(sessionId, MirrorTransport.USB_H264)
-                        )
-                }
-            if (!shouldHandle) {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ignoring stale USB MediaProjection stop for sessionId=$sessionId.")
-                return@post
-            }
-
-            clearActiveUsbProjectionSession(sessionId)
-            mediaProjectionResultCode = null
-            mediaProjectionResultData = null
-            screenCapturePermissionRequired = true
-            isRunning = false
-            applyScreenAwakeEffectsForCurrentState()
-            updateServiceState()
-            permissionGrantChannel.trySend(Unit)
-        }
-    }
-internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
-        val resultCode = mediaProjectionResultCode
-        val resultData = mediaProjectionResultData
-        if (resultCode == null || resultData == null) return null
-        mediaProjectionResultCode = null
-        mediaProjectionResultData = null
-        return resultCode to resultData
-    }
-
-    }
+    // Domain Managers
+    val screenCaptureManager = ScreenCaptureManager(this)
+    val webRtcManager = WebRtcManager(this)
 
     inner class LocalBinder : Binder() {
         fun getService(): MediaProjectionService = this@MediaProjectionService
@@ -405,6 +138,9 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         screenBrightnessController = ScreenBrightnessController(applicationContext)
         streamQualitySettingsStore = StreamQualitySettingsStore(StreamQualitySettingsStore.SharedPreferencesStore(applicationContext))
         networkTransportDetector = NetworkTransportDetector(applicationContext)
+        blackOverlayController = BlackOverlayController(applicationContext) {
+            mainHandler.post { updateServiceState() }
+        }
         screenCaptureManager.usbThermalReader = UsbThermalReader(applicationContext)
         screenCaptureManager.usbScreenStreamer = screenCaptureManager.createUsbScreenStreamer(sessionId = 0)
         streamQualityMode = streamQualitySettingsStore.readMode()
@@ -487,13 +223,15 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (::blackOverlayController.isInitialized) {
+            blackOverlayController.hideOverlay()
+        }
         isRunning = false
         releaseWakeLock()
 
         // Stop Ktor server in a non-activity lifecycle scope
         val serverToStop = server
         if (serverToStop != null) {
-            // CIO engine stop is non-blocking, safe to call on main thread
             try {
                 serverToStop.stop(1000, 2000)
                 Log.d(TAG, "Ktor Server stopped.")
@@ -553,6 +291,8 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
             activeSessionId = activeSessionId,
             screenAwakeSettings = screenAwakeSettings,
             canWriteSystemSettings = if (::screenBrightnessController.isInitialized) screenBrightnessController.canWriteSystemSettings() else false,
+            blackOverlayEnabled = if (::blackOverlayController.isInitialized) blackOverlayController.isShowing() else false,
+            overlayPermissionReady = if (::blackOverlayController.isInitialized) blackOverlayController.canDrawOverlays() else false,
             screenCapturePermissionRequired = screenCapturePermissionRequired,
             isMirroringActive = isMirroringActive()
         )
@@ -581,15 +321,28 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         updateServiceState()
     }
 
+    fun setBlackOverlayEnabled(enabled: Boolean): Boolean {
+        if (!::blackOverlayController.isInitialized) return false
+        val success = if (enabled) {
+            blackOverlayController.showOverlay()
+        } else {
+            blackOverlayController.hideOverlay()
+        }
+        updateServiceState()
+        return success
+    }
+
     fun disconnectMirror() {
         CrashDiagnostics.recordEvent(this@MediaProjectionService, "Manual mirror disconnect requested.")
+        if (::blackOverlayController.isInitialized) {
+            blackOverlayController.hideOverlay()
+        }
         synchronized(sessionLock) {
             activeSessionId = 0
             mirrorSessionState = MirrorSessionState()
             screenCaptureManager.pendingOffer = null
             screenCaptureManager.activeUsbProjectionSessionId = 0
         }
-        // Do not stop service entirely, keep Ktor running. Just stop capturing and WebRTC session
         stopForeground(true)
         if (screenCaptureManager.isUsbScreenStreamerInitialized()) {
             screenCaptureManager.usbScreenStreamer.stop()
@@ -627,8 +380,6 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
 
     // ─── Internal Helper Methods ───────────────────────────────────────────────
 
-    
-
     internal fun refreshStreamQualityState(): StreamQualityProfile {
         val network = currentStreamNetworkTransport()
         val profile = AdaptiveStreamQuality.resolve(streamQualityMode, network, viewerActivityState)
@@ -636,10 +387,6 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         streamQualityProfile = profile
         return profile
     }
-
-    
-
-    
 
     internal fun minOfUsbTier(
         first: UsbStreamProfileTier,
@@ -686,19 +433,10 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
     internal fun redactSensitiveInfo(input: String?): String {
         if (input == null) return ""
         var redacted = input
-
-        // Redact IP addresses (IPv4)
         redacted = redacted.replace(REDACT_IPV4, "[REDACTED_IP]")
-
-        // Redact MAC addresses
         redacted = redacted.replace(REDACT_MAC, "[REDACTED_MAC]")
-
-        // Redact file paths (Android specific)
         redacted = redacted.replace(REDACT_PATH, "[REDACTED_PATH]")
-
-        // Redact Stack traces. Hide stack frames starting with "at "
         redacted = redacted.replace(REDACT_STACK_FRAME, "\t[REDACTED_STACK_FRAME]")
-
         return redacted
     }
 
@@ -729,27 +467,18 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         applyBrightnessMinimizationForCurrentState()
     }
 
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
     internal fun markViewerActivity() {
         mainHandler.post {
-            val shouldRestoreActiveQuality = viewerActivityState != ViewerActivityState.ACTIVE
+            val isStateChanged = viewerActivityState != ViewerActivityState.ACTIVE
             viewerActivityState = ViewerActivityState.ACTIVE
-            val activeProfile = refreshStreamQualityState()
-            if (shouldRestoreActiveQuality) {
-                applyStreamQualityProfile(activeProfile, reason = "viewer activity")
-            }
             idleQualityJob?.cancel()
+            
+            if (isStateChanged) {
+                val activeProfile = refreshStreamQualityState()
+                applyStreamQualityProfile(activeProfile, reason = "viewer activity")
+                updateServiceState()
+            }
+            
             idleQualityJob = serviceScope.launch {
                 delay(IDLE_QUALITY_DELAY_MS)
                 viewerActivityState = ViewerActivityState.IDLE
@@ -761,7 +490,6 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
                     "Viewer idle stream quality applied: ${idleProfile.width}x${idleProfile.height}@${idleProfile.fps}, bitrate=${idleProfile.maxBitrateBps}.",
                 )
             }
-            updateServiceState()
         }
     }
 
@@ -831,12 +559,16 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         message: String
     ): String {
         val streamQualityJsonStr = buildStreamQualityStatusString()
+        val overlayShowing = if (::blackOverlayController.isInitialized) blackOverlayController.isShowing() else false
+        val overlayReady = if (::blackOverlayController.isInitialized) blackOverlayController.canDrawOverlays() else false
         return "{\"type\":\"STATUS\",\"payload\":{" +
                 "\"captureReady\":$captureReady," +
                 "\"accessibilityReady\":$accessibilityReady," +
                 "\"keepScreenAwake\":${screenAwakeSettings.keepScreenAwakeDuringMirroring}," +
                 "\"brightnessMinimizeEnabled\":${screenAwakeSettings.minimizeBrightnessDuringMirroring}," +
                 "\"brightnessWriteSettingsReady\":${screenBrightnessController.canWriteSystemSettings()}," +
+                "\"blackOverlayEnabled\":$overlayShowing," +
+                "\"overlayPermissionReady\":$overlayReady," +
                 "\"streamQuality\":$streamQualityJsonStr," +
                 "\"message\":\"$message\"" +
                 "}}"
@@ -908,11 +640,9 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         }
     }
 
-
-
     internal suspend fun beginViewerSession(transport: MirrorTransport): Int {
         val sessionId = sessionCounter.incrementAndGet()
-        withContext(Dispatchers.Main) {
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
             val previousSessionId = synchronized(sessionLock) { mirrorSessionState.activeSessionId }
             val previousTransport = synchronized(sessionLock) { mirrorSessionState.activeTransport }
             when (previousTransport) {
@@ -957,8 +687,11 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
                 previous
             }
             if (replacingSessionId != 0) {
-                CrashDiagnostics.recordEvent(this@MediaProjectionService, "Replacing active viewer session: $replacingSessionId -> $sessionId.")
+                CrashDiagnostics.recordEvent(this@MediaProjectionService, "Replacing active viewer session: $replacingSessionId -> $sessionId with CleanupReason.VIEWER_REPLACED.")
                 Log.w("WebRTC", "Replacing active viewer session: $replacingSessionId -> $sessionId")
+                // MediaProjection grants are single-use (Android 14+): releasing the consumed
+                // token here forces the replacing viewer through the SCREEN_CAPTURE_REAUTH flow
+                // instead of silently reusing a dead grant.
                 stopProjectionCaptureForPolicy(CleanupReason.VIEWER_REPLACED)
             }
             applyScreenAwakeEffectsForCurrentState()
@@ -968,7 +701,7 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
     }
 
     internal suspend fun endViewerSession(sessionId: Int) {
-        withContext(Dispatchers.Main) {
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
             val shouldStopProjection = synchronized(sessionLock) {
                 if (isActiveSession(sessionId)) {
                     CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ending viewer session: $sessionId.")
@@ -982,7 +715,10 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
             }
 
             if (shouldStopProjection) {
-                stopProjectionCaptureForPolicy(CleanupReason.VIEWER_SOCKET_CLOSED)
+                val hasNewActiveSession = synchronized(sessionLock) { mirrorSessionState.activeSessionId != 0 }
+                if (!hasNewActiveSession) {
+                    stopProjectionCaptureForPolicy(CleanupReason.VIEWER_SOCKET_CLOSED)
+                }
                 updateServiceState()
             }
         }
@@ -995,7 +731,7 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
 
     internal fun queuePendingOffer(
         sessionId: Int,
-        remoteSdp: SessionDescription,
+        remoteSdp: org.webrtc.SessionDescription,
         sendResponse: (String) -> Unit
     ) {
         if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
@@ -1009,311 +745,9 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
         CrashDiagnostics.recordEvent(this@MediaProjectionService, "Queued offer until capture is ready for sessionId=$sessionId.")
     }
 
-    internal fun addRemoteIceCandidate(candidate: IceCandidate) {
-        synchronized(webRtcManager.pendingRemoteIceCandidates) {
-            if (!webRtcManager.remoteDescriptionSet || webRtcManager.peerConnection == null) {
-                webRtcManager.pendingRemoteIceCandidates.add(candidate)
-                Log.d("WebRTC", "Queued remote ICE candidate until remote description is set.")
-                return
-            }
-        }
-        webRtcManager.peerConnection?.addIceCandidate(candidate)
-    }
-
-    internal fun flushPendingRemoteIceCandidates() {
-        val candidates = synchronized(webRtcManager.pendingRemoteIceCandidates) {
-            webRtcManager.pendingRemoteIceCandidates.toList().also { webRtcManager.pendingRemoteIceCandidates.clear() }
-        }
-        candidates.forEach { webRtcManager.peerConnection?.addIceCandidate(it) }
-        if (candidates.isNotEmpty()) {
-            Log.d("WebRTC", "Flushed ${candidates.size} queued remote ICE candidates.")
-        }
-    }
-
     internal fun handleSignalingMessage(sessionId: Int, message: String, sendResponse: (String) -> Unit) {
-        serviceScope.launch(Dispatchers.Default) {
-            val isActive = withContext(Dispatchers.Main) {
-                isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
-            }
-            if (!isActive) {
-                Log.w("WebRTC", "Ignoring signaling message for inactive session: $sessionId")
-                return@launch
-            }
-
-            try {
-                val json = org.json.JSONObject(message)
-                val type = json.getString("type")
-
-                when (type) {
-                    "OFFER" -> {
-                        CrashDiagnostics.recordEvent(this@MediaProjectionService, "Offer received for sessionId=$sessionId.")
-                        Log.d("WebRTC", "Offer received. Creating Answer...")
-                        val sdpObj = json.getJSONObject("payload")
-                        val sdpType = SessionDescription.Type.fromCanonicalForm(sdpObj.getString("type"))
-                        val originalSdp = sdpObj.getString("sdp")
-
-                        // SDP Munging inside Dispatchers.Default
-                        val modifiedOfferSdp = preferH264Codec(originalSdp)
-                        val mungedOfferSdp = SessionDescription(sdpType, modifiedOfferSdp)
-
-                        withContext(Dispatchers.Main) {
-                            val isActiveMain = isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
-                            val readiness = ProjectionReadiness.from(
-                                hasProjectionIntent = screenCaptureManager.mediaProjectionResultData != null,
-                                isServiceRunning = isRunning
-                            )
-                            val decision = SignalingDecision.onOffer(readiness, isActiveMain)
-                            CrashDiagnostics.recordEvent(this@MediaProjectionService, "Signaling decision on OFFER: $decision.")
-
-                            when (decision) {
-                                SignalingDecision.START_NEGOTIATION -> {
-                                    webRtcManager.initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
-                                }
-                                SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
-                                    queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
-                                    requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
-                                    sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                                }
-                                SignalingDecision.QUEUE_AND_SEND_STATUS -> {
-                                    queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
-                                    sendResponse(buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                                    resumePendingOfferIfReady()
-                                }
-                                SignalingDecision.IGNORE_INACTIVE -> {
-                                    CrashDiagnostics.recordEvent(this@MediaProjectionService, "Ignoring offer for inactive sessionId=$sessionId.")
-                                }
-                            }
-                        }
-                    }
-                    "ICE_CANDIDATE" -> {
-                        CrashDiagnostics.recordEvent(this@MediaProjectionService, "ICE candidate received for sessionId=$sessionId.")
-                        val candidateObj = json.getJSONObject("payload")
-                        val candidate = IceCandidate(
-                            candidateObj.getString("sdpMid"),
-                            candidateObj.getInt("sdpMLineIndex"),
-                            candidateObj.getString("candidate")
-                        )
-                        withContext(Dispatchers.Main) {
-                            addRemoteIceCandidate(candidate)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "signaling JSON parse", e)
-                Log.e("WebRTC", "Error parsing signaling JSON: ${e.message}", e)
-            }
-        }
+        webRtcManager.handleSignalingMessage(sessionId, message, sendResponse)
     }
-
-    internal fun preferH264Codec(sdpDescription: String): String {
-        val lines = sdpDescription.split("\r\n")
-        val videoMediaLineIndex = lines.indexOfFirst { it.startsWith("m=video") }
-        if (videoMediaLineIndex == -1) return sdpDescription
-
-        val videoMediaLine = lines[videoMediaLineIndex]
-        val parts = videoMediaLine.split(" ")
-        if (parts.size < 4) return sdpDescription
-
-        val h264PayloadTypes = mutableListOf<String>()
-        for (line in lines) {
-            if (line.startsWith("a=rtpmap:") && line.contains("H264/90000", ignoreCase = true)) {
-                val partsRtpmap = line.substringAfter("a=rtpmap:").split(" ")
-                if (partsRtpmap.isNotEmpty()) {
-                    h264PayloadTypes.add(partsRtpmap[0])
-                }
-            }
-        }
-
-        if (h264PayloadTypes.isEmpty()) return sdpDescription
-
-        val proto = parts[2]
-        val otherPayloads = parts.subList(3, parts.size).filter { it !in h264PayloadTypes }
-        val newPayloadOrder = h264PayloadTypes + otherPayloads
-        val newVideoMediaLine = "${parts[0]} ${parts[1]} $proto ${newPayloadOrder.joinToString(" ")}"
-
-        val newLines = lines.toMutableList()
-        newLines[videoMediaLineIndex] = newVideoMediaLine
-        return newLines.joinToString("\r\n")
-    }
-
-    internal fun initializePeerConnectionFactoryIfNeeded() {
-        if (webRtcManager.peerConnectionFactory == null) {
-            val initOptions = PeerConnectionFactory.InitializationOptions.builder(this)
-                .createInitializationOptions()
-            PeerConnectionFactory.initialize(initOptions)
-
-            webRtcManager.eglBase = EglBase.create()
-            val eglContext = webRtcManager.eglBase!!.eglBaseContext
-
-            val factoryOptions = PeerConnectionFactory.Options()
-            val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, true)
-            val decoderFactory = DefaultVideoDecoderFactory(eglContext)
-
-            webRtcManager.peerConnectionFactory = PeerConnectionFactory.builder()
-                .setOptions(factoryOptions)
-                .setVideoEncoderFactory(encoderFactory)
-                .setVideoDecoderFactory(decoderFactory)
-                .createPeerConnectionFactory()
-
-            webRtcManager.surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglContext)
-        }
-    }
-
-    internal fun createPeerConnectionObserver(sessionId: Int, sendResponse: (String) -> Unit): PeerConnection.Observer {
-        return object : PeerConnection.Observer {
-            override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
-            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
-            override fun onIceCandidate(candidate: IceCandidate?) {
-                candidate?.let {
-                    if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                    val json = org.json.JSONObject().apply {
-                        put("type", "ICE_CANDIDATE")
-                        put("payload", org.json.JSONObject().apply {
-                            put("candidate", it.sdp)
-                            put("sdpMid", it.sdpMid)
-                            put("sdpMLineIndex", it.sdpMLineIndex)
-                        })
-                    }
-                    sendResponse(json.toString())
-                }
-            }
-            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
-            override fun onAddStream(stream: MediaStream?) {}
-            override fun onRemoveStream(stream: MediaStream?) {}
-            override fun onDataChannel(dataChannel: DataChannel?) {
-                dataChannel?.let { dc ->
-                    if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) {
-                        dc.close()
-                        return
-                    }
-                    if (!ControlEventValidator.isControlChannel(dc.label())) {
-                        Log.w("WebRTC", "Rejected DataChannel: ${dc.label()}")
-                        dc.close()
-                        return
-                    }
-                    webRtcManager.controlChannel = dc
-                    sendResponse(buildStatusMessage(message = "CONTROL_CHANNEL_ACCEPTED"))
-                    Log.d("WebRTC", "DataChannel received: ${dc.label()}")
-                    dc.registerObserver(object : DataChannel.Observer {
-                        override fun onBufferedAmountChange(previousAmount: Long) {}
-                        override fun onStateChange() {
-                            Log.d("WebRTC", "DataChannel state: ${dc.state()}")
-                        }
-                        override fun onMessage(buffer: DataChannel.Buffer) {
-                            try {
-                                if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                                val bytes = ByteArray(buffer.data.remaining())
-                                buffer.data.get(bytes)
-                                val text = String(bytes, Charsets.UTF_8)
-                                Log.d("WebRTC", "DataChannel message: $text")
-                                controlEventDispatcher.dispatch(text) { result ->
-                                    sendControlAck(dc, result)
-                                }
-                            } catch (e: Exception) {
-                                Log.e("WebRTC", "Error processing DataChannel message: ${e.message}", e)
-                            }
-                        }
-                    })
-                }
-            }
-            override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(receiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) {}
-        }
-    }
-
-    internal fun setupScreenCapturePipeline(sessionId: Int, sendResponse: (String) -> Unit): Boolean {
-        if (webRtcManager.videoCapturer == null) {
-            val projectionIntent = screenCaptureManager.mediaProjectionResultData ?: return false
-            webRtcManager.videoSource = webRtcManager.peerConnectionFactory?.createVideoSource(true)
-            webRtcManager.videoCapturer = ScreenCapturerAndroid(projectionIntent, object : MediaProjection.Callback() {
-                override fun onStop() {
-                    CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "MediaProjection stopped inside service.")
-                    handleScreenCaptureReauthorizationRequired(
-                        sessionId = sessionId,
-                        sendResponse = sendResponse,
-                        diagnosticReason = "ScreenCapturerAndroid callback",
-                        stopCapturer = true,
-                    )
-                }
-            })
-            webRtcManager.videoCapturer?.initialize(webRtcManager.surfaceTextureHelper, applicationContext, webRtcManager.videoSource?.capturerObserver)
-
-            val streamNetwork = currentStreamNetworkTransport()
-            val streamProfile = AdaptiveStreamQuality.resolve(streamQualityMode, streamNetwork, viewerActivityState)
-
-            webRtcManager.videoCapturerLastWidth = streamProfile.width
-            webRtcManager.videoCapturerLastHeight = streamProfile.height
-            try {
-                webRtcManager.videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
-            } catch (e: Exception) {
-                CrashDiagnostics.recordCaughtException(filesDir, "ScreenCapturerAndroid.startCapture", e)
-                handleScreenCaptureReauthorizationRequired(
-                    sessionId = sessionId,
-                    sendResponse = sendResponse,
-                    diagnosticReason = "ScreenCapturerAndroid.startCapture failure",
-                    stopCapturer = true,
-                )
-                return false
-            }
-            webRtcManager.videoTrack = webRtcManager.peerConnectionFactory?.createVideoTrack("video_track_id", webRtcManager.videoSource)
-        }
-        return true
-    }
-
-    internal fun handleSdpExchange(sessionId: Int, remoteSdp: SessionDescription, sendResponse: (String) -> Unit) {
-        // 5. Apply H.264 optimization to Offer SDP (SDP Munging)
-        val modifiedOfferSdp = preferH264Codec(remoteSdp.description)
-        val modifiedRemoteSdp = SessionDescription(remoteSdp.type, modifiedOfferSdp)
-
-        // 6. Set Remote Description
-        webRtcManager.peerConnection?.setRemoteDescription(object : SdpObserver {
-            override fun onCreateSuccess(desc: SessionDescription?) {}
-            override fun onSetSuccess() {
-                if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                webRtcManager.remoteDescriptionSet = true
-                flushPendingRemoteIceCandidates()
-
-                // Create local SDP Answer
-                webRtcManager.peerConnection?.createAnswer(object : SdpObserver {
-                    override fun onCreateSuccess(desc: SessionDescription?) {
-                        if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                        desc?.let {
-                            // Apply H.264 optimization to local Answer SDP (SDP Munging)
-                            val modifiedAnswerSdp = preferH264Codec(it.description)
-                            val modifiedLocalSdp = SessionDescription(it.type, modifiedAnswerSdp)
-
-                            webRtcManager.peerConnection?.setLocalDescription(object : SdpObserver {
-                                override fun onCreateSuccess(desc: SessionDescription?) {}
-                                override fun onSetSuccess() {
-                                    if (!isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)) return
-                                    Log.d("WebRTC", "SetLocalDescription success. Sending modified Answer...")
-                                    val json = org.json.JSONObject().apply {
-                                        put("type", "ANSWER")
-                                        put("payload", org.json.JSONObject().apply {
-                                            put("type", "answer")
-                                            put("sdp", modifiedLocalSdp.description)
-                                        })
-                                    }
-                                    sendResponse(json.toString())
-                                }
-                                override fun onCreateFailure(reason: String?) {}
-                                override fun onSetFailure(reason: String?) {}
-                            }, modifiedLocalSdp)
-                        }
-                    }
-                    override fun onSetSuccess() {}
-                    override fun onCreateFailure(reason: String?) {}
-                    override fun onSetFailure(reason: String?) {}
-                }, MediaConstraints())
-            }
-            override fun onCreateFailure(reason: String?) {}
-            override fun onSetFailure(reason: String?) {}
-        }, modifiedRemoteSdp)
-    }
-
-    
 
     internal fun handleScreenCaptureReauthorizationRequired(
         sessionId: Int,
@@ -1355,30 +789,6 @@ internal fun consumeMediaProjectionGrant(): Pair<Int, Intent>? {
             updateServiceState()
         }
     }
-
-    internal fun sendControlAck(channel: DataChannel, result: ControlEventResult) {
-        if (result.seq == null || channel.state() != DataChannel.State.OPEN) return
-        try {
-            channel.send(
-                DataChannel.Buffer(
-                    ByteBuffer.wrap(result.toAckJson().toByteArray(Charsets.UTF_8)),
-                    false,
-                )
-            )
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(filesDir, "control ack send", e)
-            Log.e("WebRTC", "Error sending control ACK: ${e.message}", e)
-        }
-    }
-
-    internal fun org.json.JSONObject.controlSeq(): Long? =
-        if (has("seq")) {
-            optLong("seq")
-        } else {
-            null
-        }
-
-    
 
     @Suppress("DEPRECATION")
     internal fun updateWakeLock() {
@@ -1449,6 +859,8 @@ data class MirrorServiceState(
     val activeSessionId: Int = 0,
     val screenAwakeSettings: ScreenAwakeSettings = ScreenAwakeSettings(),
     val canWriteSystemSettings: Boolean = false,
+    val blackOverlayEnabled: Boolean = false,
+    val overlayPermissionReady: Boolean = false,
     val screenCapturePermissionRequired: Boolean = false,
     val isMirroringActive: Boolean = false
 )

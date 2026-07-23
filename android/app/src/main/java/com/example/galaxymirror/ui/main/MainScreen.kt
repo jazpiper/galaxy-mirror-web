@@ -64,13 +64,17 @@ fun MainScreen(
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
   isMirroringActive: Boolean = false,
+  blackOverlayEnabled: Boolean = false,
+  overlayPermissionReady: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit = {},
   onRemoveFavoriteApp: (String) -> Unit = {},
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
   onStreamQualityModeChange: (StreamQualityMode) -> Unit = {},
+  onToggleBlackOverlay: (Boolean) -> Unit = {},
   onOpenAppInfoSettings: () -> Unit = {},
   onOpenAccessibilitySettings: () -> Unit = {},
   onOpenWriteSettings: () -> Unit = {},
+  onOpenOverlaySettings: () -> Unit = {},
   onDisconnect: () -> Unit = {},
   viewModel: MainScreenViewModel = viewModel { MainScreenViewModel(DefaultDataRepository()) },
 ) {
@@ -88,13 +92,17 @@ fun MainScreen(
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
         isMirroringActive = isMirroringActive,
+        blackOverlayEnabled = blackOverlayEnabled,
+        overlayPermissionReady = overlayPermissionReady,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
         onStreamQualityModeChange = onStreamQualityModeChange,
+        onToggleBlackOverlay = onToggleBlackOverlay,
         onOpenAppInfoSettings = onOpenAppInfoSettings,
         onOpenAccessibilitySettings = onOpenAccessibilitySettings,
         onOpenWriteSettings = onOpenWriteSettings,
+        onOpenOverlaySettings = onOpenOverlaySettings,
         onDisconnect = onDisconnect,
       )
     is MainScreenUiState.Success ->
@@ -109,13 +117,17 @@ fun MainScreen(
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
         isMirroringActive = isMirroringActive,
+        blackOverlayEnabled = blackOverlayEnabled,
+        overlayPermissionReady = overlayPermissionReady,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
         onStreamQualityModeChange = onStreamQualityModeChange,
+        onToggleBlackOverlay = onToggleBlackOverlay,
         onOpenAppInfoSettings = onOpenAppInfoSettings,
         onOpenAccessibilitySettings = onOpenAccessibilitySettings,
         onOpenWriteSettings = onOpenWriteSettings,
+        onOpenOverlaySettings = onOpenOverlaySettings,
         onDisconnect = onDisconnect,
       )
     is MainScreenUiState.Error ->
@@ -130,13 +142,17 @@ fun MainScreen(
         streamQualityNetwork = streamQualityNetwork,
         streamQualityProfile = streamQualityProfile,
         isMirroringActive = isMirroringActive,
+        blackOverlayEnabled = blackOverlayEnabled,
+        overlayPermissionReady = overlayPermissionReady,
         onAddFavoriteApp = onAddFavoriteApp,
         onRemoveFavoriteApp = onRemoveFavoriteApp,
         onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
         onStreamQualityModeChange = onStreamQualityModeChange,
+        onToggleBlackOverlay = onToggleBlackOverlay,
         onOpenAppInfoSettings = onOpenAppInfoSettings,
         onOpenAccessibilitySettings = onOpenAccessibilitySettings,
         onOpenWriteSettings = onOpenWriteSettings,
+        onOpenOverlaySettings = onOpenOverlaySettings,
         onDisconnect = onDisconnect,
         warning = "상태를 불러오지 못했습니다: ${(state as MainScreenUiState.Error).throwable.message.orEmpty()}",
       )
@@ -156,13 +172,17 @@ internal fun MirrorHomeScreen(
   streamQualityProfile: StreamQualityProfile =
     StreamQualityPolicy.resolve(StreamQualityMode.AUTO, StreamNetworkTransport.OTHER),
   isMirroringActive: Boolean = false,
+  blackOverlayEnabled: Boolean = false,
+  overlayPermissionReady: Boolean = false,
   onAddFavoriteApp: (FavoriteApp) -> Unit = {},
   onRemoveFavoriteApp: (String) -> Unit = {},
   onScreenAwakeSettingsChange: (ScreenAwakeSettings) -> Unit = {},
   onStreamQualityModeChange: (StreamQualityMode) -> Unit = {},
+  onToggleBlackOverlay: (Boolean) -> Unit = {},
   onOpenAppInfoSettings: () -> Unit = {},
   onOpenAccessibilitySettings: () -> Unit = {},
   onOpenWriteSettings: () -> Unit = {},
+  onOpenOverlaySettings: () -> Unit = {},
   onDisconnect: () -> Unit = {},
   warning: String? = null,
 ) {
@@ -223,8 +243,12 @@ internal fun MirrorHomeScreen(
     ScreenAwakeSettingsPanel(
       settings = screenAwakeSettings,
       canWriteSystemSettings = canWriteSystemSettings,
+      blackOverlayEnabled = blackOverlayEnabled,
+      overlayPermissionReady = overlayPermissionReady,
       onSettingsChange = onScreenAwakeSettingsChange,
+      onToggleBlackOverlay = onToggleBlackOverlay,
       onOpenWriteSettings = onOpenWriteSettings,
+      onOpenOverlaySettings = onOpenOverlaySettings,
     )
     StreamQualityPanel(
       selectedMode = streamQualityMode,
@@ -285,8 +309,12 @@ internal fun MirrorHomeScreen(
 private fun ScreenAwakeSettingsPanel(
   settings: ScreenAwakeSettings,
   canWriteSystemSettings: Boolean,
+  blackOverlayEnabled: Boolean = false,
+  overlayPermissionReady: Boolean = false,
   onSettingsChange: (ScreenAwakeSettings) -> Unit,
+  onToggleBlackOverlay: (Boolean) -> Unit = {},
   onOpenWriteSettings: () -> Unit,
+  onOpenOverlaySettings: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   Surface(
@@ -294,7 +322,7 @@ private fun ScreenAwakeSettingsPanel(
     shape = RoundedCornerShape(8.dp),
     color = MaterialTheme.colorScheme.surfaceContainer,
   ) {
-    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Text(
         text = MainScreenContent.screenAwakeSettingsTitle,
         style = MaterialTheme.typography.titleMedium,
@@ -316,23 +344,44 @@ private fun ScreenAwakeSettingsPanel(
           onSettingsChange(settings.copy(minimizeBrightnessDuringMirroring = it))
         },
       )
+      SettingsSwitchRow(
+        title = "📱 블랙 오버레이 차단 모드",
+        description = "미러링 시 실물 화면을 검은색으로 차단하여 OLED 발열 및 픽셀 전력을 차단합니다. (화면 터치 시 즉시 해제)",
+        checked = blackOverlayEnabled,
+        onCheckedChange = onToggleBlackOverlay,
+      )
       Text(
         text = MainScreenContent.writeSettingsRequiredHint,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
-      OutlinedButton(
-        onClick = onOpenWriteSettings,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !canWriteSystemSettings,
-      ) {
-        Text(
-          if (canWriteSystemSettings) {
-            MainScreenContent.writeSettingsAllowedLabel
-          } else {
-            MainScreenContent.writeSettingsButtonLabel
-          },
-        )
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+          onClick = onOpenWriteSettings,
+          modifier = Modifier.weight(1f),
+          enabled = !canWriteSystemSettings,
+        ) {
+          Text(
+            if (canWriteSystemSettings) {
+              MainScreenContent.writeSettingsAllowedLabel
+            } else {
+              MainScreenContent.writeSettingsButtonLabel
+            },
+          )
+        }
+        OutlinedButton(
+          onClick = onOpenOverlaySettings,
+          modifier = Modifier.weight(1f),
+          enabled = !overlayPermissionReady,
+        ) {
+          Text(
+            if (overlayPermissionReady) {
+              "그리기 권한 허용됨"
+            } else {
+              "다른 앱 위에 그리기 권한"
+            },
+          )
+        }
       }
     }
   }

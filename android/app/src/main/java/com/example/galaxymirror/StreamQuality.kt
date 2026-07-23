@@ -67,16 +67,16 @@ object StreamQualityPolicy {
           mode = StreamQualityMode.DATA_SAVER,
           width = 540,
           height = 1200,
-          fps = 12,
-          maxBitrateBps = 600_000,
+          fps = 18,
+          maxBitrateBps = 1_500_000,
         )
       StreamQualityMode.STANDARD ->
         StreamQualityProfile(
           mode = StreamQualityMode.STANDARD,
           width = 720,
           height = 1600,
-          fps = 15,
-          maxBitrateBps = 1_200_000,
+          fps = 24,
+          maxBitrateBps = 4_000_000,
         )
       StreamQualityMode.HIGH ->
         StreamQualityProfile(
@@ -84,7 +84,7 @@ object StreamQualityPolicy {
           width = 1080,
           height = 2400,
           fps = 30,
-          maxBitrateBps = 3_000_000,
+          maxBitrateBps = 8_000_000,
         )
     }
 }

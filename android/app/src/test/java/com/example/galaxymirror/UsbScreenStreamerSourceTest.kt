@@ -86,13 +86,18 @@ class UsbScreenStreamerSourceTest {
     }
 
     private fun readServiceSource(): String {
-        val candidates =
-            listOf(
-                Path.of("src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
-                Path.of("app/src/main/java/com/example/galaxymirror/MediaProjectionService.kt"),
+        val files = listOf(
+            "MediaProjectionService.kt",
+            "ScreenCaptureManager.kt"
+        )
+        return files.joinToString("\n") { filename ->
+            val candidates = listOf(
+                Path.of("src/main/java/com/example/galaxymirror/$filename"),
+                Path.of("app/src/main/java/com/example/galaxymirror/$filename")
             )
-        val path = candidates.firstOrNull { Files.exists(it) }
-            ?: error("MediaProjectionService.kt source not found")
-        return path.toFile().readText()
+            val path = candidates.firstOrNull { Files.exists(it) }
+                ?: error("$filename source not found")
+            path.toFile().readText()
+        }
     }
 }

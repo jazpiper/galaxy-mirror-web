@@ -14,7 +14,7 @@ class UsbThermalPolicyTest {
             )
 
         assertEquals(UsbStreamProfileTier.CLEAR, profile.tier)
-        assertEquals(10, profile.fps)
+        assertEquals(24, profile.fps)
     }
 
     @Test
@@ -39,7 +39,7 @@ class UsbThermalPolicyTest {
             )
 
         assertEquals(UsbStreamProfileTier.COOL, profile.tier)
-        assertEquals(4, profile.fps)
+        assertEquals(12, profile.fps)
     }
 
     @Test
@@ -52,7 +52,7 @@ class UsbThermalPolicyTest {
             )
 
         assertEquals(UsbStreamProfileTier.COOL, profile.tier)
-        assertEquals(3, profile.fps)
+        assertEquals(6, profile.fps)
     }
 
     @Test

@@ -46,18 +46,18 @@ class StreamQualityPolicyTest {
 
     assertEquals(540, dataSaver.width)
     assertEquals(1200, dataSaver.height)
-    assertEquals(12, dataSaver.fps)
-    assertEquals(600_000, dataSaver.maxBitrateBps)
+    assertEquals(18, dataSaver.fps)
+    assertEquals(1_500_000, dataSaver.maxBitrateBps)
 
     assertEquals(720, standard.width)
     assertEquals(1600, standard.height)
-    assertEquals(15, standard.fps)
-    assertEquals(1_200_000, standard.maxBitrateBps)
+    assertEquals(24, standard.fps)
+    assertEquals(4_000_000, standard.maxBitrateBps)
 
     assertEquals(1080, high.width)
     assertEquals(2400, high.height)
     assertEquals(30, high.fps)
-    assertEquals(3_000_000, high.maxBitrateBps)
+    assertEquals(8_000_000, high.maxBitrateBps)
   }
 
   @Test
@@ -85,7 +85,7 @@ class StreamQualityPolicyTest {
     assertEquals(1080, json.getInt("width"))
     assertEquals(2400, json.getInt("height"))
     assertEquals(30, json.getInt("fps"))
-    assertEquals(3_000_000, json.getInt("maxBitrateBps"))
+    assertEquals(8_000_000, json.getInt("maxBitrateBps"))
     assertEquals("자동", json.getString("selectedLabel"))
     assertEquals("고화질", json.getString("effectiveLabel"))
   }

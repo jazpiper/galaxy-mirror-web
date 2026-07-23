@@ -91,6 +91,23 @@ fun Routing.setupMirrorRouting(service: MediaProjectionService) {
             call.respondText(statusJson, ContentType.Application.Json)
         }
 
+        post("/stream/overlay") {
+            val bodyText = call.receiveText()
+            val enabled = try {
+                JSONObject(bodyText).optBoolean("enabled", false)
+            } catch (e: Exception) {
+                false
+            }
+
+            val success = withContext(Dispatchers.Main) {
+                setBlackOverlayEnabled(enabled)
+            }
+            val statusJson = withContext(Dispatchers.Main) {
+                buildStatusMessage(message = if (success) "OVERLAY_UPDATED" else "OVERLAY_FAILED")
+            }
+            call.respondText(statusJson, ContentType.Application.Json)
+        }
+
         post("/apps/launch") {
             val packageName = FavoriteAppsCodec.parseLaunchPackageName(call.receiveText())
             if (packageName == null) {

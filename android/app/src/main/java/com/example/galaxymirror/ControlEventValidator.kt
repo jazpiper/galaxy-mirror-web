@@ -25,8 +25,19 @@ object ControlEventValidator {
             "key" -> allowedKeyCodes.contains(json.optInt("keyCode", Int.MIN_VALUE))
             "text" -> isTextValid(json)
             "clipboard" -> isClipboardValid(json)
+            "black_overlay" -> true
+            "resize_display" -> isResizeValid(json)
             else -> false
         }
+    }
+
+    private fun isResizeValid(json: JSONObject): Boolean {
+        // width/height are optional (handler applies phone-native defaults) and clamped downstream;
+        // only reject values that are explicitly present but non-positive.
+        val payload = if (json.has("payload")) json.optJSONObject("payload") ?: json else json
+        val widthOk = !payload.has("width") || payload.optInt("width", -1) > 0
+        val heightOk = !payload.has("height") || payload.optInt("height", -1) > 0
+        return widthOk && heightOk
     }
 
     private fun hasNormalizedCoordinates(json: JSONObject, vararg keys: String): Boolean {

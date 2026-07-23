@@ -228,6 +228,33 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                     val applied = setClipboardText(text)
                     resultCallback(ControlEventResult(seq, type, applied, "CLIPBOARD_APPLIED"))
                 }
+                "black_overlay" -> {
+                    val enabled = if (json.has("payload")) {
+                        json.getJSONObject("payload").optBoolean("enabled", false)
+                    } else {
+                        json.optBoolean("enabled", false)
+                    }
+                    val service = MediaProjectionService.instance
+                    val applied = service?.setBlackOverlayEnabled(enabled) ?: false
+                    resultCallback(
+                        ControlEventResult(seq, type, applied, if (applied) "OVERLAY_UPDATED" else "OVERLAY_UPDATE_FAILED")
+                    )
+                }
+                "resize_display" -> {
+                    val payload = if (json.has("payload")) json.getJSONObject("payload") else json
+                    val reqWidth = payload.optInt("width", 1080)
+                    val reqHeight = payload.optInt("height", 1920)
+                    val webRtcManager = MediaProjectionService.instance?.webRtcManager
+                    val applied = if (webRtcManager != null) {
+                        webRtcManager.changeVirtualDisplaySize(reqWidth, reqHeight)
+                        true
+                    } else {
+                        false
+                    }
+                    resultCallback(
+                        ControlEventResult(seq, type, applied, if (applied) "DISPLAY_RESIZED" else "DISPLAY_RESIZE_FAILED")
+                    )
+                }
                 else -> {
                     Log.w(TAG, "Unknown control event type: $type")
                     resultCallback(ControlEventResult(seq, type, false, "UNKNOWN_CONTROL_EVENT"))

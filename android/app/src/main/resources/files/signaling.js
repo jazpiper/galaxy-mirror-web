@@ -1,4 +1,4 @@
-import { remoteVideo, keyboardSink, connectBtn, wsIndicator, wsStatus, rtcStatus, streamStatusLabel, rtcLatencyItem, controlStatus, accessibilityStatus, favoriteAppsList, statusDetail, logBox, uploadUsage, downloadUsage, rtcLatency, usbCanvas, connectionPlaceholder, usbCanvasCtx, getUsbCanvasContext, usbFrame, transportTailscaleBtn, transportUsbBtn, qualityMode, qualityEffective, qualityNetwork, qualityNetworkItem, usbCoolingStatusItem, usbCoolingStatus, toolsPanel, qualityAutoBtn, qualityDataSaverBtn, qualityStandardBtn, qualityHighBtn, navRecentsBtn, navHomeBtn, navBackBtn, clipboardHistory, MAX_CLIPBOARD_HISTORY, updateVideoAspectRatio, streamQualityButtons, logQueue, logFrameRequested, flushLogs, log, showStatusDetail, formatMegabytes, lastUploadUsageText, lastDownloadUsageText, updateDataUsageDisplay, resetDataUsageStats, formatBitrate, formatBytesPerSecond, renderStreamQualityStatus, renderUsbCoolingStatus, hideUsbCoolingStatus, setHidden, renderTransportSelection, updateConnectButtonState, showConnectionPlaceholder, hideConnectionPlaceholder, resetConnectionStatus, renderFavoriteApps, renderClipboardHistory, clearClipboardBtn, handleClearClipboardBtnClick, addClipboardToHistory, clearRemoteVideoFrame, clearUsbFrame, showGlowToast } from './ui.js';
+import { remoteVideo, keyboardSink, connectBtn, wsIndicator, wsStatus, rtcStatus, streamStatusLabel, rtcLatencyItem, controlStatus, accessibilityStatus, favoriteAppsList, statusDetail, logBox, uploadUsage, downloadUsage, rtcLatency, usbCanvas, connectionPlaceholder, usbCanvasCtx, getUsbCanvasContext, usbFrame, transportTailscaleBtn, transportUsbBtn, qualityMode, qualityEffective, qualityNetwork, qualityNetworkItem, usbCoolingStatusItem, usbCoolingStatus, toolsPanel, qualityAutoBtn, qualityDataSaverBtn, qualityStandardBtn, qualityHighBtn, navRecentsBtn, navHomeBtn, navBackBtn, clipboardHistory, MAX_CLIPBOARD_HISTORY, updateVideoAspectRatio, streamQualityButtons, logQueue, logFrameRequested, flushLogs, log, showStatusDetail, formatMegabytes, lastUploadUsageText, lastDownloadUsageText, updateDataUsageDisplay, resetDataUsageStats, formatBitrate, formatBytesPerSecond, renderStreamQualityStatus, renderUsbCoolingStatus, hideUsbCoolingStatus, setHidden, renderTransportSelection, updateConnectButtonState, showConnectionPlaceholder, hideConnectionPlaceholder, resetConnectionStatus, renderFavoriteApps, renderClipboardHistory, clearClipboardBtn, handleClearClipboardBtnClick, addClipboardToHistory, clearRemoteVideoFrame, clearUsbFrame, showGlowToast, updateBlackOverlayStatus, isAutoFitActive } from './ui.js';
 import { peerConnection, dataChannel, remoteDescriptionSet, pendingRemoteCandidates, dataUsagePollId, lastNetworkBytes, accumulatedNetworkBytes, rtcConfig, resetNetworkBytes, extractNetworkBytes, sampleWebRtcStats, startDataUsagePolling, stopDataUsagePolling, setupWebRTC, addRemoteCandidate, flushPendingRemoteCandidates, setupDataChannelHandlers, cleanupPeerConnection } from './webrtc.js';
 import { bindTouchSurface, accessibilityReady, touchControlInitialized, keyControlInitialized, navigationControlInitialized, keyboardControl, nextTextSeq, inFlightTextSeq, queuedTextPayloads, ackTimeoutId, focusKeyboardCapture, sendControlPayload, sendAndroidKey, sendSequencedTextPayload, resetTextControlState, flushNextQueuedTextPayload, handleControlAck, hasClipboardWriteApi, hasClipboardReadApi, showManualClipboardFallback, writeClipboardFromAndroid, readClipboardForAndroid, getNormalizedCoords, unbindTouchSurface, destroyTouchControl, setupTouchControl, documentKeydownHandler, keyboardListeners, createEventInterceptor, interceptKeyboardControl, destroyKeyControl, setupKeyControl, setupNavigationControls, setupStreamQualityControls, setupSystemControls, documentCopyHandler, destroyClipboardSync, setupClipboardSync, _set_accessibilityReady } from './controls.js';
 
@@ -400,6 +400,14 @@ export async function handleUsbVideoConfig(payload) {
     codedHeight,
     optimizeForLatency: true
   };
+  if (payload.description) {
+    try {
+      const match = payload.description.match(/.{1,2}/g);
+      if (match) {
+        config.description = new Uint8Array(match.map(byte => parseInt(byte, 16)));
+      }
+    } catch (ignored) {}
+  }
   if (String(payload.chunkFormat || '').toLowerCase() === 'annexb') {
     config.avc = {
       format: 'annexb'
@@ -468,6 +476,7 @@ export function closeUsbVideoDecoder() {
   usbVideoDecoderConfigured = false;
   usbVideoConfig = null;
   usbH264SawKeyframe = false;
+  pendingSpsPpsBuffer = null;
   if (!usbVideoDecoder) return;
   const decoder = usbVideoDecoder;
   usbVideoDecoder = null;
@@ -484,48 +493,68 @@ export function normalizeArrayBuffer(data) {
   }
   return null;
 }
+let pendingSpsPpsBuffer = null;
 export function decodeUsbH264Packet(data) {
   if (selectedTransport !== 'usb') return;
-  const buffer = normalizeArrayBuffer(data);
-  if (!buffer || buffer.byteLength < 16) {
-    log('USB H.264 packet ignored: invalid packet');
+  const rawBuffer = normalizeArrayBuffer(data);
+  if (!rawBuffer || rawBuffer.byteLength < 16) {
     return;
   }
-  accumulatedNetworkBytes.received += buffer.byteLength;
+  accumulatedNetworkBytes.received += rawBuffer.byteLength;
   updateDataUsageDisplay();
-  const bytes = new Uint8Array(buffer);
+
+  const bytes = new Uint8Array(rawBuffer);
   if (bytes[0] !== 0x47 || bytes[1] !== 0x48 || bytes[2] !== 0x32 || bytes[3] !== 0x36) {
-    log('USB H.264 packet ignored: invalid GH26 header');
+    return;
+  }
+  if (!hasUsbH264Support()) {
     return;
   }
   if (!usbVideoDecoder || !usbVideoDecoderConfigured) {
     log('USB H.264 packet ignored: decoder is not configured');
     return;
   }
+
   const flags = bytes[6];
   const keyframe = (flags & 0x01) !== 0;
   const codecConfig = (flags & 0x02) !== 0;
-  const timestamp = Number(new DataView(buffer).getBigInt64(8, false));
-  if (!keyframe && !codecConfig && !usbH264SawKeyframe) {
-    log('USB H.264 delta packet ignored while waiting for keyframe');
+  const timestamp = Number(new DataView(rawBuffer).getBigInt64(8, false));
+  const payload = bytes.slice(16);
+
+  if (codecConfig && !keyframe) {
+    pendingSpsPpsBuffer = payload;
     return;
   }
-  if (!keyframe && !codecConfig && usbVideoDecoder.decodeQueueSize > 2) {
+
+  if (!keyframe && !usbH264SawKeyframe) {
     return;
   }
+
+  if (!keyframe && usbVideoDecoder.decodeQueueSize > 2) {
+    return;
+  }
+
   try {
+    let chunkData = payload;
+    if (keyframe && pendingSpsPpsBuffer) {
+      const merged = new Uint8Array(pendingSpsPpsBuffer.length + payload.length);
+      merged.set(pendingSpsPpsBuffer, 0);
+      merged.set(payload, pendingSpsPpsBuffer.length);
+      chunkData = merged;
+      pendingSpsPpsBuffer = null;
+    }
+
     const chunk = new window.EncodedVideoChunk({
-      type: keyframe || codecConfig ? 'key' : 'delta',
+      type: keyframe ? 'key' : 'delta',
       timestamp,
-      data: buffer.slice(16)
+      data: chunkData
     });
     usbVideoDecoder.decode(chunk);
     if (keyframe) {
       usbH264SawKeyframe = true;
     }
   } catch (error) {
-    log(`USB H.264 decode enqueue failed: ${error.message}`);
-    reconnectUsbAsJpeg('USB H.264 패킷 처리 실패로 JPEG로 전환합니다.');
+    log(`USB H.264 decode chunk skipped: ${error.message}`);
   }
 }
 export function drawDecodedUsbFrame(frame) {
@@ -545,7 +574,7 @@ export function drawDecodedUsbFrame(frame) {
         usbCanvas.width = width;
         usbCanvas.height = height;
         const videoContainer = document.getElementById('videoContainer');
-        if (videoContainer) {
+        if (videoContainer && !isAutoFitActive) {
           videoContainer.style.aspectRatio = `${width} / ${height}`;
         }
       }
@@ -631,6 +660,9 @@ export function handleStatusMessage(payload) {
   if (typeof payload.accessibilityReady === 'boolean') {
     _set_accessibilityReady(payload.accessibilityReady);
     accessibilityStatus.innerText = accessibilityReady ? "활성화" : "권한 필요";
+  }
+  if (typeof payload.blackOverlayEnabled === 'boolean') {
+    updateBlackOverlayStatus(payload.blackOverlayEnabled);
   }
   if (typeof payload.brightnessWriteSettingsReady === 'boolean' && payload.brightnessMinimizeEnabled) {
     const message = payload.brightnessWriteSettingsReady ? '밝기 최소화 준비됨' : '밝기 최소화 권한 필요';

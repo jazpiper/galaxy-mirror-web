@@ -32,24 +32,24 @@ object UsbH264StreamProfilePolicy {
                     tier = tier,
                     width = 540,
                     height = 1200,
-                    fps = 18,
-                    bitrateBps = 1_800_000,
+                    fps = 24,
+                    bitrateBps = 2_500_000,
                 )
             UsbStreamProfileTier.BALANCED ->
                 UsbH264StreamProfile(
                     tier = tier,
                     width = 720,
                     height = 1600,
-                    fps = 24,
-                    bitrateBps = 3_000_000,
+                    fps = 30,
+                    bitrateBps = 4_500_000,
                 )
             UsbStreamProfileTier.CLEAR ->
                 UsbH264StreamProfile(
                     tier = tier,
                     width = 1080,
                     height = 2400,
-                    fps = 30,
-                    bitrateBps = 6_000_000,
+                    fps = 60,
+                    bitrateBps = 8_000_000,
                 )
         }
 }

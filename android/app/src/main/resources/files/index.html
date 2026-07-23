@@ -447,6 +447,10 @@
         #usbCanvas, #usbFrame {
             width: 100%;
             height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            /* Default matches auto-fit OFF (phone aspect ratio); toggleAutoFitMode() switches to
+               'fill' at runtime. Coordinate mapping (docs/Coordinates.md) assumes 'contain'. */
             object-fit: contain;
             display: block;
         }
@@ -953,9 +957,11 @@
                 </div>
 
                 <aside class="control-rail" aria-label="Android remote controls">
-                    <!-- 하드웨어 전원 원격 제어 -->
+                    <!-- 하드웨어 전원 및 블랙 오버레이 원격 제어 -->
                     <div class="rail-group system-controls" aria-label="Android system controls">
                         <button class="system-btn" id="powerBtn" type="button" title="화면 잠금" aria-label="화면 잠금">🔒</button>
+                        <button class="system-btn" id="btn-black-overlay" type="button" title="블랙 오버레이 차단" aria-label="블랙 오버레이 차단">🕶️</button>
+                        <button class="system-btn" id="btn-auto-fit" type="button" title="창 크기 맞춤 미러링" aria-label="창 크기 맞춤 미러링">🖥️</button>
                     </div>
 
                     <div class="rail-group nav-controls" aria-label="Android navigation controls">

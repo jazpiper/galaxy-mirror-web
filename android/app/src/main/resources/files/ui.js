@@ -105,6 +105,40 @@ export function _get_qualityStandardBtn() { return qualityStandardBtn; }
 export const qualityHighBtn = document.getElementById('qualityHighBtn');
 export function _set_qualityHighBtn(val) { qualityHighBtn = val; }
 export function _get_qualityHighBtn() { return qualityHighBtn; }
+export const btnBlackOverlay = document.getElementById('btn-black-overlay');
+export function _set_btnBlackOverlay(val) { btnBlackOverlay = val; }
+export function _get_btnBlackOverlay() { return btnBlackOverlay; }
+export let isBlackOverlayActive = false;
+export function _set_isBlackOverlayActive(val) { isBlackOverlayActive = val; }
+export function _get_isBlackOverlayActive() { return isBlackOverlayActive; }
+export function updateBlackOverlayStatus(enabled) {
+  isBlackOverlayActive = Boolean(enabled);
+  if (!btnBlackOverlay) return;
+  if (isBlackOverlayActive) {
+    btnBlackOverlay.classList.add('active');
+    btnBlackOverlay.title = "블랙 오버레이 차단 ON (클릭 시 해제)";
+  } else {
+    btnBlackOverlay.classList.remove('active');
+    btnBlackOverlay.title = "블랙 오버레이 차단 OFF (클릭 시 차단)";
+  }
+}
+export const btnAutoFit = document.getElementById('btn-auto-fit');
+export function _set_btnAutoFit(val) { btnAutoFit = val; }
+export function _get_btnAutoFit() { return btnAutoFit; }
+export let isAutoFitActive = false;
+export function _set_isAutoFitActive(val) { isAutoFitActive = val; }
+export function _get_isAutoFitActive() { return isAutoFitActive; }
+export function updateAutoFitStatus(enabled) {
+  isAutoFitActive = Boolean(enabled);
+  if (!btnAutoFit) return;
+  if (isAutoFitActive) {
+    btnAutoFit.classList.add('active');
+    btnAutoFit.title = "창 맞춤 미러링 ON (클릭 시 폰 비율 고정)";
+  } else {
+    btnAutoFit.classList.remove('active');
+    btnAutoFit.title = "창 맞춤 미러링 OFF (클릭 시 창 맞춤 전환)";
+  }
+}
 export const navRecentsBtn = document.getElementById('navRecentsBtn');
 export function _set_navRecentsBtn(val) { navRecentsBtn = val; }
 export function _get_navRecentsBtn() { return navRecentsBtn; }
@@ -467,6 +501,12 @@ if (typeof globalThis !== 'undefined') globalThis.updateDataUsageDisplay = updat
 if (typeof globalThis !== 'undefined') globalThis.resetDataUsageStats = resetDataUsageStats;
 if (typeof globalThis !== 'undefined') globalThis.formatBitrate = formatBitrate;
 if (typeof globalThis !== 'undefined') globalThis.formatBytesPerSecond = formatBytesPerSecond;
+if (typeof globalThis !== 'undefined') globalThis.updateBlackOverlayStatus = updateBlackOverlayStatus;
+if (typeof globalThis !== 'undefined') globalThis.isBlackOverlayActive = isBlackOverlayActive;
+if (typeof globalThis !== 'undefined') globalThis.btnBlackOverlay = btnBlackOverlay;
+if (typeof globalThis !== 'undefined') globalThis.updateAutoFitStatus = updateAutoFitStatus;
+if (typeof globalThis !== 'undefined') globalThis.isAutoFitActive = isAutoFitActive;
+if (typeof globalThis !== 'undefined') globalThis.btnAutoFit = btnAutoFit;
 if (typeof globalThis !== 'undefined') globalThis.renderStreamQualityStatus = renderStreamQualityStatus;
 if (typeof globalThis !== 'undefined') globalThis.renderUsbCoolingStatus = renderUsbCoolingStatus;
 if (typeof globalThis !== 'undefined') globalThis.hideUsbCoolingStatus = hideUsbCoolingStatus;

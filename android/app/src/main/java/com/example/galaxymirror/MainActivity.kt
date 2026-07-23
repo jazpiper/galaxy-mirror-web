@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
@@ -131,13 +132,17 @@ class MainActivity : ComponentActivity() {
                         streamQualityNetwork = serviceState.streamQualityNetwork,
                         streamQualityProfile = serviceState.streamQualityProfile,
                         isMirroringActive = serviceState.isMirroringActive,
+                        blackOverlayEnabled = serviceState.blackOverlayEnabled,
+                        overlayPermissionReady = serviceState.overlayPermissionReady,
                         onAddFavoriteApp = ::addFavoriteApp,
                         onRemoveFavoriteApp = ::removeFavoriteApp,
                         onScreenAwakeSettingsChange = ::updateScreenAwakeSettings,
                         onStreamQualityModeChange = ::updateStreamQualityMode,
+                        onToggleBlackOverlay = ::toggleBlackOverlay,
                         onOpenAppInfoSettings = ::openAppInfoSettings,
                         onOpenAccessibilitySettings = ::openAccessibilitySettings,
                         onOpenWriteSettings = ::openWriteSettings,
+                        onOpenOverlaySettings = ::openOverlaySettings,
                         onDisconnect = ::disconnectMirror,
                     )
                 }
@@ -148,9 +153,6 @@ class MainActivity : ComponentActivity() {
         val startServiceIntent = Intent(this, MediaProjectionService::class.java)
         startService(startServiceIntent)
         bindService(startServiceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-
-        // Request screen capture permission immediately
-        requestScreenCapturePermission()
     }
 
     override fun onResume() {
@@ -229,21 +231,29 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { requestScreenCapturePermission() }
             return
         }
-        if (screenCaptureRequestInFlight) {
-            CrashDiagnostics.recordEvent(this, "Screen capture permission request already in flight.")
-            return
-        }
-        if (mediaProjectionService?.serviceState?.value?.isMirroringActive == true) {
-            Log.d(TAG, "Screen capture request skipped: Mirroring already active.")
-            return
-        }
-        CrashDiagnostics.recordEvent(this, "Requesting screen capture permission.")
-        mediaProjectionManager?.createScreenCaptureIntent()?.let { intent ->
+        val manager = mediaProjectionManager ?: return
+        try {
             screenCaptureRequestInFlight = true
-            screenCaptureLauncher.launch(intent)
-        } ?: run {
+            CrashDiagnostics.recordEvent(this, "Launching screen capture permission intent.")
+            screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+        } catch (e: Exception) {
             screenCaptureRequestInFlight = false
-            CrashDiagnostics.recordEvent(this, "MediaProjectionManager unavailable.")
+            CrashDiagnostics.recordCaughtException(filesDir, "requestScreenCapturePermission", e)
+            Log.e(TAG, "Error launching screen capture permission intent: ${e.message}", e)
+        }
+    }
+
+    private fun toggleBlackOverlay(enabled: Boolean) {
+        mediaProjectionService?.setBlackOverlayEnabled(enabled)
+    }
+
+    private fun openOverlaySettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
         }
     }
 
