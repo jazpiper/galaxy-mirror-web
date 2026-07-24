@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.IntentCompat
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -178,13 +179,7 @@ class MediaProjectionService : Service() {
 
         val resultCode = intent?.getIntExtra("resultCode", RESULT_CODE_MISSING) ?: RESULT_CODE_MISSING
         keepScreenAwake = intent?.getBooleanExtra(EXTRA_KEEP_SCREEN_AWAKE, false) ?: false
-        val resultData =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent?.getParcelableExtra("resultData", Intent::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent?.getParcelableExtra("resultData")
-            }
+        val resultData = intent?.let { IntentCompat.getParcelableExtra(it, "resultData", Intent::class.java) }
 
         if (isValidStartData(resultCode, resultData != null)) {
             // Enter foreground state since we are starting projection capture
