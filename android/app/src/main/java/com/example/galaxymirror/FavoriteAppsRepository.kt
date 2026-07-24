@@ -53,6 +53,9 @@ class FavoriteAppsRepository(
     }
 
     fun launchFavorite(packageName: String): Boolean {
+        if (getFavorites().none { it.packageName == packageName }) {
+            return false
+        }
         return try {
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
