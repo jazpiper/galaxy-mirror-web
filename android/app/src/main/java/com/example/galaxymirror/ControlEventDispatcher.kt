@@ -12,51 +12,63 @@ class ControlEventDispatcher(
         sendAck: (ControlEventResult) -> Unit,
     ) {
         try {
-            val json = JSONObject(rawText)
-            val seq = json.controlSeq()
-            if (!ControlEventValidator.isValid(json)) {
-                sendSequencedAck(
-                    ControlEventResult(
-                        seq = seq,
-                        type = json.optString("type", "unknown"),
-                        applied = false,
-                        message = "CONTROL_EVENT_REJECTED",
-                    ),
-                    sendAck,
-                )
-                return
-            }
-
-            onViewerActivity()
-            val service = serviceProvider()
-            if (service == null) {
-                sendSequencedAck(
-                    ControlEventResult(
-                        seq = seq,
-                        type = json.optString("type", "unknown"),
-                        applied = false,
-                        message = "ACCESSIBILITY_SERVICE_NOT_READY",
-                    ),
-                    sendAck,
-                )
-                return
-            }
-
-            service.handleControlEvent(json) { result ->
-                sendSequencedAck(result, sendAck)
-            }
+            processEvent(JSONObject(rawText), sendAck)
         } catch (e: Exception) {
-            logDispatchFailure(e)
-            sendSequencedAck(
-                ControlEventResult(
-                    seq = null,
-                    type = "unknown",
-                    applied = false,
-                    message = "CONTROL_EVENT_EXCEPTION",
-                ),
-                sendAck,
-            )
+            handleException(e, sendAck)
         }
+    }
+
+    private fun processEvent(
+        json: JSONObject,
+        sendAck: (ControlEventResult) -> Unit,
+    ) {
+        if (!ControlEventValidator.isValid(json)) {
+            rejectEvent(json, "CONTROL_EVENT_REJECTED", sendAck)
+            return
+        }
+
+        onViewerActivity()
+        val service = serviceProvider()
+        if (service == null) {
+            rejectEvent(json, "ACCESSIBILITY_SERVICE_NOT_READY", sendAck)
+            return
+        }
+
+        service.handleControlEvent(json) { result ->
+            sendSequencedAck(result, sendAck)
+        }
+    }
+
+    private fun rejectEvent(
+        json: JSONObject,
+        message: String,
+        sendAck: (ControlEventResult) -> Unit,
+    ) {
+        sendSequencedAck(
+            ControlEventResult(
+                seq = json.controlSeq(),
+                type = json.optString("type", "unknown"),
+                applied = false,
+                message = message,
+            ),
+            sendAck,
+        )
+    }
+
+    private fun handleException(
+        e: Exception,
+        sendAck: (ControlEventResult) -> Unit,
+    ) {
+        logDispatchFailure(e)
+        sendSequencedAck(
+            ControlEventResult(
+                seq = null,
+                type = "unknown",
+                applied = false,
+                message = "CONTROL_EVENT_EXCEPTION",
+            ),
+            sendAck,
+        )
     }
 
     private fun sendSequencedAck(
