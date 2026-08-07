@@ -48,16 +48,9 @@ export function extractNetworkBytes(stats) {
   stats.forEach(report => {
     if (report.type === 'transport' && report.selectedCandidatePairId) {
       selectedCandidatePairId = report.selectedCandidatePairId;
-    }
-  });
-  if (selectedCandidatePairId && typeof stats.get === 'function') {
-    selectedPair = stats.get(selectedCandidatePairId);
-  }
-  stats.forEach(report => {
-    if (!selectedPair && report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
+    } else if (!selectedPair && report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
       selectedPair = report;
-    }
-    if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number') {
+    } else if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number') {
       fallbackReceived += report.bytesReceived;
     } else if (report.type === 'outbound-rtp' && typeof report.bytesSent === 'number') {
       fallbackSent += report.bytesSent;
@@ -66,6 +59,12 @@ export function extractNetworkBytes(stats) {
       fallbackReceived += report.bytesReceived || 0;
     }
   });
+  if (selectedCandidatePairId && typeof stats.get === 'function') {
+    const explicitPair = stats.get(selectedCandidatePairId);
+    if (explicitPair) {
+      selectedPair = explicitPair;
+    }
+  }
   if (selectedPair) {
     return {
       sent: selectedPair.bytesSent || 0,
