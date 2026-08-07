@@ -624,14 +624,14 @@ class MediaProjectionService : Service() {
     internal fun startKtorServer() {
         serviceScope.launch(Dispatchers.IO) {
             try {
-                Log.d("KtorServer", "Starting Ktor Server on 0.0.0.0:8080...")
-                server = embeddedServer(CIO, port = 8080, host = "0.0.0.0") {
+                Log.d("KtorServer", "Starting Ktor Server on 127.0.0.1:8080...")
+                server = embeddedServer(CIO, port = 8080, host = "127.0.0.1") {
                     install(WebSockets)
                     routing {
                         setupMirrorRouting(this@MediaProjectionService)
                     }
                 }.start(wait = false)
-                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Ktor server started on 0.0.0.0:8080.")
+                CrashDiagnostics.recordEvent(this@MediaProjectionService.filesDir, "Ktor server started on 127.0.0.1:8080.")
                 Log.d("KtorServer", "Ktor Server successfully started.")
             } catch (e: Exception) {
                 CrashDiagnostics.recordCaughtException(this@MediaProjectionService.filesDir, "Ktor server startup", e)
