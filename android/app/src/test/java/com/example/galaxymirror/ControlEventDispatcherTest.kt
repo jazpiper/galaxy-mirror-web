@@ -3,6 +3,7 @@ package com.example.galaxymirror
 import junit.framework.TestCase.assertEquals
 import org.json.JSONObject
 import org.junit.Test
+import org.junit.Assert.assertNull
 
 class ControlEventDispatcherTest {
     @Test
@@ -134,6 +135,42 @@ class ControlEventDispatcherTest {
         }
 
         assertEquals(0, results.size)
+    }
+
+    @Test
+    fun controlSeq_parsesValidSequence() {
+        val json = JSONObject("""{"seq":123}""")
+        assertEquals(123L, json.controlSeq())
+    }
+
+    @Test
+    fun controlSeq_returnsNullWhenMissing() {
+        val json = JSONObject("""{"type":"tap"}""")
+        assertNull(json.controlSeq())
+    }
+
+    @Test
+    fun controlSeq_returnsZeroForJsonNull() {
+        val json = JSONObject("""{"seq":null}""")
+        assertEquals(0L, json.controlSeq())
+    }
+
+    @Test
+    fun controlSeq_parsesNumericString() {
+        val json = JSONObject("""{"seq":"456"}""")
+        assertEquals(456L, json.controlSeq())
+    }
+
+    @Test
+    fun controlSeq_returnsZeroForNonNumericString() {
+        val json = JSONObject("""{"seq":"not-a-number"}""")
+        assertEquals(0L, json.controlSeq())
+    }
+
+    @Test
+    fun controlSeq_parsesDoubleByTruncating() {
+        val json = JSONObject("""{"seq":123.45}""")
+        assertEquals(123L, json.controlSeq())
     }
 
     private class FakeApplier : ControlEventApplier {
