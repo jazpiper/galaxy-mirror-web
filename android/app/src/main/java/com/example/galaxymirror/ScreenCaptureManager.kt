@@ -1,6 +1,5 @@
 package com.example.galaxymirror
 
-import android.content.Context
 import android.content.Intent
 import org.webrtc.SessionDescription
 
