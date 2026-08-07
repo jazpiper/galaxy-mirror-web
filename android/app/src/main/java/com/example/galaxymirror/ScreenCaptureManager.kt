@@ -44,7 +44,7 @@ class ScreenCaptureManager(
             service.viewerActivityState == ViewerActivityState.IDLE -> UsbStreamProfileTier.COOL
             thermalStatus == UsbThermalStatus.LIGHT -> service.minOfUsbTier(selected.tier, UsbStreamProfileTier.BALANCED)
             thermalStatus == UsbThermalStatus.MODERATE -> UsbStreamProfileTier.COOL
-            service.isUsbThermalSevereOrWorse(thermalStatus) -> service.minOfUsbTier(selected.tier, UsbStreamProfileTier.COOL)
+            thermalStatus.isSevereOrWorse() -> service.minOfUsbTier(selected.tier, UsbStreamProfileTier.COOL)
             else -> selected.tier
         }
         val profile = UsbH264StreamProfilePolicy.resolveTier(tier)

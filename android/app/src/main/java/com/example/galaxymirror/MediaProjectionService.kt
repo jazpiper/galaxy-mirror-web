@@ -394,18 +394,6 @@ class MediaProjectionService : Service() {
     ): UsbStreamProfileTier =
         if (first.ordinal <= second.ordinal) first else second
 
-    internal fun isUsbThermalSevereOrWorse(status: UsbThermalStatus): Boolean =
-        when (status) {
-            UsbThermalStatus.SEVERE,
-            UsbThermalStatus.CRITICAL,
-            UsbThermalStatus.EMERGENCY,
-            UsbThermalStatus.SHUTDOWN -> true
-            UsbThermalStatus.UNKNOWN,
-            UsbThermalStatus.NORMAL,
-            UsbThermalStatus.LIGHT,
-            UsbThermalStatus.MODERATE -> false
-        }
-
     internal fun currentUsbThermalStatus(): UsbThermalStatus =
         if (screenCaptureManager.isUsbThermalReaderInitialized()) {
             screenCaptureManager.usbThermalReader.readStatus()
