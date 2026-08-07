@@ -445,18 +445,14 @@ class WebRtcManager(
                         }
                     }
                     "black_overlay" -> {
-                        val enabled = if (json.has("payload")) {
-                            json.getJSONObject("payload").optBoolean("enabled", false)
-                        } else {
-                            json.optBoolean("enabled", false)
-                        }
+                        val enabled = json.getPayloadOrSelf().optBoolean("enabled", false)
                         withContext(Dispatchers.Main) {
                             service.setBlackOverlayEnabled(enabled)
                         }
                         sendResponse(service.buildStatusMessage(message = "OVERLAY_UPDATED"))
                     }
                     "resize_display" -> {
-                        val payload = if (json.has("payload")) json.getJSONObject("payload") else json
+                        val payload = json.getPayloadOrSelf()
                         val reqWidth = payload.optInt("width", 1080)
                         val reqHeight = payload.optInt("height", 1920)
                         withContext(Dispatchers.Main) {
