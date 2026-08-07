@@ -45,15 +45,12 @@ export function extractNetworkBytes(stats) {
   let selectedPair = null;
   let fallbackSent = 0;
   let fallbackReceived = 0;
+
   stats.forEach(report => {
     if (report.type === 'transport' && report.selectedCandidatePairId) {
       selectedCandidatePairId = report.selectedCandidatePairId;
     }
-  });
-  if (selectedCandidatePairId && typeof stats.get === 'function') {
-    selectedPair = stats.get(selectedCandidatePairId);
-  }
-  stats.forEach(report => {
+
     if (!selectedPair && report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
       selectedPair = report;
     }
@@ -66,6 +63,14 @@ export function extractNetworkBytes(stats) {
       fallbackReceived += report.bytesReceived || 0;
     }
   });
+
+  if (selectedCandidatePairId && typeof stats.get === 'function') {
+    const pairFromTransport = stats.get(selectedCandidatePairId);
+    if (pairFromTransport) {
+      selectedPair = pairFromTransport;
+    }
+  }
+
   if (selectedPair) {
     return {
       sent: selectedPair.bytesSent || 0,
