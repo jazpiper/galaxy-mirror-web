@@ -136,6 +136,35 @@ class ControlEventDispatcherTest {
         assertEquals(0, results.size)
     }
 
+
+    @Test
+    fun exceptionDuringDispatchSendsExceptionAck() {
+        val results = mutableListOf<ControlEventResult>()
+        val dispatcher =
+            ControlEventDispatcher(
+                serviceProvider = {
+                    object : ControlEventApplier {
+                        override fun handleControlEvent(
+                            json: JSONObject,
+                            resultCallback: (ControlEventResult) -> Unit,
+                        ) {
+                            throw RuntimeException("Test Exception")
+                        }
+                    }
+                },
+                onViewerActivity = {},
+            )
+
+        dispatcher.dispatch("{\"type\":\"key\",\"keyCode\":4,\"seq\":15}") { result ->
+            results.add(result)
+        }
+
+        assertEquals(1, results.size)
+        assertEquals(15L, results.first().seq)
+        assertEquals(false, results.first().applied)
+        assertEquals("CONTROL_EVENT_EXCEPTION", results.first().message)
+    }
+
     private class FakeApplier : ControlEventApplier {
         var recordedJson: JSONObject? = null
 
