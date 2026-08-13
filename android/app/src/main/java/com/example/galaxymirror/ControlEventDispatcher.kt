@@ -11,8 +11,8 @@ class ControlEventDispatcher(
         rawText: String,
         sendAck: (ControlEventResult) -> Unit,
     ) {
-        try {
-            processEvent(JSONObject(rawText), sendAck)
+            val json = JSONObject(rawText)
+            processEvent(json, sendAck)
         } catch (e: Exception) {
             handleException(e, sendAck)
         }
