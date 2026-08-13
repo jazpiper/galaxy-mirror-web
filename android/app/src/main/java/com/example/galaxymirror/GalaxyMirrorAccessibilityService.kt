@@ -229,11 +229,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                     resultCallback(ControlEventResult(seq, type, applied, "CLIPBOARD_APPLIED"))
                 }
                 "black_overlay" -> {
-                    val enabled = if (json.has("payload")) {
-                        json.getJSONObject("payload").optBoolean("enabled", false)
-                    } else {
-                        json.optBoolean("enabled", false)
-                    }
+                    val enabled = json.getPayloadOrSelf().optBoolean("enabled", false)
                     val service = MediaProjectionService.instance
                     val applied = service?.setBlackOverlayEnabled(enabled) ?: false
                     resultCallback(
@@ -241,7 +237,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                     )
                 }
                 "resize_display" -> {
-                    val payload = if (json.has("payload")) json.getJSONObject("payload") else json
+                    val payload = json.getPayloadOrSelf()
                     val reqWidth = payload.optInt("width", 1080)
                     val reqHeight = payload.optInt("height", 1920)
                     val webRtcManager = MediaProjectionService.instance?.webRtcManager
