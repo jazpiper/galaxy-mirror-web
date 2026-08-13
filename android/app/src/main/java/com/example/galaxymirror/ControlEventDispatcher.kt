@@ -21,6 +21,7 @@ class ControlEventDispatcher(
         } catch (e: Exception) {
             handleException(e, seq, type, sendAck)
         }
+        }
     }
 
     private fun processEvent(

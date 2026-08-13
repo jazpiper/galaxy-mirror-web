@@ -138,6 +138,34 @@ class ControlEventDispatcherTest {
     }
 
     @Test
+    fun exceptionDuringDispatchSendsExceptionAck() {
+        val results = mutableListOf<ControlEventResult>()
+        val dispatcher =
+            ControlEventDispatcher(
+                serviceProvider = {
+                    object : ControlEventApplier {
+                        override fun handleControlEvent(
+                            json: JSONObject,
+                            resultCallback: (ControlEventResult) -> Unit,
+                        ) {
+                            throw RuntimeException("Test Exception")
+                        }
+                    }
+                },
+                onViewerActivity = {},
+            )
+
+        dispatcher.dispatch("{\"type\":\"key\",\"keyCode\":4,\"seq\":15}") { result ->
+            results.add(result)
+        }
+
+        assertEquals(1, results.size)
+        assertEquals(15L, results.first().seq)
+        assertEquals(false, results.first().applied)
+        assertEquals("CONTROL_EVENT_EXCEPTION", results.first().message)
+    }
+
+    @Test
     fun controlSeq_parsesValidSequence() {
         val json = JSONObject("""{"seq":123}""")
         assertEquals(123L, json.controlSeq())
@@ -171,6 +199,7 @@ class ControlEventDispatcherTest {
     fun controlSeq_parsesDoubleByTruncating() {
         val json = JSONObject("""{"seq":123.45}""")
         assertEquals(123L, json.controlSeq())
+    }
     }
 
     private class FakeApplier : ControlEventApplier {
