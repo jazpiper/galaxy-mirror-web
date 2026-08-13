@@ -34,7 +34,7 @@ object UsbThermalPolicy {
     }
 }
 
-private fun UsbThermalStatus.isSevereOrWorse(): Boolean =
+fun UsbThermalStatus.isSevereOrWorse(): Boolean =
     when (this) {
         UsbThermalStatus.SEVERE,
         UsbThermalStatus.CRITICAL,

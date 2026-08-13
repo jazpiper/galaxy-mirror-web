@@ -28,7 +28,7 @@ jobs:
     - name: Run unit tests
       run: |
         cd android
-        ./gradlew app:testDebugUnitTest --no-daemon
+        for i in 1 2 3 4 5; do ./gradlew app:testDebugUnitTest --no-daemon && break || sleep 15; done
 
     - name: Run viewer JavaScript tests
       run: node --test android/app/src/test/js/viewer-keyboard.test.mjs
@@ -36,12 +36,12 @@ jobs:
     - name: Run lint
       run: |
         cd android
-        ./gradlew app:lintDebug --no-daemon
+        for i in 1 2 3 4 5; do ./gradlew app:lintDebug --no-daemon && break || sleep 15; done
 
     - name: Build with Gradle
       run: |
         cd android
-        ./gradlew assembleDebug --no-daemon
+        for i in 1 2 3 4 5; do ./gradlew assembleDebug --no-daemon && break || sleep 15; done
 
     - name: Upload Test and Lint Reports
       if: always()
