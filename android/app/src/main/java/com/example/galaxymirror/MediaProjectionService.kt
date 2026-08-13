@@ -431,6 +431,7 @@ class MediaProjectionService : Service() {
         }
 
     internal fun redactSensitiveInfo(input: String?): String {
+        // Regexes are pre-compiled in companion object for performance
         if (input == null) return ""
         var redacted = input
         redacted = redacted.replace(REDACT_IPV4, "[REDACTED_IP]")
