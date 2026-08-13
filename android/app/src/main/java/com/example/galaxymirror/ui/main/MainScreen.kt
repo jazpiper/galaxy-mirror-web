@@ -184,7 +184,7 @@ internal fun MirrorHomeScreen(
   onDisconnect: () -> Unit = {},
   warning: String? = null,
 ) {
-  var showAppPicker = rememberSaveable { mutableStateOf(false) }
+  val (showAppPicker, setShowAppPicker) = rememberSaveable { mutableStateOf(false) }
   // Memoize across recompositions; these only change when the app lists change, not on every
   // serviceState-driven recomposition.
   val favoritePackages = remember(favoriteApps) { favoriteApps.map { it.packageName }.toSet() }
@@ -256,7 +256,7 @@ internal fun MirrorHomeScreen(
     )
     FavoriteAppsPanel(
       favoriteApps = favoriteApps,
-      onAddClick = { showAppPicker.value = true },
+      onAddClick = { setShowAppPicker(true) },
       onRemoveClick = onRemoveFavoriteApp,
     )
 
@@ -291,12 +291,12 @@ internal fun MirrorHomeScreen(
     }
   }
 
-  if (showAppPicker.value) {
+  if (showAppPicker) {
     FavoriteAppPickerDialog(
       launchableApps = selectableApps,
-      onDismiss = { showAppPicker.value = false },
+      onDismiss = { setShowAppPicker(false) },
       onSelect = { app ->
-        showAppPicker.value = false
+        setShowAppPicker(false)
         onAddFavoriteApp(app)
       },
     )
