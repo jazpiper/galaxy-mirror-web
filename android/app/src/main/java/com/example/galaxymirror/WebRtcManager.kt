@@ -337,9 +337,14 @@ class WebRtcManager(
         val h264PayloadTypes = mutableListOf<String>()
         for (line in lines) {
             if (line.startsWith("a=rtpmap:") && line.contains("H264/90000", ignoreCase = true)) {
-                val partsRtpmap = line.substringAfter("a=rtpmap:").split(" ")
-                if (partsRtpmap.isNotEmpty()) {
-                    h264PayloadTypes.add(partsRtpmap[0])
+                val spaceIndex = line.indexOf(' ', 9)
+                val payloadType = if (spaceIndex != -1) {
+                    line.substring(9, spaceIndex)
+                } else {
+                    line.substring(9)
+                }
+                if (payloadType.isNotEmpty()) {
+                    h264PayloadTypes.add(payloadType)
                 }
             }
         }
