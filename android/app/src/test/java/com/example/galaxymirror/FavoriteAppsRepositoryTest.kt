@@ -17,6 +17,8 @@ class FavoriteAppsRepositoryTest {
         val mockPackageManager = mock(PackageManager::class.java)
         val mockSharedPreferences = mock(SharedPreferences::class.java)
         `when`(mockContext.packageManager).thenReturn(mockPackageManager)
+        `when`(mockContext.applicationContext).thenReturn(mockContext)
+        `when`(mockContext.registerReceiver(any(), any())).thenReturn(null)
         `when`(mockContext.getSharedPreferences(anyString(), anyInt())).thenReturn(mockSharedPreferences)
         `when`(mockPackageManager.getLaunchIntentForPackage("com.test.app")).thenReturn(Intent())
         `when`(mockContext.startActivity(any())).thenThrow(ActivityNotFoundException("Mock exception"))
