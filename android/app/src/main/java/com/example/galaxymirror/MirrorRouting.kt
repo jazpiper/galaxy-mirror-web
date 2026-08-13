@@ -31,6 +31,15 @@ fun Routing.setupMirrorRouting(service: MediaProjectionService) {
     with(service) {
         staticResources("/", "files")
 
+        setupApiRoutes(this)
+        setupWebRtcSignalingRoute(this)
+        setupUsbSessionRoute(this)
+    }
+}
+
+private fun Routing.setupApiRoutes(service: MediaProjectionService) {
+    with(service) {
+
         get("/status") {
             call.respondText("Android Mirror Web Server is active. Port: 8080")
         }
@@ -135,6 +144,11 @@ fun Routing.setupMirrorRouting(service: MediaProjectionService) {
                 )
             }
         }
+    }
+}
+
+private fun Routing.setupWebRtcSignalingRoute(service: MediaProjectionService) {
+    with(service) {
 
         webSocket("/signaling") {
             val sessionId = beginViewerSession(MirrorTransport.TAILSCALE_WEBRTC)
@@ -182,6 +196,11 @@ fun Routing.setupMirrorRouting(service: MediaProjectionService) {
                 endViewerSession(sessionId)
             }
         }
+    }
+}
+
+private fun Routing.setupUsbSessionRoute(service: MediaProjectionService) {
+    with(service) {
 
         webSocket("/usb/session") {
             val socketSession = this

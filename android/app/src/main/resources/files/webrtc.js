@@ -45,17 +45,29 @@ export function extractNetworkBytes(stats) {
   let selectedPair = null;
   let fallbackSent = 0;
   let fallbackReceived = 0;
+  let rtt = null;
+
   stats.forEach(report => {
     if (report.type === 'transport' && report.selectedCandidatePairId) {
       selectedCandidatePairId = report.selectedCandidatePairId;
     }
   });
+
   if (selectedCandidatePairId && typeof stats.get === 'function') {
     selectedPair = stats.get(selectedCandidatePairId);
+    if (selectedPair && typeof selectedPair.currentRoundTripTime === 'number') {
+        rtt = selectedPair.currentRoundTripTime;
+    }
   }
+
   stats.forEach(report => {
-    if (!selectedPair && report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
-      selectedPair = report;
+    if (report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
+      if (!selectedPair) {
+          selectedPair = report;
+      }
+      if (typeof report.currentRoundTripTime === 'number') {
+          rtt = report.currentRoundTripTime;
+      }
     }
     if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number') {
       fallbackReceived += report.bytesReceived;
@@ -66,30 +78,22 @@ export function extractNetworkBytes(stats) {
       fallbackReceived += report.bytesReceived || 0;
     }
   });
-  if (selectedPair) {
-    return {
-      sent: selectedPair.bytesSent || 0,
-      received: selectedPair.bytesReceived || 0
-    };
-  }
-  return {
+
+  const current = selectedPair ? {
+    sent: selectedPair.bytesSent || 0,
+    received: selectedPair.bytesReceived || 0
+  } : {
     sent: fallbackSent,
     received: fallbackReceived
   };
+
+  return { current, rtt };
 }
 export async function sampleWebRtcStats() {
   if (!peerConnection || typeof peerConnection.getStats !== 'function') return;
   try {
     const stats = await peerConnection.getStats();
-    const current = extractNetworkBytes(stats);
-    let rtt = null;
-    stats.forEach(report => {
-      if (report.type === 'candidate-pair' && report.state === 'succeeded' && (report.selected || report.nominated)) {
-        if (typeof report.currentRoundTripTime === 'number') {
-          rtt = report.currentRoundTripTime;
-        }
-      }
-    });
+    const { current, rtt } = extractNetworkBytes(stats);
     if (rtcLatency) {
       if (typeof rtt === 'number') {
         rtcLatency.textContent = `${(rtt * 1000).toFixed(0)} ms`;

@@ -20,6 +20,7 @@ class FavoriteAppsRepositoryTest {
         `when`(mockContext.applicationContext).thenReturn(mockContext)
         `when`(mockContext.registerReceiver(any(), any())).thenReturn(null)
         `when`(mockContext.getSharedPreferences(anyString(), anyInt())).thenReturn(mockSharedPreferences)
+        `when`(mockSharedPreferences.getString(anyString(), any())).thenReturn("[{\"packageName\":\"com.test.app\",\"label\":\"Test App\"}]")
         `when`(mockPackageManager.getLaunchIntentForPackage("com.test.app")).thenReturn(Intent())
         `when`(mockContext.startActivity(any())).thenThrow(ActivityNotFoundException("Mock exception"))
 
@@ -27,5 +28,24 @@ class FavoriteAppsRepositoryTest {
         val result = repo.launchFavorite("com.test.app")
 
         assertFalse(result)
+    }
+
+    @Test
+    fun launchFavorite_returnsFalse_whenPackageIsNotInFavorites() {
+        val mockContext = mock(Context::class.java)
+        val mockPackageManager = mock(PackageManager::class.java)
+        val mockSharedPreferences = mock(SharedPreferences::class.java)
+        `when`(mockContext.packageManager).thenReturn(mockPackageManager)
+        `when`(mockContext.applicationContext).thenReturn(mockContext)
+        `when`(mockContext.registerReceiver(any(), any())).thenReturn(null)
+        `when`(mockContext.getSharedPreferences(anyString(), anyInt())).thenReturn(mockSharedPreferences)
+        // No favorites configured
+        `when`(mockSharedPreferences.getString(anyString(), any())).thenReturn(null)
+
+        val repo = FavoriteAppsRepository(mockContext)
+        val result = repo.launchFavorite("com.test.app")
+
+        assertFalse(result)
+        verify(mockPackageManager, never()).getLaunchIntentForPackage(anyString())
     }
 }

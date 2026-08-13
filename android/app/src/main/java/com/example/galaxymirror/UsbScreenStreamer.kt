@@ -52,76 +52,36 @@ class UsbScreenStreamer(
 
         val captureProfile = UsbStreamProfilePolicy.resolveTier(UsbStreamProfileTier.CLEAR)
         changeGate.reset()
+
         var startupProjection: MediaProjection? = null
         var startupThread: HandlerThread? = null
         var startupReader: ImageReader? = null
         var startupCallback: MediaProjection.Callback? = null
         var startupDisplay: VirtualDisplay? = null
         var ownedByFields = false
+
         try {
-            val projection = projectionManager.getMediaProjection(resultCode, resultData)
-                ?: throw IllegalStateException("MediaProjection grant could not be created for USB stream.")
-            startupProjection = projection
-
-            val streamThread = HandlerThread("UsbScreenStreamer").apply { start() }
-            startupThread = streamThread
+            val projection = createMediaProjection(resultCode, resultData).also { startupProjection = it }
+            val streamThread = HandlerThread("UsbScreenStreamer").apply { start() }.also { startupThread = it }
             val streamHandler = Handler(streamThread.looper)
+            val reader = createImageReader(captureProfile).also { startupReader = it }
+            val callback = createProjectionCallback().also { startupCallback = it }
 
-            val reader = ImageReader.newInstance(captureProfile.width, captureProfile.height, PixelFormat.RGBA_8888, 2)
-            startupReader = reader
-
-            val frameRateGate = UsbFrameRateGate(captureProfile.fps)
-            val callback =
-                object : MediaProjection.Callback() {
-                    override fun onStop() {
-                        handleProjectionStopped()
-                    }
-                }
-            startupCallback = callback
-
-            reader.setOnImageAvailableListener(
-                { availableReader ->
-                    handleImageAvailable(
-                        imageReader = availableReader,
-                        frameRateGate = frameRateGate,
-                        captureProfile = captureProfile,
-                        profileProvider = profileProvider,
-                        perfMonitor = perfMonitor,
-                        changeGate = changeGate,
-                        onFrame = onFrame,
-                    )
-                },
-                streamHandler,
+            setupImageReaderListener(
+                reader = reader,
+                captureProfile = captureProfile,
+                streamHandler = streamHandler,
+                profileProvider = profileProvider,
+                perfMonitor = perfMonitor,
+                changeGate = changeGate,
+                onFrame = onFrame,
             )
             projection.registerCallback(callback, streamHandler)
 
-            val display =
-                projection.createVirtualDisplay(
-                    "GalaxyMirrorUsbScreenStreamer",
-                    captureProfile.width,
-                    captureProfile.height,
-                    context.resources.displayMetrics.densityDpi,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    reader.surface,
-                    null,
-                    streamHandler,
-                )
-            if (display == null) {
-                throw IllegalStateException("USB virtual display could not be created.")
-            }
-            startupDisplay = display
+            val display = createVirtualDisplay(projection, captureProfile, reader, streamHandler).also { startupDisplay = it }
 
-            synchronized(stateLock) {
-                handlerThread = streamThread
-                handler = streamHandler
-                imageReader = reader
-                mediaProjection = projection
-                projectionCallback = callback
-                virtualDisplay = display
-                running = true
-                stopping = false
-                ownedByFields = true
-            }
+            commitStartupResources(streamThread, streamHandler, reader, projection, callback, display)
+            ownedByFields = true
         } catch (e: Exception) {
             if (ownedByFields) {
                 releaseResources(stopProjection = true)
@@ -135,6 +95,86 @@ class UsbScreenStreamer(
                 )
             }
             throw e
+        }
+    }
+
+    private fun createMediaProjection(
+        resultCode: Int,
+        resultData: Intent,
+    ): MediaProjection =
+        projectionManager.getMediaProjection(resultCode, resultData)
+            ?: throw IllegalStateException("MediaProjection grant could not be created for USB stream.")
+
+    private fun createImageReader(profile: UsbStreamProfile): ImageReader =
+        ImageReader.newInstance(profile.width, profile.height, PixelFormat.RGBA_8888, 2)
+
+    private fun createProjectionCallback(): MediaProjection.Callback =
+        object : MediaProjection.Callback() {
+            override fun onStop() {
+                handleProjectionStopped()
+            }
+        }
+
+    private fun setupImageReaderListener(
+        reader: ImageReader,
+        captureProfile: UsbStreamProfile,
+        streamHandler: Handler,
+        profileProvider: () -> UsbStreamProfile,
+        perfMonitor: UsbPerfMonitor,
+        changeGate: UsbFrameChangeGate,
+        onFrame: (ByteArray) -> Unit,
+    ) {
+        val frameRateGate = UsbFrameRateGate(captureProfile.fps)
+        reader.setOnImageAvailableListener(
+            { availableReader ->
+                handleImageAvailable(
+                    imageReader = availableReader,
+                    frameRateGate = frameRateGate,
+                    captureProfile = captureProfile,
+                    profileProvider = profileProvider,
+                    perfMonitor = perfMonitor,
+                    changeGate = changeGate,
+                    onFrame = onFrame,
+                )
+            },
+            streamHandler,
+        )
+    }
+
+    private fun createVirtualDisplay(
+        projection: MediaProjection,
+        profile: UsbStreamProfile,
+        reader: ImageReader,
+        handler: Handler,
+    ): VirtualDisplay =
+        projection.createVirtualDisplay(
+            "GalaxyMirrorUsbScreenStreamer",
+            profile.width,
+            profile.height,
+            context.resources.displayMetrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            reader.surface,
+            null,
+            handler,
+        ) ?: throw IllegalStateException("USB virtual display could not be created.")
+
+    private fun commitStartupResources(
+        streamThread: HandlerThread,
+        streamHandler: Handler,
+        reader: ImageReader,
+        projection: MediaProjection,
+        callback: MediaProjection.Callback,
+        display: VirtualDisplay,
+    ) {
+        synchronized(stateLock) {
+            handlerThread = streamThread
+            this.handler = streamHandler
+            imageReader = reader
+            mediaProjection = projection
+            projectionCallback = callback
+            virtualDisplay = display
+            running = true
+            stopping = false
         }
     }
 
@@ -207,7 +247,10 @@ class UsbScreenStreamer(
         }
     }
 
-    private fun computeFrameSignature(image: Image, profile: UsbStreamProfile): Long {
+    private fun computeFrameSignature(
+        image: Image,
+        profile: UsbStreamProfile,
+    ): Long {
         val plane = image.planes.first()
         val buffer = plane.buffer.duplicate()
         val pixelStride = plane.pixelStride.coerceAtLeast(1)
@@ -287,21 +330,22 @@ class UsbScreenStreamer(
             canvas.drawBitmap(sBitmap, srcRect, destRect, null)
         }
 
-        val output = synchronized(stateLock) {
-            var out = cachedOutputStream
-            if (out == null) {
-                out = java.io.ByteArrayOutputStream(1024 * 1024)
-                cachedOutputStream = out
-            } else {
-                out.reset()
+        val output =
+            synchronized(stateLock) {
+                var out = cachedOutputStream
+                if (out == null) {
+                    out = java.io.ByteArrayOutputStream(1024 * 1024)
+                    cachedOutputStream = out
+                } else {
+                    out.reset()
+                }
+                out
             }
-            out
-        }
 
         jBitmap.compress(
             Bitmap.CompressFormat.JPEG,
             profile.jpegQuality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY),
-            output
+            output,
         )
         return output.toByteArray()
     }
@@ -355,7 +399,10 @@ class UsbScreenStreamer(
         )
     }
 
-    private fun releaseResourceBundle(resources: Resources, stopProjection: Boolean) {
+    private fun releaseResourceBundle(
+        resources: Resources,
+        stopProjection: Boolean,
+    ) {
         try {
             resources.virtualDisplay?.release()
         } catch (e: Exception) {

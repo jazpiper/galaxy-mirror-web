@@ -15,6 +15,7 @@ class FavoriteAppsRepository(
     private val preferences: SharedPreferences =
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
+    private var cachedFavorites: List<FavoriteApp>? = null
     var cachedLaunchableApps: List<FavoriteApp>? = null
 
     init {
@@ -34,7 +35,12 @@ class FavoriteAppsRepository(
     }
 
     fun getFavorites(): List<FavoriteApp> {
-        return FavoriteAppsCodec.fromStoredJson(preferences.getString(KEY_FAVORITES, null))
+        var favorites = cachedFavorites
+        if (favorites == null) {
+            favorites = FavoriteAppsCodec.fromStoredJson(preferences.getString(KEY_FAVORITES, null))
+            cachedFavorites = favorites
+        }
+        return favorites
     }
 
     fun getFavoritesResponseJson(): String {
@@ -84,6 +90,9 @@ class FavoriteAppsRepository(
     }
 
     fun launchFavorite(packageName: String): Boolean {
+        if (getFavorites().none { it.packageName == packageName }) {
+            return false
+        }
         return try {
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -96,6 +105,7 @@ class FavoriteAppsRepository(
     }
 
     private fun saveFavorites(favorites: List<FavoriteApp>) {
+        cachedFavorites = favorites
         preferences
             .edit()
             .putString(KEY_FAVORITES, FavoriteAppsCodec.toStoredJson(favorites))
