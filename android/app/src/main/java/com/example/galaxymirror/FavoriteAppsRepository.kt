@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+
 
 class FavoriteAppsRepository(
     private val context: Context,
@@ -13,6 +16,23 @@ class FavoriteAppsRepository(
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     private var cachedFavorites: List<FavoriteApp>? = null
+    var cachedLaunchableApps: List<FavoriteApp>? = null
+
+    init {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                cachedLaunchableApps = null
+            }
+        }
+        context.applicationContext.registerReceiver(receiver, filter)
+    }
 
     fun getFavorites(): List<FavoriteApp> {
         var favorites = cachedFavorites
@@ -40,23 +60,33 @@ class FavoriteAppsRepository(
     }
 
     fun getLaunchableApps(): List<FavoriteApp> {
+        val cached = cachedLaunchableApps
+        if (cached != null) return cached
+
         val launcherIntent =
             Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
             }
-        return packageManager
-            .queryIntentActivities(launcherIntent, 0)
-            .mapNotNull { resolveInfo ->
+        val intentActivities = packageManager.queryIntentActivities(launcherIntent, 0)
+        val apps = intentActivities.mapNotNull { resolveInfo ->
                 val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
                 val packageName = activityInfo.packageName ?: return@mapNotNull null
                 if (packageName == context.packageName) return@mapNotNull null
+
+                var label: String? = resolveInfo.loadLabel(packageManager)?.toString()
+                if (label == null) label = activityInfo.name
+                if (label == null) label = packageName
+
                 FavoriteApp(
                     packageName = packageName,
-                    label = resolveInfo.loadLabel(packageManager).toString(),
+                    label = label,
                 )
             }
             .let(FavoriteAppsCodec::normalizeFavorites)
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+
+        this.cachedLaunchableApps = apps
+        return apps
     }
 
     fun launchFavorite(packageName: String): Boolean {
