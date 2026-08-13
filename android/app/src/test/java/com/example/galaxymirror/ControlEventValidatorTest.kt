@@ -58,7 +58,8 @@ class ControlEventValidatorTest {
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"commit","keyCode":66}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":0}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":65}""")))
-        assertFalse(ControlEventValidator.isValid(JSONObject("{\"type\":\"text\",\"action\":\"deleteBackward\"}")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward"}""")))
+        assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"deleteBackward","count":null}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","text":"hello"}""")))
         assertFalse(ControlEventValidator.isValid(JSONObject("""{"type":"text","action":"replace","text":"hello"}""")))
     }
