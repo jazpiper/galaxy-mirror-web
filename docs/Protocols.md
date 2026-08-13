@@ -23,6 +23,20 @@ Tailscale 가상 메시 VPN 내부에서 맥북 브라우저가 Android 내장 K
 * WebSocket: `/signaling`, `/usb/session?codec=h264`, `/usb/session?codec=jpeg`
 * HTTP API: 앱 실행, 스트림 화질, debug endpoint 모두 token header/query 없이 동작합니다.
 
+#### Origin 검사 (토큰 인증 아님)
+신뢰 경계는 loopback + WireGuard 터널입니다. 그런데 사용자의 브라우저는 이미 그 경계 **안쪽**에 있으므로, 경계 밖의 웹페이지가 브라우저를 대리인으로 삼아 서버에 접근할 수 있습니다(CSWSH / CSRF). 이를 막기 위해 `ViewerOriginGuard`가 다음 규칙을 적용합니다.
+
+* **`Origin` 헤더가 없으면 허용합니다.** curl, adb 스모크 테스트, 주소창 직접 입력이 여기 해당합니다. 브라우저는 크로스 오리진 요청에 `Origin`을 강제 삽입하고 스크립트가 이를 지우거나 위조할 수 없으므로 우회 경로가 되지 않습니다.
+* **`Origin`이 있으면 `Host`와 authority(호스트:포트)가 정확히 일치해야 합니다.** 불일치 시 WebSocket은 `VIOLATED_POLICY`로 핸드셰이크를 닫고, HTTP는 `403 {"ok":false,"error":"CROSS_ORIGIN_REJECTED"}`를 반환합니다.
+* 고정 allowlist 대신 `Host` 대조를 쓰는 이유는 MagicDNS 호스트명이 환경마다 달라지기 때문입니다. DNS 리바인딩도 `Origin`이 공격자 도메인으로 남으므로 이 검사에 걸립니다.
+
+적용 대상: `/signaling`, `/usb/session`, `POST /stream/quality`, `POST /stream/overlay`, `POST /apps/launch`, `GET /apps/favorites`, `GET /debug/crash`, `POST /debug/crash/clear`, `GET /debug/perf`.
+
+이것은 뷰어 토큰 인증이 **아닙니다.** 사용자나 클라이언트가 교환해야 할 비밀값이 없으며, 의도적으로 제거된 `ViewerAccessGuard`/`ViewerAccessTokenStore`를 되살리는 것이 아닙니다.
+
+#### `/debug/crash/clear`는 POST입니다
+진단 기록을 삭제하는 상태 변경 엔드포인트이므로 `GET`이 아닌 `POST`만 받습니다. `GET`이면 `<img src="http://127.0.0.1:8080/debug/crash/clear">` 한 줄로 기록이 지워집니다.
+
 ### 1.1 WebRTC SDP Offer (맥 브라우저 $\rightarrow$ 안드로이드)
 맥 브라우저가 WebRTC PeerConnection을 생성하고 로컬 미디어 디스크립션(SDP)을 생성해 전송합니다.
 * **JSON 패킷 예시:**
@@ -211,6 +225,23 @@ Mac Viewer와 Android Host는 `control` DataChannel의 `clipboard` payload로 �
 브라우저 Clipboard API는 `http://<MagicDNS-host>:8080` 같은 일반 HTTP origin에서 브라우저
 정책에 따라 제한될 수 있습니다. Viewer는 `navigator.clipboard`를 feature-detect하고, 자동
 쓰기 실패 시 수동 복사 fallback toast를 표시합니다.
+
+#### 아웃바운드(폰 → 뷰어) 전송 조건
+클립보드 복사는 화면에 아무것도 그리지 않습니다. 따라서 "뷰어는 화면에 보이는 것을 본다"는 합의를 지키려면 제어 채널이 열려 있다는 것만으로는 전송 근거가 되지 않습니다. `ClipboardSyncPolicy.shouldSendOutbound`가 아래를 **모두** 만족할 때만 전송합니다.
+
+| 조건 | 이유 |
+| :--- | :--- |
+| 제어 DataChannel이 `OPEN` | 기본 전제 |
+| `isMirroringActive()`가 true | DataChannel은 캡처 해제보다 오래 살 수 있습니다 |
+| 블랙 오버레이가 표시 중이 **아님** | 화면을 가리는 프라이버시 모드가 클립보드를 흘리면 없느니만 못합니다 |
+| 클립에 `ClipDescription.EXTRA_IS_SENSITIVE`가 **없음** | Android 13+ 비밀번호 관리자·OTP 필드가 세우는 "미리보기·로깅 금지" 플래그 |
+| 뷰어가 방금 주입한 텍스트의 에코가 **아님** | 기존 동작 유지 |
+
+빈 문자열(`""`)은 여전히 "클립보드 비우기" 명령으로 전달됩니다 — 위 조건은 텍스트 내용을 보지 않습니다.
+
+인바운드(뷰어 → 폰) 주입은 이 정책의 영향을 받지 않습니다.
+
+Viewer는 수신한 클립보드 원문을 디버그 로그에 남기지 않습니다. `webrtc.js`는 `clipboard` 프레임을 `length=N`으로만 기록합니다.
 
 ### 2.5 제어 입력 ACK (`CONTROL_ACK`)
 Android Host는 `seq`가 있는 control payload를 처리한 뒤 같은 DataChannel로 ACK를 반환합니다. 현재 브라우저는 텍스트 입력에만 ACK 기반 직렬화를 적용하고, tap/swipe/key는 기존처럼 즉시 전송합니다.

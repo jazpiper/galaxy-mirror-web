@@ -2,7 +2,9 @@ package com.example.galaxymirror
 
 import android.util.Log
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.request.receiveText
@@ -11,7 +13,9 @@ import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
+import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -37,6 +41,25 @@ fun Routing.setupMirrorRouting(service: MediaProjectionService) {
     }
 }
 
+private fun ApplicationCall.isCrossOriginRequest(): Boolean =
+    !ViewerOriginGuard.isAllowed(
+        request.headers[HttpHeaders.Origin],
+        request.headers[HttpHeaders.Host],
+    )
+
+/**
+ * 크로스 오리진 요청이면 403으로 응답하고 true를 반환한다. 호출부는 true일 때 즉시 return 해야 한다.
+ */
+private suspend fun ApplicationCall.rejectIfCrossOrigin(): Boolean {
+    if (!isCrossOriginRequest()) return false
+    respondText(
+        """{"ok":false,"error":"CROSS_ORIGIN_REJECTED"}""",
+        ContentType.Application.Json,
+        HttpStatusCode.Forbidden,
+    )
+    return true
+}
+
 private fun Routing.setupApiRoutes(service: MediaProjectionService) {
     with(service) {
 
@@ -45,13 +68,16 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         get("/debug/crash") {
+            if (call.rejectIfCrossOrigin()) return@get
             call.respondText(
                 redactSensitiveInfo(CrashDiagnostics.readDebugReport(service.filesDir)),
                 ContentType.Text.Plain
             )
         }
 
-        get("/debug/crash/clear") {
+        // 상태를 변경하므로 POST여야 한다. GET이면 <img src=...> 한 줄로 진단 기록이 지워진다.
+        post("/debug/crash/clear") {
+            if (call.rejectIfCrossOrigin()) return@post
             CrashDiagnostics.clearCrash(service.filesDir)
             call.respondText(
                 "Cleared saved crash and caught exception. Recent events were kept.\n",
@@ -60,6 +86,7 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         get("/debug/perf") {
+            if (call.rejectIfCrossOrigin()) return@get
             val statusJson = withContext(Dispatchers.Main) {
                 currentUsbPerfSnapshot().toJson().toString()
             }
@@ -67,6 +94,7 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         get("/apps/favorites") {
+            if (call.rejectIfCrossOrigin()) return@get
             call.respondText(
                 favoriteAppsRepository.getFavoritesResponseJson(),
                 ContentType.Application.Json
@@ -81,6 +109,7 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         post("/stream/quality") {
+            if (call.rejectIfCrossOrigin()) return@post
             val mode = StreamQualityCodec.parseMode(call.receiveText())
             if (mode == null) {
                 call.respondText(
@@ -101,6 +130,7 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         post("/stream/overlay") {
+            if (call.rejectIfCrossOrigin()) return@post
             val bodyText = call.receiveText()
             val enabled = try {
                 JSONObject(bodyText).optBoolean("enabled", false)
@@ -118,6 +148,7 @@ private fun Routing.setupApiRoutes(service: MediaProjectionService) {
         }
 
         post("/apps/launch") {
+            if (call.rejectIfCrossOrigin()) return@post
             val packageName = FavoriteAppsCodec.parseLaunchPackageName(call.receiveText())
             if (packageName == null) {
                 call.respondText(
@@ -151,6 +182,13 @@ private fun Routing.setupWebRtcSignalingRoute(service: MediaProjectionService) {
     with(service) {
 
         webSocket("/signaling") {
+            // beginViewerSession 이전에 막아야 한다. 세션을 먼저 시작하면 그 자체로 기존 뷰어 세션이
+            // 밀려나고 MediaProjection 재승인 프롬프트가 뜬다.
+            if (call.isCrossOriginRequest()) {
+                CrashDiagnostics.recordEvent(service.filesDir, "Rejected cross-origin /signaling handshake.")
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "cross-origin rejected"))
+                return@webSocket
+            }
             val sessionId = beginViewerSession(MirrorTransport.TAILSCALE_WEBRTC)
             CrashDiagnostics.recordEvent(service.filesDir, "Signaling WebSocket connected: sessionId=$sessionId.")
             Log.d("KtorServer", "New WebRTC signaling WebSocket connection established: $sessionId")
@@ -203,6 +241,11 @@ private fun Routing.setupUsbSessionRoute(service: MediaProjectionService) {
     with(service) {
 
         webSocket("/usb/session") {
+            if (call.isCrossOriginRequest()) {
+                CrashDiagnostics.recordEvent(service.filesDir, "Rejected cross-origin /usb/session handshake.")
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "cross-origin rejected"))
+                return@webSocket
+            }
             val socketSession = this
             val requestedCodec = UsbVideoCodec.fromWireValue(call.request.queryParameters["codec"])
             val sessionTransport =

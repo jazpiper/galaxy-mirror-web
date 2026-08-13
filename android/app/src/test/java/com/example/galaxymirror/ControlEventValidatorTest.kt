@@ -93,8 +93,12 @@ class ControlEventValidatorTest {
             source.contains("val text = clip.getItemAt(0).coerceToText(this)?.toString()")
         )
         assertTrue(
-            "Empty clipboard strings should propagate as clear commands unless they are self-injected repeats.",
-            source.contains("if (text != null && text != lastInjectedClipboardText)")
+            "null should remain the only missing-text value; emptiness must not gate the send.",
+            source.contains("if (text != null)")
+        )
+        assertTrue(
+            "Self-injected repeats are suppressed by ClipboardSyncPolicy, not by an inline guard.",
+            source.contains("isEchoOfInjectedText = text == lastInjectedClipboardText")
         )
         assertFalse(
             "Empty clipboard text must not be filtered out by isNullOrEmpty().",

@@ -606,10 +606,23 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
             val clip = clipboard.primaryClip
             if (clip != null && clip.itemCount > 0) {
                 val text = clip.getItemAt(0).coerceToText(this)?.toString()
-                if (text != null && text != lastInjectedClipboardText) {
+                if (text != null) {
                     val service = MediaProjectionService.instance
                     val channel = service?.webRtcManager?.controlChannel
-                    if (service != null && channel != null && channel.state() == org.webrtc.DataChannel.State.OPEN) {
+                    val clipMarkedSensitive =
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            clip.description?.extras?.getBoolean(
+                                android.content.ClipDescription.EXTRA_IS_SENSITIVE,
+                                false,
+                            ) == true
+                    val allowed = service != null && ClipboardSyncPolicy.shouldSendOutbound(
+                        channelOpen = channel != null && channel.state() == org.webrtc.DataChannel.State.OPEN,
+                        mirroringActive = service.isMirroringActive(),
+                        overlayShowing = service.isBlackOverlayShowing(),
+                        clipMarkedSensitive = clipMarkedSensitive,
+                        isEchoOfInjectedText = text == lastInjectedClipboardText,
+                    )
+                    if (allowed && channel != null) {
                         try {
                             val json = org.json.JSONObject().apply {
                                 put("type", "clipboard")

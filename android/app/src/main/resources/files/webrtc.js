@@ -239,17 +239,22 @@ export function setupDataChannelHandlers(channel) {
   };
   channel.onmessage = event => {
     if (dataChannel !== channel) return;
-    log(`DataChannel 수신 메시지: ${event.data}`);
+    // 원문 프레임은 로깅하지 않는다. 클립보드가 같은 채널을 타므로 평문 비밀번호가 로그 박스와
+    // 콘솔에 남는다. USB 경로(signaling.js)와 아웃바운드(controls.js)의 로깅 수준에 맞춘다.
     try {
       const message = JSON.parse(event.data);
       if (message.type === 'CONTROL_ACK') {
+        log('DataChannel 수신 메시지: CONTROL_ACK');
         handleControlAck(message.payload || ({}));
       } else if (message.type === 'clipboard') {
         const text = message.text;
         if (typeof text === 'string') {
+          log(`DataChannel 수신 메시지: clipboard length=${text.length}`);
           addClipboardToHistory(text);
           writeClipboardFromAndroid(text);
         }
+      } else {
+        log(`DataChannel 수신 메시지: ${message.type}`);
       }
     } catch (error) {
       log(`DataChannel 메시지 처리 실패: ${error.message}`);

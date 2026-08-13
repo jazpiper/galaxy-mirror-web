@@ -316,6 +316,10 @@ class MediaProjectionService : Service() {
         updateServiceState()
     }
 
+    /** lateinit 초기화 전에도 안전하게 부를 수 있는 오버레이 표시 여부 조회. */
+    internal fun isBlackOverlayShowing(): Boolean =
+        ::blackOverlayController.isInitialized && blackOverlayController.isShowing()
+
     fun setBlackOverlayEnabled(enabled: Boolean): Boolean {
         if (!::blackOverlayController.isInitialized) return false
         val success = if (enabled) {
