@@ -34,7 +34,7 @@ object ControlEventValidator {
     private fun isResizeValid(json: JSONObject): Boolean {
         // width/height are optional (handler applies phone-native defaults) and clamped downstream;
         // only reject values that are explicitly present but non-positive.
-        val payload = if (json.has("payload")) json.optJSONObject("payload") ?: json else json
+        val payload = json.getPayloadOrSelf()
         val widthOk = !payload.has("width") || payload.optInt("width", -1) > 0
         val heightOk = !payload.has("height") || payload.optInt("height", -1) > 0
         return widthOk && heightOk

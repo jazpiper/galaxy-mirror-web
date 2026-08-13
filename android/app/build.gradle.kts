@@ -94,6 +94,7 @@ dependencies {
   implementation(libs.ktor.server.core)
   implementation(libs.ktor.server.cio)
   implementation(libs.ktor.server.websockets)
+  testImplementation(libs.ktor.server.test.host)
 
   // WebRTC Android Library (Stream Packaged Version on Maven Central)
   implementation(libs.stream.webrtc.android)

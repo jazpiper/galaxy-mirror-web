@@ -25,7 +25,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,7 +76,7 @@ fun MainScreen(
   onDisconnect: () -> Unit = {},
   viewModel: MainScreenViewModel = viewModel { MainScreenViewModel(DefaultDataRepository()) },
 ) {
-  val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val state = viewModel.uiState.collectAsStateWithLifecycle().value
   when (state) {
     MainScreenUiState.Loading ->
       MirrorHomeScreen(
