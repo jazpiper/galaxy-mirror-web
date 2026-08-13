@@ -11,14 +11,17 @@ class ControlEventDispatcher(
         rawText: String,
         sendAck: (ControlEventResult) -> Unit,
     ) {
+        var seq: Long? = null
+        var type = "unknown"
         try {
             val json = JSONObject(rawText)
-            val seq = json.controlSeq()
+            seq = json.controlSeq()
+            type = json.optString("type", "unknown")
             if (!ControlEventValidator.isValid(json)) {
                 sendSequencedAck(
                     ControlEventResult(
                         seq = seq,
-                        type = json.optString("type", "unknown"),
+                        type = type,
                         applied = false,
                         message = "CONTROL_EVENT_REJECTED",
                     ),
@@ -33,7 +36,7 @@ class ControlEventDispatcher(
                 sendSequencedAck(
                     ControlEventResult(
                         seq = seq,
-                        type = json.optString("type", "unknown"),
+                        type = type,
                         applied = false,
                         message = "ACCESSIBILITY_SERVICE_NOT_READY",
                     ),
@@ -49,8 +52,8 @@ class ControlEventDispatcher(
             logDispatchFailure(e)
             sendSequencedAck(
                 ControlEventResult(
-                    seq = null,
-                    type = "unknown",
+                    seq = seq,
+                    type = type,
                     applied = false,
                     message = "CONTROL_EVENT_EXCEPTION",
                 ),
