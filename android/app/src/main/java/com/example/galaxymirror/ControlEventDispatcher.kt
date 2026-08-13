@@ -11,11 +11,15 @@ class ControlEventDispatcher(
         rawText: String,
         sendAck: (ControlEventResult) -> Unit,
     ) {
+        var seq: Long? = null
+        var type = "unknown"
         try {
             val json = JSONObject(rawText)
+            seq = json.controlSeq()
+            type = json.optString("type", "unknown")
             processEvent(json, sendAck)
         } catch (e: Exception) {
-            handleException(e, sendAck)
+            handleException(e, seq, type, sendAck)
         }
     }
 
@@ -58,13 +62,15 @@ class ControlEventDispatcher(
 
     private fun handleException(
         e: Exception,
+        seq: Long?,
+        type: String,
         sendAck: (ControlEventResult) -> Unit,
     ) {
         logDispatchFailure(e)
         sendSequencedAck(
             ControlEventResult(
-                seq = null,
-                type = "unknown",
+                seq = seq,
+                type = type,
                 applied = false,
                 message = "CONTROL_EVENT_EXCEPTION",
             ),
