@@ -200,7 +200,6 @@ class ControlEventDispatcherTest {
         val json = JSONObject("""{"seq":123.45}""")
         assertEquals(123L, json.controlSeq())
     }
-    }
 
     private class FakeApplier : ControlEventApplier {
         var recordedJson: JSONObject? = null
