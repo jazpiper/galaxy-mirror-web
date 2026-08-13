@@ -78,6 +78,10 @@ dependencies {
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.mockito.core)
   testImplementation(libs.mockito.kotlin)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.test.ext.junit)
+
+
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)
