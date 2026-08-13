@@ -1,3 +1,4 @@
+@file:Suppress("UNUSED_IMPORT")
 package com.example.galaxymirror
 
 import android.app.Activity
