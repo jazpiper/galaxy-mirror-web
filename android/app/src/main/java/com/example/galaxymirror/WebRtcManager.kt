@@ -397,80 +397,89 @@ class WebRtcManager(
                 val type = json.getString("type")
 
                 when (type) {
-                    "OFFER" -> {
-                        CrashDiagnostics.recordEvent(service, "Offer received for sessionId=$sessionId.")
-                        Log.d("WebRTC", "Offer received. Creating Answer...")
-                        val sdpObj = json.getJSONObject("payload")
-                        val sdpType = SessionDescription.Type.fromCanonicalForm(sdpObj.getString("type"))
-                        val originalSdp = sdpObj.getString("sdp")
-
-                        // SDP Munging inside Dispatchers.Default
-                        val modifiedOfferSdp = preferH264Codec(originalSdp)
-                        val mungedOfferSdp = SessionDescription(sdpType, modifiedOfferSdp)
-
-                        withContext(Dispatchers.Main) {
-                            val isActiveMain = service.isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
-                            val readiness = ProjectionReadiness.from(
-                                hasProjectionIntent = service.screenCaptureManager.mediaProjectionResultData != null,
-                                isServiceRunning = MediaProjectionService.isRunning
-                            )
-                            val decision = SignalingDecision.onOffer(readiness, isActiveMain)
-                            CrashDiagnostics.recordEvent(service, "Signaling decision on OFFER: $decision.")
-
-                            when (decision) {
-                                SignalingDecision.START_NEGOTIATION -> {
-                                    initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
-                                }
-                                SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
-                                    service.queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
-                                    service.requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
-                                    sendResponse(service.buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                                }
-                                SignalingDecision.QUEUE_AND_SEND_STATUS -> {
-                                    service.queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
-                                    sendResponse(service.buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
-                                    service.resumePendingOfferIfReady()
-                                }
-                                SignalingDecision.IGNORE_INACTIVE -> {
-                                    CrashDiagnostics.recordEvent(service, "Ignoring offer for inactive sessionId=$sessionId.")
-                                }
-                            }
-                        }
-                    }
-                    "ICE_CANDIDATE" -> {
-                        CrashDiagnostics.recordEvent(service, "ICE candidate received for sessionId=$sessionId.")
-                        val candidateObj = json.getJSONObject("payload")
-                        val candidate = IceCandidate(
-                            candidateObj.getString("sdpMid"),
-                            candidateObj.getInt("sdpMLineIndex"),
-                            candidateObj.getString("candidate")
-                        )
-                        withContext(Dispatchers.Main) {
-                            addRemoteIceCandidate(candidate)
-                        }
-                    }
-                    "black_overlay" -> {
-                        val enabled = json.getPayloadOrSelf().optBoolean("enabled", false)
-                        withContext(Dispatchers.Main) {
-                            service.setBlackOverlayEnabled(enabled)
-                        }
-                        sendResponse(service.buildStatusMessage(message = "OVERLAY_UPDATED"))
-                    }
-                    "resize_display" -> {
-                        val payload = json.getPayloadOrSelf()
-                        val reqWidth = payload.optInt("width", 1080)
-                        val reqHeight = payload.optInt("height", 1920)
-                        withContext(Dispatchers.Main) {
-                            changeVirtualDisplaySize(reqWidth, reqHeight)
-                        }
-                        sendResponse(service.buildStatusMessage(message = "DISPLAY_RESIZED"))
-                    }
+                    "OFFER" -> handleOfferMessage(sessionId, json, sendResponse)
+                    "ICE_CANDIDATE" -> handleIceCandidateMessage(sessionId, json)
+                    "black_overlay" -> handleBlackOverlayMessage(json, sendResponse)
+                    "resize_display" -> handleResizeDisplayMessage(json, sendResponse)
                 }
             } catch (e: Exception) {
                 CrashDiagnostics.recordCaughtException(service.filesDir, "signaling JSON parse", e)
                 Log.e("WebRTC", "Error parsing signaling JSON: ${e.message}", e)
             }
         }
+    }
+
+
+    private suspend fun handleOfferMessage(sessionId: Int, json: org.json.JSONObject, sendResponse: (String) -> Unit) {
+        CrashDiagnostics.recordEvent(service, "Offer received for sessionId=$sessionId.")
+        Log.d("WebRTC", "Offer received. Creating Answer...")
+        val sdpObj = json.getJSONObject("payload")
+        val sdpType = SessionDescription.Type.fromCanonicalForm(sdpObj.getString("type"))
+        val originalSdp = sdpObj.getString("sdp")
+
+        // SDP Munging inside Dispatchers.Default
+        val modifiedOfferSdp = preferH264Codec(originalSdp)
+        val mungedOfferSdp = SessionDescription(sdpType, modifiedOfferSdp)
+
+        withContext(Dispatchers.Main) {
+            val isActiveMain = service.isActiveSession(sessionId, MirrorTransport.TAILSCALE_WEBRTC)
+            val readiness = ProjectionReadiness.from(
+                hasProjectionIntent = service.screenCaptureManager.mediaProjectionResultData != null,
+                isServiceRunning = MediaProjectionService.isRunning
+            )
+            val decision = SignalingDecision.onOffer(readiness, isActiveMain)
+            CrashDiagnostics.recordEvent(service, "Signaling decision on OFFER: $decision.")
+
+            when (decision) {
+                SignalingDecision.START_NEGOTIATION -> {
+                    initializeWebRTC(sessionId, mungedOfferSdp, sendResponse)
+                }
+                SignalingDecision.QUEUE_AND_REQUEST_PERMISSION -> {
+                    service.queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
+                    service.requestScreenCapturePermissionFromActivity("Offer received without active MediaProjection grant")
+                    sendResponse(service.buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
+                }
+                SignalingDecision.QUEUE_AND_SEND_STATUS -> {
+                    service.queuePendingOffer(sessionId, mungedOfferSdp, sendResponse)
+                    sendResponse(service.buildStatusMessage(captureReady = false, message = "WAITING_FOR_SCREEN_CAPTURE"))
+                    service.resumePendingOfferIfReady()
+                }
+                SignalingDecision.IGNORE_INACTIVE -> {
+                    CrashDiagnostics.recordEvent(service, "Ignoring offer for inactive sessionId=$sessionId.")
+                }
+            }
+        }
+    }
+
+    private suspend fun handleIceCandidateMessage(sessionId: Int, json: org.json.JSONObject) {
+        CrashDiagnostics.recordEvent(service, "ICE candidate received for sessionId=$sessionId.")
+        val candidateObj = json.getJSONObject("payload")
+        val candidate = IceCandidate(
+            candidateObj.getString("sdpMid"),
+            candidateObj.getInt("sdpMLineIndex"),
+            candidateObj.getString("candidate")
+        )
+        withContext(Dispatchers.Main) {
+            addRemoteIceCandidate(candidate)
+        }
+    }
+
+    private suspend fun handleBlackOverlayMessage(json: org.json.JSONObject, sendResponse: (String) -> Unit) {
+        val enabled = json.getPayloadOrSelf().optBoolean("enabled", false)
+        withContext(Dispatchers.Main) {
+            service.setBlackOverlayEnabled(enabled)
+        }
+        sendResponse(service.buildStatusMessage(message = "OVERLAY_UPDATED"))
+    }
+
+    private suspend fun handleResizeDisplayMessage(json: org.json.JSONObject, sendResponse: (String) -> Unit) {
+        val payload = json.getPayloadOrSelf()
+        val reqWidth = payload.optInt("width", 1080)
+        val reqHeight = payload.optInt("height", 1920)
+        withContext(Dispatchers.Main) {
+            changeVirtualDisplaySize(reqWidth, reqHeight)
+        }
+        sendResponse(service.buildStatusMessage(message = "DISPLAY_RESIZED"))
     }
 
     internal fun changeVirtualDisplaySize(targetWidth: Int, targetHeight: Int) {
