@@ -29,7 +29,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -186,7 +185,7 @@ internal fun MirrorHomeScreen(
   onDisconnect: () -> Unit = {},
   warning: String? = null,
 ) {
-  var showAppPicker by rememberSaveable { mutableStateOf(false) }
+  val (showAppPicker, setShowAppPicker) = rememberSaveable { mutableStateOf(false) }
   // Memoize across recompositions; these only change when the app lists change, not on every
   // serviceState-driven recomposition.
   val favoritePackages = remember(favoriteApps) { favoriteApps.map { it.packageName }.toSet() }
@@ -258,7 +257,7 @@ internal fun MirrorHomeScreen(
     )
     FavoriteAppsPanel(
       favoriteApps = favoriteApps,
-      onAddClick = { showAppPicker = true },
+      onAddClick = { setShowAppPicker(true) },
       onRemoveClick = onRemoveFavoriteApp,
     )
 
@@ -296,9 +295,9 @@ internal fun MirrorHomeScreen(
   if (showAppPicker) {
     FavoriteAppPickerDialog(
       launchableApps = selectableApps,
-      onDismiss = { showAppPicker = false },
+      onDismiss = { setShowAppPicker(false) },
       onSelect = { app ->
-        showAppPicker = false
+        setShowAppPicker(false)
         onAddFavoriteApp(app)
       },
     )
