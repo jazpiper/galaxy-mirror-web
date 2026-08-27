@@ -252,29 +252,31 @@ class UsbScreenStreamer(
         profile: UsbStreamProfile,
     ): Long {
         val plane = image.planes.first()
-        val buffer = plane.buffer.duplicate()
+        val buffer = plane.buffer
+        val limit = buffer.limit()
         val pixelStride = plane.pixelStride.coerceAtLeast(1)
         val rowStride = plane.rowStride
         val sampleRows = FRAME_SIGNATURE_SAMPLE_ROWS.coerceAtMost(profile.height).coerceAtLeast(1)
         val sampleColumns = FRAME_SIGNATURE_SAMPLE_COLUMNS.coerceAtMost(profile.width).coerceAtLeast(1)
+
+        val colOffsets = IntArray(sampleColumns)
+        val widthMinusOne = profile.width - 1
+        val maxColIndex = sampleColumns - 1
+        for (columnIndex in 0 until sampleColumns) {
+            val x = if (sampleColumns == 1) 0 else columnIndex * widthMinusOne / maxColIndex
+            colOffsets[columnIndex] = x * pixelStride
+        }
+
         var hash = FRAME_SIGNATURE_HASH_SEED
+        val heightMinusOne = profile.height - 1
+        val maxRowIndex = sampleRows - 1
 
         for (rowIndex in 0 until sampleRows) {
-            val y =
-                if (sampleRows == 1) {
-                    0
-                } else {
-                    rowIndex * (profile.height - 1) / (sampleRows - 1)
-                }
+            val y = if (sampleRows == 1) 0 else rowIndex * heightMinusOne / maxRowIndex
+            val rowOffset = y * rowStride
             for (columnIndex in 0 until sampleColumns) {
-                val x =
-                    if (sampleColumns == 1) {
-                        0
-                    } else {
-                        columnIndex * (profile.width - 1) / (sampleColumns - 1)
-                    }
-                val offset = y * rowStride + x * pixelStride
-                if (offset in 0 until buffer.limit()) {
+                val offset = rowOffset + colOffsets[columnIndex]
+                if (offset >= 0 && offset < limit) {
                     hash = (hash xor buffer.get(offset).toLong()) * FRAME_SIGNATURE_HASH_PRIME
                 }
             }
