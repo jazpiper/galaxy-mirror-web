@@ -11,7 +11,7 @@ import java.nio.ByteBuffer
 /**
  * PeerConnectionFactory, PeerConnection, DataChannel 및 WebRTC SDP/ICE 시그널링 처리를 전담하는 매니저 클래스.
  */
-class WebRtcManager(
+open class WebRtcManager(
     private val service: MediaProjectionService
 ) {
     @Volatile internal var peerConnectionFactory: PeerConnectionFactory? = null
@@ -145,7 +145,7 @@ class WebRtcManager(
         Log.d("WebRTC", "WebRTC session clean up completed with ${failures.size} failures. stopCapturer=$stopCapturer")
     }
 
-    internal fun initializePeerConnectionFactoryIfNeeded() {
+    open internal fun initializePeerConnectionFactoryIfNeeded() {
         if (peerConnectionFactory == null) {
             val initOptions = PeerConnectionFactory.InitializationOptions.builder(service.applicationContext)
                 .createInitializationOptions()
