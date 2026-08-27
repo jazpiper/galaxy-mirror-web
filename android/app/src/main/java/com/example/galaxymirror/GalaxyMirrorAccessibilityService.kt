@@ -588,7 +588,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                 lastInjectedClipboardText = text
                 val clip = android.content.ClipData.newPlainText("GalaxyMirrorRemoteClipboard", text)
                 clipboard.setPrimaryClip(clip)
-                Log.d(TAG, "Clipboard text successfully updated remotely: length=${text.length}")
+                Log.d(TAG, "Clipboard text successfully updated remotely.")
                 true
             } else {
                 false
