@@ -39,6 +39,9 @@ class UsbScreenStreamer(
     private var cachedSourceBitmap: Bitmap? = null
     private var cachedJpegBitmap: Bitmap? = null
     private var cachedOutputStream: java.io.ByteArrayOutputStream? = null
+    private var cachedCanvas: android.graphics.Canvas? = null
+    private var cachedSrcRect: android.graphics.Rect? = null
+    private var cachedDestRect: android.graphics.Rect? = null
 
     fun start(
         resultCode: Int,
@@ -324,9 +327,31 @@ class UsbScreenStreamer(
         sBitmap.copyPixelsFromBuffer(buffer)
 
         if (jBitmap !== sBitmap) {
-            val canvas = android.graphics.Canvas(jBitmap)
-            val srcRect = android.graphics.Rect(0, 0, captureProfile.width, captureProfile.height)
-            val destRect = android.graphics.Rect(0, 0, profile.width, profile.height)
+            val (canvas, srcRect, destRect) =
+                synchronized(stateLock) {
+                    var c = cachedCanvas
+                    if (c == null) {
+                        c = android.graphics.Canvas(jBitmap)
+                        cachedCanvas = c
+                    } else {
+                        c.setBitmap(jBitmap)
+                    }
+                    var s = cachedSrcRect
+                    if (s == null) {
+                        s = android.graphics.Rect(0, 0, captureProfile.width, captureProfile.height)
+                        cachedSrcRect = s
+                    } else {
+                        s.set(0, 0, captureProfile.width, captureProfile.height)
+                    }
+                    var d = cachedDestRect
+                    if (d == null) {
+                        d = android.graphics.Rect(0, 0, profile.width, profile.height)
+                        cachedDestRect = d
+                    } else {
+                        d.set(0, 0, profile.width, profile.height)
+                    }
+                    Triple(c, s, d)
+                }
             canvas.drawBitmap(sBitmap, srcRect, destRect, null)
         }
 
@@ -431,6 +456,9 @@ class UsbScreenStreamer(
             cachedJpegBitmap?.recycle()
             cachedJpegBitmap = null
             cachedOutputStream = null
+            cachedCanvas = null
+            cachedSrcRect = null
+            cachedDestRect = null
         }
     }
 
