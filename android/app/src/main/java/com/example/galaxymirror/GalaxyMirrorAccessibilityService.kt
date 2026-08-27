@@ -433,13 +433,10 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         return applied
     }
 
-    private fun commitTextInput(text: String): Boolean {
-        val focusedNode = findTextInputTarget("commit") ?: return false
-
+    private fun applyRemoteTextEdit(focusedNode: AccessibilityNodeInfo, edit: RemoteTextEdit): Boolean {
         if (focusedNode.isPassword) {
             textInputBuffer.invalidate()
         }
-        val edit = textInputBuffer.planCommit(focusedNode.toRemoteTextSnapshot(), text)
         val applied = focusedNode.performSetTextAction(edit.nextText)
         if (applied) {
             focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
@@ -450,6 +447,14 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         if (focusedNode.isPassword) {
             textInputBuffer.invalidate()
         }
+        return applied
+    }
+
+    private fun commitTextInput(text: String): Boolean {
+        val focusedNode = findTextInputTarget("commit") ?: return false
+
+        val edit = textInputBuffer.planCommit(focusedNode.toRemoteTextSnapshot(), text)
+        val applied = applyRemoteTextEdit(focusedNode, edit)
         CrashDiagnostics.recordEvent(this, "Accessibility text commit applied=$applied nextLength=${edit.nextText.length}.")
         Log.d(TAG, "Text commit applied=$applied length=${text.length}")
         return applied
@@ -458,20 +463,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
     private fun deleteTextBackward(count: Int): Boolean {
         val focusedNode = findTextInputTarget("delete") ?: return false
 
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
         val edit = textInputBuffer.planDelete(focusedNode.toRemoteTextSnapshot(), count)
-        val applied = focusedNode.performSetTextAction(edit.nextText)
-        if (applied) {
-            focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
-            textInputBuffer.markApplied(edit)
-        } else {
-            textInputBuffer.invalidate()
-        }
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
+        val applied = applyRemoteTextEdit(focusedNode, edit)
         CrashDiagnostics.recordEvent(this, "Accessibility text delete applied=$applied nextLength=${edit.nextText.length}.")
         Log.d(TAG, "Text delete applied=$applied count=$count")
         return applied
