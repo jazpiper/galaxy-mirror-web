@@ -1481,3 +1481,31 @@ await test('waiting for screen capture stops reconnect overlay and clears stale 
     assert.equal(document.getElementById('controlStatus').innerText, '대기');
     assert.match(document.getElementById('statusDetail').textContent, /화면 공유 권한/);
 });
+
+await test("invalid JSON payload on dataChannel catches error gracefully", () => {
+    const { context } = loadViewer();
+
+    assert.doesNotThrow(() => {
+        vm.runInContext(
+            "dataChannel.onmessage({ data: \"invalid json {\" });",
+            context
+        );
+    });
+});
+
+await test("invalid JSON message on signalingSocket catches error gracefully", () => {
+    const { context, webSockets } = loadViewer();
+    vm.runInContext("connectSignaling();", context);
+
+    assert.doesNotThrow(() => {
+        webSockets[0].onmessage({ data: "invalid json {" });
+    });
+});
+
+await test("invalid JSON text message on USB socket catches error gracefully", () => {
+    const { context } = loadViewer();
+
+    assert.doesNotThrow(() => {
+        vm.runInContext("handleUsbTextMessage(\"invalid json {\");", context);
+    });
+});
