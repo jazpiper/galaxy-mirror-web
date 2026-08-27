@@ -31,7 +31,7 @@ jobs:
         for i in 1 2 3 4 5; do ./gradlew app:testDebugUnitTest --no-daemon && break || sleep 15; done
 
     - name: Run viewer JavaScript tests
-      run: node --test android/app/src/test/js/viewer-keyboard.test.mjs
+      run: node --test android/app/src/test/js/*.test.mjs
 
     - name: Run lint
       run: |
