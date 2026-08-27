@@ -241,6 +241,7 @@ class MainActivity : ComponentActivity() {
             screenCaptureRequestInFlight = false
             CrashDiagnostics.recordCaughtException(filesDir, "requestScreenCapturePermission", e)
             Log.e(TAG, "Error launching screen capture permission intent: ${e.message}", e)
+            Toast.makeText(this, "화면 공유 권한 요청을 실행할 수 없습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
