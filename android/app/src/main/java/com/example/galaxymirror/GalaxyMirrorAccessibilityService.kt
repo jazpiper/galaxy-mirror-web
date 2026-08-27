@@ -329,81 +329,45 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         return true
     }
 
-    private fun moveCursorPrevious(): Boolean {
-        val node = findTextInputTarget("cursor_left") ?: return false
+    private fun moveCursor(targetTag: String, action: Int, granularity: Int): Boolean {
+        val node = findTextInputTarget(targetTag) ?: return false
         val arguments = Bundle().apply {
             putInt(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+                granularity
             )
             putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
         }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
+        val applied = node.performAction(action, arguments)
         if (applied) {
             textInputBuffer.invalidate()
         }
         return applied
     }
 
-    private fun moveCursorNext(): Boolean {
-        val node = findTextInputTarget("cursor_right") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorPrevious(): Boolean = moveCursor(
+        targetTag = "cursor_left",
+        action = AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+    )
 
-    private fun moveCursorUp(): Boolean {
-        val node = findTextInputTarget("cursor_up") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorNext(): Boolean = moveCursor(
+        targetTag = "cursor_right",
+        action = AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+    )
 
-    private fun moveCursorDown(): Boolean {
-        val node = findTextInputTarget("cursor_down") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorUp(): Boolean = moveCursor(
+        targetTag = "cursor_up",
+        action = AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
+    )
+
+    private fun moveCursorDown(): Boolean = moveCursor(
+        targetTag = "cursor_down",
+        action = AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
+    )
 
     private fun triggerEnterAction(): Boolean {
         val node = findTextInputTarget("enter") ?: return false
