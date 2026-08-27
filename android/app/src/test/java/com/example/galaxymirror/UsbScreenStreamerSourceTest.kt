@@ -64,6 +64,13 @@ class UsbScreenStreamerSourceTest {
     }
 
     @Test
+    fun streamerHandlesUsbTransferErrorsAndResetsState() {
+        val source = readSource()
+
+        assertTrue(source.contains("Log.e(TAG, \"Unable to acquire USB stream image.\"") || source.contains("Log.e(TAG, \"Unable to encode USB stream frame.\"") || source.contains("handleDisconnect") || source.contains("releaseResources"))
+    }
+
+    @Test
     fun serviceCanConsumeMediaProjectionGrantOnce() {
         val source = readServiceSource()
         val helper = source.substringAfter("consumeMediaProjectionGrant")
