@@ -329,81 +329,49 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         return true
     }
 
-    private fun moveCursorPrevious(): Boolean {
-        val node = findTextInputTarget("cursor_left") ?: return false
+    private fun moveCursor(
+        targetAction: String,
+        granularity: Int,
+        movementAction: Int
+    ): Boolean {
+        val node = findTextInputTarget(targetAction) ?: return false
         val arguments = Bundle().apply {
             putInt(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
+                granularity
             )
             putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
         }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
+        val applied = node.performAction(movementAction, arguments)
         if (applied) {
             textInputBuffer.invalidate()
         }
         return applied
     }
 
-    private fun moveCursorNext(): Boolean {
-        val node = findTextInputTarget("cursor_right") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorPrevious(): Boolean = moveCursor(
+        targetAction = "cursor_left",
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER,
+        movementAction = AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY
+    )
 
-    private fun moveCursorUp(): Boolean {
-        val node = findTextInputTarget("cursor_up") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorNext(): Boolean = moveCursor(
+        targetAction = "cursor_right",
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_CHARACTER,
+        movementAction = AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY
+    )
 
-    private fun moveCursorDown(): Boolean {
-        val node = findTextInputTarget("cursor_down") ?: return false
-        val arguments = Bundle().apply {
-            putInt(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_MOVEMENT_GRANULARITY_INT,
-                AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE
-            )
-            putBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN, false)
-        }
-        val applied = node.performAction(
-            AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY,
-            arguments
-        )
-        if (applied) {
-            textInputBuffer.invalidate()
-        }
-        return applied
-    }
+    private fun moveCursorUp(): Boolean = moveCursor(
+        targetAction = "cursor_up",
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE,
+        movementAction = AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY
+    )
+
+    private fun moveCursorDown(): Boolean = moveCursor(
+        targetAction = "cursor_down",
+        granularity = AccessibilityNodeInfo.MOVEMENT_GRANULARITY_LINE,
+        movementAction = AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY
+    )
 
     private fun triggerEnterAction(): Boolean {
         val node = findTextInputTarget("enter") ?: return false
@@ -423,11 +391,21 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         
         // Fallback: Perform commit of newline character
         val edit = textInputBuffer.planCommit(node.toRemoteTextSnapshot(), "\n")
-        val applied = node.performSetTextAction(edit.nextText)
+        return applyRemoteTextEdit(node, edit)
+    }
+
+    private fun applyRemoteTextEdit(focusedNode: AccessibilityNodeInfo, edit: RemoteTextEdit): Boolean {
+        if (focusedNode.isPassword) {
+            textInputBuffer.invalidate()
+        }
+        val applied = focusedNode.performSetTextAction(edit.nextText)
         if (applied) {
-            node.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
+            focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
             textInputBuffer.markApplied(edit)
         } else {
+            textInputBuffer.invalidate()
+        }
+        if (focusedNode.isPassword) {
             textInputBuffer.invalidate()
         }
         return applied
@@ -436,20 +414,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
     private fun commitTextInput(text: String): Boolean {
         val focusedNode = findTextInputTarget("commit") ?: return false
 
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
         val edit = textInputBuffer.planCommit(focusedNode.toRemoteTextSnapshot(), text)
-        val applied = focusedNode.performSetTextAction(edit.nextText)
-        if (applied) {
-            focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
-            textInputBuffer.markApplied(edit)
-        } else {
-            textInputBuffer.invalidate()
-        }
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
+        val applied = applyRemoteTextEdit(focusedNode, edit)
         CrashDiagnostics.recordEvent(this, "Accessibility text commit applied=$applied nextLength=${edit.nextText.length}.")
         Log.d(TAG, "Text commit applied=$applied length=${text.length}")
         return applied
@@ -458,20 +424,8 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
     private fun deleteTextBackward(count: Int): Boolean {
         val focusedNode = findTextInputTarget("delete") ?: return false
 
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
         val edit = textInputBuffer.planDelete(focusedNode.toRemoteTextSnapshot(), count)
-        val applied = focusedNode.performSetTextAction(edit.nextText)
-        if (applied) {
-            focusedNode.performSetSelectionAction(edit.nextSelectionStart, edit.nextSelectionEnd)
-            textInputBuffer.markApplied(edit)
-        } else {
-            textInputBuffer.invalidate()
-        }
-        if (focusedNode.isPassword) {
-            textInputBuffer.invalidate()
-        }
+        val applied = applyRemoteTextEdit(focusedNode, edit)
         CrashDiagnostics.recordEvent(this, "Accessibility text delete applied=$applied nextLength=${edit.nextText.length}.")
         Log.d(TAG, "Text delete applied=$applied count=$count")
         return applied

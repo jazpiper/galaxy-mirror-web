@@ -12,7 +12,9 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.websocket.DefaultWebSocketServerSession
 import io.ktor.server.websocket.webSocket
+import kotlinx.coroutines.Job
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -242,7 +244,7 @@ private fun Routing.setupUsbSessionRoute(service: MediaProjectionService) {
 
         webSocket("/usb/session") {
             if (call.isCrossOriginRequest()) {
-                CrashDiagnostics.recordEvent(service.filesDir, "Rejected cross-origin /usb/session handshake.")
+                CrashDiagnostics.recordEvent(filesDir, "Rejected cross-origin /usb/session handshake.")
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "cross-origin rejected"))
                 return@webSocket
             }
@@ -264,66 +266,23 @@ private fun Routing.setupUsbSessionRoute(service: MediaProjectionService) {
                     onBufferOverflow = BufferOverflow.DROP_OLDEST,
                 )
             val frameSenderJob = launch {
-                for (frameBytes in frameChannel) {
-                    val active = isActiveSession(sessionId, sessionTransport)
-                    if (!active) break
-                    videoConfigSent.await()
-                    try {
-                        send(Frame.Binary(fin = true, data = frameBytes))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        CrashDiagnostics.recordCaughtException(
-                            service.filesDir,
-                            "USB frame send $sessionId",
-                            e,
-                        )
-                        Log.e("KtorServer", "USB frame send error: ${e.message}", e)
-                        break
-                    }
-                }
+                sendUsbFrames(
+                    service = service,
+                    sessionId = sessionId,
+                    sessionTransport = sessionTransport,
+                    frameChannel = frameChannel,
+                    videoConfigSent = videoConfigSent,
+                )
             }
-            CrashDiagnostics.recordEvent(service.filesDir, "USB session connected: sessionId=$sessionId.")
+            CrashDiagnostics.recordEvent(filesDir, "USB session connected: sessionId=$sessionId.")
             Log.d("KtorServer", "USB session connected: sessionId=$sessionId.")
 
             try {
-                val hasCachedGrant = withContext(Dispatchers.Main) {
-                    screenCaptureManager.mediaProjectionResultCode != null && screenCaptureManager.mediaProjectionResultData != null
-                }
-                if (!hasCachedGrant) {
-                    val waitingStatus = withContext(Dispatchers.Main) {
-                        buildUsbStatusMessage("WAITING_FOR_SCREEN_CAPTURE", captureReady = false)
-                    }
-                    send(Frame.Text(waitingStatus))
-                    withContext(Dispatchers.Main) {
-                        requestScreenCapturePermissionFromActivity("USB session requested MediaProjection grant")
-                    }
-                }
-
-                // Clear any stale messages in the channel
-                while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
-
-                while (true) {
-                    val isActive = isActiveSession(sessionId, sessionTransport)
-                    if (!isActive) break
-
-                    val hasGrant = withContext(Dispatchers.Main) {
-                        screenCaptureManager.mediaProjectionResultCode != null && screenCaptureManager.mediaProjectionResultData != null
-                    }
-                    if (hasGrant) break
-
-                    withTimeoutOrNull(MediaProjectionService.MEDIA_PROJECTION_GRANT_POLL_MS) {
-                        permissionGrantChannel.receive()
-                    }
-                }
-
-                val grant = withContext(Dispatchers.Main) {
-                    if (isActiveSession(sessionId, sessionTransport)) {
-                        screenCaptureManager.consumeMediaProjectionGrant()
-                    } else {
-                        null
-                    }
-                }
+                val grant = awaitMediaProjectionGrant(
+                    service = service,
+                    sessionId = sessionId,
+                    sessionTransport = sessionTransport,
+                )
                 if (grant == null) {
                     val reauthStatus = withContext(Dispatchers.Main) {
                         buildUsbStatusMessage("SCREEN_CAPTURE_REAUTH_REQUIRED", captureReady = false)
@@ -332,135 +291,273 @@ private fun Routing.setupUsbSessionRoute(service: MediaProjectionService) {
                     return@webSocket
                 }
 
-                val (resultCode, resultData) = grant
-                val startingStatus = withContext(Dispatchers.Main) {
-                    screenCaptureManager.lastUsbCodec = requestedCodec
-                    if (requestedCodec == UsbVideoCodec.H264) {
-                        screenCaptureManager.lastUsbH264Profile = screenCaptureManager.resolveCurrentUsbH264Profile()
-                    } else {
-                        screenCaptureManager.lastUsbProfile = screenCaptureManager.resolveCurrentUsbProfile()
-                    }
-                    screenCaptureManager.usbPerfMonitor.reset()
-                    buildUsbStatusMessage("USB_STREAM_STARTING", captureReady = true)
+                val started = startUsbScreenStream(
+                    service = service,
+                    sessionId = sessionId,
+                    sessionTransport = sessionTransport,
+                    requestedCodec = requestedCodec,
+                    grant = grant,
+                    frameChannel = frameChannel,
+                    videoConfigSent = videoConfigSent,
+                )
+                if (!started) {
+                    return@webSocket
                 }
-                send(Frame.Text(startingStatus))
-                var h264ConfigJson: String? = null
-                try {
-                    withContext(Dispatchers.Main) {
-                        if (requestedCodec == UsbVideoCodec.H264) {
-                            val h264Streamer = screenCaptureManager.prepareUsbH264ScreenStreamerForSession(sessionId)
-                            h264Streamer.start(
-                                resultCode = resultCode,
-                                resultData = resultData,
-                                profileProvider = screenCaptureManager::resolveCurrentUsbH264Profile,
-                                perfMonitor = screenCaptureManager.usbPerfMonitor,
-                                onVideoConfig = { configJson ->
-                                    h264ConfigJson = configJson
-                                },
-                                onChunk = { frameBytes ->
-                                    frameChannel.trySend(frameBytes)
-                                },
-                            )
-                        } else {
-                            screenCaptureManager.prepareUsbScreenStreamerForSession(sessionId)
-                            screenCaptureManager.usbScreenStreamer.start(
-                                resultCode = resultCode,
-                                resultData = resultData,
-                                profileProvider = screenCaptureManager::resolveCurrentUsbProfile,
-                                perfMonitor = screenCaptureManager.usbPerfMonitor,
-                            ) { frameBytes ->
-                                frameChannel.trySend(frameBytes)
-                            }
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (requestedCodec == UsbVideoCodec.H264) {
-                        CrashDiagnostics.recordCaughtException(service.filesDir, "USB H.264 start $sessionId", e)
-                        Log.e("KtorServer", "USB H.264 start failed: ${e.message}", e)
-                        val fallbackStatus = withContext(Dispatchers.Main) {
-                            screenCaptureManager.lastUsbCodec = UsbVideoCodec.JPEG
-                            buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
-                        }
-                        send(Frame.Text(fallbackStatus))
-                        return@webSocket
-                    }
-                    throw e
-                }
-                if (requestedCodec == UsbVideoCodec.H264) {
-                    val configJson = h264ConfigJson
-                    if (configJson != null) {
-                        send(Frame.Text(configJson))
-                    } else {
-                        val fallbackStatus = withContext(Dispatchers.Main) {
-                            screenCaptureManager.lastUsbCodec = UsbVideoCodec.JPEG
-                            buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
-                        }
-                        send(Frame.Text(fallbackStatus))
-                        return@webSocket
-                    }
-                    videoConfigSent.complete(Unit)
-                }
-                val streamingStatus = withContext(Dispatchers.Main) {
-                    buildUsbStatusMessage("USB_STREAMING", captureReady = true)
-                }
-                send(Frame.Text(streamingStatus))
 
-                for (frame in incoming) {
-                    val active = isActiveSession(sessionId, sessionTransport)
-                    if (!active) break
-                    if (frame is Frame.Text) {
-                        controlEventDispatcher.dispatch(frame.readText()) { result ->
-                            socketSession.launch {
-                                try {
-                                    if (isActiveSession(sessionId, sessionTransport)) {
-                                        socketSession.send(Frame.Text(result.toAckJson()))
-                                    }
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Throwable) {
-                                    CrashDiagnostics.recordCaughtException(
-                                        service.filesDir,
-                                        "USB control ack send $sessionId",
-                                        e,
-                                    )
-                                    Log.e("KtorServer", "USB control ACK send error: ${e.message}", e)
-                                }
-                            }
-                        }
-                    }
-                }
+                handleUsbControlEvents(
+                    service = service,
+                    sessionId = sessionId,
+                    sessionTransport = sessionTransport,
+                    socketSession = socketSession,
+                )
             } catch (e: ClosedReceiveChannelException) {
-                CrashDiagnostics.recordEvent(service.filesDir, "USB session connection closed by peer: sessionId=$sessionId.")
+                CrashDiagnostics.recordEvent(filesDir, "USB session connection closed by peer: sessionId=$sessionId.")
             } catch (e: Throwable) {
-                CrashDiagnostics.recordCaughtException(service.filesDir, "USB session $sessionId", e)
+                CrashDiagnostics.recordCaughtException(filesDir, "USB session $sessionId", e)
                 Log.e("KtorServer", "USB session error: ${e.message}", e)
             } finally {
-                frameChannel.close()
-                withContext(NonCancellable) {
-                    frameSenderJob.cancelAndJoin()
-                    withContext(Dispatchers.Main) {
-                        when (sessionTransport) {
-                            MirrorTransport.USB_JPEG ->
-                                if (
-                                    isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
-                                    screenCaptureManager.isUsbScreenStreamerInitialized()
-                                ) {
-                                    screenCaptureManager.usbScreenStreamer.stop()
-                                }
-                            MirrorTransport.USB_H264 ->
-                                if (isActiveSession(sessionId, MirrorTransport.USB_H264)) {
-                                    screenCaptureManager.usbH264ScreenStreamer?.stop()
-                                }
-                            MirrorTransport.TAILSCALE_WEBRTC -> Unit
-                        }
+                cleanupUsbSession(
+                    service = service,
+                    sessionId = sessionId,
+                    sessionTransport = sessionTransport,
+                    frameChannel = frameChannel,
+                    frameSenderJob = frameSenderJob,
+                )
+            }
+        }
+    }
+}
+
+private suspend fun DefaultWebSocketServerSession.sendUsbFrames(
+    service: MediaProjectionService,
+    sessionId: Int,
+    sessionTransport: MirrorTransport,
+    frameChannel: Channel<ByteArray>,
+    videoConfigSent: CompletableDeferred<Unit>,
+) {
+    with(service) {
+        for (frameBytes in frameChannel) {
+            val active = isActiveSession(sessionId, sessionTransport)
+            if (!active) break
+            videoConfigSent.await()
+            try {
+                send(Frame.Binary(fin = true, data = frameBytes))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                CrashDiagnostics.recordCaughtException(
+                    filesDir,
+                    "USB frame send $sessionId",
+                    e,
+                )
+                Log.e("KtorServer", "USB frame send error: ${e.message}", e)
+                break
+            }
+        }
+    }
+}
+
+private suspend fun DefaultWebSocketServerSession.awaitMediaProjectionGrant(
+    service: MediaProjectionService,
+    sessionId: Int,
+    sessionTransport: MirrorTransport,
+): Pair<Int, android.content.Intent>? {
+    with(service) {
+        val hasCachedGrant = withContext(Dispatchers.Main) {
+            screenCaptureManager.mediaProjectionResultCode != null && screenCaptureManager.mediaProjectionResultData != null
+        }
+        if (!hasCachedGrant) {
+            val waitingStatus = withContext(Dispatchers.Main) {
+                buildUsbStatusMessage("WAITING_FOR_SCREEN_CAPTURE", captureReady = false)
+            }
+            send(Frame.Text(waitingStatus))
+            withContext(Dispatchers.Main) {
+                requestScreenCapturePermissionFromActivity("USB session requested MediaProjection grant")
+            }
+        }
+
+        // Clear any stale messages in the channel
+        while (permissionGrantChannel.tryReceive().isSuccess) { /* clear */ }
+
+        while (true) {
+            val isActive = isActiveSession(sessionId, sessionTransport)
+            if (!isActive) break
+
+            val hasGrant = withContext(Dispatchers.Main) {
+                screenCaptureManager.mediaProjectionResultCode != null && screenCaptureManager.mediaProjectionResultData != null
+            }
+            if (hasGrant) break
+
+            withTimeoutOrNull(MediaProjectionService.MEDIA_PROJECTION_GRANT_POLL_MS) {
+                permissionGrantChannel.receive()
+            }
+        }
+
+        return withContext(Dispatchers.Main) {
+            if (isActiveSession(sessionId, sessionTransport)) {
+                screenCaptureManager.consumeMediaProjectionGrant()
+            } else {
+                null
+            }
+        }
+    }
+}
+
+private suspend fun DefaultWebSocketServerSession.startUsbScreenStream(
+    service: MediaProjectionService,
+    sessionId: Int,
+    sessionTransport: MirrorTransport,
+    requestedCodec: UsbVideoCodec,
+    grant: Pair<Int, android.content.Intent>,
+    frameChannel: Channel<ByteArray>,
+    videoConfigSent: CompletableDeferred<Unit>,
+): Boolean {
+    with(service) {
+        val (resultCode, resultData) = grant
+        val startingStatus = withContext(Dispatchers.Main) {
+            screenCaptureManager.lastUsbCodec = requestedCodec
+            if (requestedCodec == UsbVideoCodec.H264) {
+                screenCaptureManager.lastUsbH264Profile = screenCaptureManager.resolveCurrentUsbH264Profile()
+            } else {
+                screenCaptureManager.lastUsbProfile = screenCaptureManager.resolveCurrentUsbProfile()
+            }
+            screenCaptureManager.usbPerfMonitor.reset()
+            buildUsbStatusMessage("USB_STREAM_STARTING", captureReady = true)
+        }
+        send(Frame.Text(startingStatus))
+
+        var h264ConfigJson: String? = null
+        try {
+            withContext(Dispatchers.Main) {
+                if (requestedCodec == UsbVideoCodec.H264) {
+                    val h264Streamer = screenCaptureManager.prepareUsbH264ScreenStreamerForSession(sessionId)
+                    h264Streamer.start(
+                        resultCode = resultCode,
+                        resultData = resultData,
+                        profileProvider = screenCaptureManager::resolveCurrentUsbH264Profile,
+                        perfMonitor = screenCaptureManager.usbPerfMonitor,
+                        onVideoConfig = { configJson ->
+                            h264ConfigJson = configJson
+                        },
+                        onChunk = { frameBytes ->
+                            frameChannel.trySend(frameBytes)
+                        },
+                    )
+                } else {
+                    screenCaptureManager.prepareUsbScreenStreamerForSession(sessionId)
+                    screenCaptureManager.usbScreenStreamer.start(
+                        resultCode = resultCode,
+                        resultData = resultData,
+                        profileProvider = screenCaptureManager::resolveCurrentUsbProfile,
+                        perfMonitor = screenCaptureManager.usbPerfMonitor,
+                    ) { frameBytes ->
+                        frameChannel.trySend(frameBytes)
                     }
-                    screenCaptureManager.clearActiveUsbProjectionSession(sessionId)
-                    endViewerSession(sessionId)
-                    CrashDiagnostics.recordEvent(service.filesDir, "USB session ended: sessionId=$sessionId.")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (requestedCodec == UsbVideoCodec.H264) {
+                CrashDiagnostics.recordCaughtException(filesDir, "USB H.264 start $sessionId", e)
+                Log.e("KtorServer", "USB H.264 start failed: ${e.message}", e)
+                val fallbackStatus = withContext(Dispatchers.Main) {
+                    screenCaptureManager.lastUsbCodec = UsbVideoCodec.JPEG
+                    buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
+                }
+                send(Frame.Text(fallbackStatus))
+                return false
+            }
+            throw e
+        }
+
+        if (requestedCodec == UsbVideoCodec.H264) {
+            val configJson = h264ConfigJson
+            if (configJson != null) {
+                send(Frame.Text(configJson))
+            } else {
+                val fallbackStatus = withContext(Dispatchers.Main) {
+                    screenCaptureManager.lastUsbCodec = UsbVideoCodec.JPEG
+                    buildUsbStatusMessage("H264_START_FAILED", captureReady = false)
+                }
+                send(Frame.Text(fallbackStatus))
+                return false
+            }
+            videoConfigSent.complete(Unit)
+        }
+
+        val streamingStatus = withContext(Dispatchers.Main) {
+            buildUsbStatusMessage("USB_STREAMING", captureReady = true)
+        }
+        send(Frame.Text(streamingStatus))
+        return true
+    }
+}
+
+private suspend fun DefaultWebSocketServerSession.handleUsbControlEvents(
+    service: MediaProjectionService,
+    sessionId: Int,
+    sessionTransport: MirrorTransport,
+    socketSession: DefaultWebSocketServerSession,
+) {
+    with(service) {
+        for (frame in incoming) {
+            val active = isActiveSession(sessionId, sessionTransport)
+            if (!active) break
+            if (frame is Frame.Text) {
+                controlEventDispatcher.dispatch(frame.readText()) { result ->
+                    socketSession.launch {
+                        try {
+                            if (isActiveSession(sessionId, sessionTransport)) {
+                                socketSession.send(Frame.Text(result.toAckJson()))
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            CrashDiagnostics.recordCaughtException(
+                                filesDir,
+                                "USB control ack send $sessionId",
+                                e,
+                            )
+                            Log.e("KtorServer", "USB control ACK send error: ${e.message}", e)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private suspend fun cleanupUsbSession(
+    service: MediaProjectionService,
+    sessionId: Int,
+    sessionTransport: MirrorTransport,
+    frameChannel: Channel<ByteArray>,
+    frameSenderJob: Job,
+) {
+    with(service) {
+        frameChannel.close()
+        withContext(NonCancellable) {
+            frameSenderJob.cancelAndJoin()
+            withContext(Dispatchers.Main) {
+                when (sessionTransport) {
+                    MirrorTransport.USB_JPEG ->
+                        if (
+                            isActiveSession(sessionId, MirrorTransport.USB_JPEG) &&
+                            screenCaptureManager.isUsbScreenStreamerInitialized()
+                        ) {
+                            screenCaptureManager.usbScreenStreamer.stop()
+                        }
+                    MirrorTransport.USB_H264 ->
+                        if (isActiveSession(sessionId, MirrorTransport.USB_H264)) {
+                            screenCaptureManager.usbH264ScreenStreamer?.stop()
+                        }
+                    MirrorTransport.TAILSCALE_WEBRTC -> Unit
+                }
+            }
+            screenCaptureManager.clearActiveUsbProjectionSession(sessionId)
+            endViewerSession(sessionId)
+            CrashDiagnostics.recordEvent(filesDir, "USB session ended: sessionId=$sessionId.")
         }
     }
 }

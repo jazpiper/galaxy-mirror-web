@@ -1,32 +1,25 @@
 package com.example.galaxymirror
 
-import io.ktor.server.testing.testApplication
-import io.ktor.server.websocket.WebSockets
-import io.ktor.server.application.install
-import io.ktor.server.routing.routing
+import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.WebSockets as ClientWebSockets
 import io.ktor.client.plugins.websocket.webSocket
-import io.ktor.websocket.close
-import kotlinx.coroutines.runBlocking
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import io.ktor.server.application.install
+import io.ktor.server.routing.routing
+import io.ktor.server.testing.ApplicationTestBuilder
+import io.ktor.server.testing.testApplication
+import io.ktor.server.websocket.WebSockets
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.readReason
+import java.io.File
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
-import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import java.io.File
-import org.mockito.Mockito.atLeastOnce
-import io.ktor.websocket.Frame
-import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import org.junit.Assert.assertTrue
-import java.util.concurrent.atomic.AtomicBoolean
-import com.example.galaxymirror.MediaProjectionService
-import com.example.galaxymirror.ScreenCaptureManager
-import com.example.galaxymirror.UsbPerfMonitor
-import kotlinx.coroutines.channels.Channel
-import io.ktor.server.testing.ApplicationTestBuilder
-import io.ktor.client.HttpClient
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 
 class MirrorRoutingTest {
 
@@ -83,5 +76,39 @@ class MirrorRoutingTest {
             exceptionCaught = true
         }
         assertTrue(exceptionCaught)
+    }
+
+    @Test
+    fun testUsbSessionCrossOriginRequestIsRejected() = testApplication {
+        val client = setupTestApp()
+
+        client.webSocket(
+            urlString = "/usb/session",
+            request = {
+                header(HttpHeaders.Origin, "http://evil.com")
+                header(HttpHeaders.Host, "127.0.0.1:8080")
+            }
+        ) {
+            val reason = closeReason.await()
+            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, reason?.code)
+            assertEquals("cross-origin rejected", reason?.message)
+        }
+    }
+
+    @Test
+    fun testSignalingCrossOriginRequestIsRejected() = testApplication {
+        val client = setupTestApp()
+
+        client.webSocket(
+            urlString = "/signaling",
+            request = {
+                header(HttpHeaders.Origin, "http://evil.com")
+                header(HttpHeaders.Host, "127.0.0.1:8080")
+            }
+        ) {
+            val reason = closeReason.await()
+            assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, reason?.code)
+            assertEquals("cross-origin rejected", reason?.message)
+        }
     }
 }

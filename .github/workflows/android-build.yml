@@ -31,7 +31,14 @@ jobs:
         for i in 1 2 3 4 5; do ./gradlew app:testDebugUnitTest --no-daemon && break || sleep 15; done
 
     - name: Run viewer JavaScript tests
-      run: node --test android/app/src/test/js/viewer-keyboard.test.mjs
+      run: |
+        node --test android/app/src/test/js/viewer-keyboard.test.mjs
+        node --test android/app/src/test/js/viewer-layout.test.mjs
+        node --test android/app/src/test/js/ui.test.mjs
+        node --test android/app/src/test/js/controls.test.mjs
+        node --test android/app/src/test/js/signaling.test.mjs
+        node --test android/app/src/test/js/webrtc.test.mjs
+        node --check android/app/src/main/resources/files/*.js
 
     - name: Run lint
       run: |
@@ -44,7 +51,8 @@ jobs:
         for i in 1 2 3 4 5; do ./gradlew assembleDebug --no-daemon && break || sleep 15; done
 
     - name: Upload Test and Lint Reports
-      if: always()
+      if: failure()
+      continue-on-error: true
       uses: actions/upload-artifact@v6
       with:
         name: verification-reports
@@ -55,6 +63,8 @@ jobs:
         retention-days: 7
 
     - name: Upload Debug APK Artifact
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      continue-on-error: true
       uses: actions/upload-artifact@v6
       with:
         name: app-debug

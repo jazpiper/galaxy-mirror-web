@@ -1481,3 +1481,44 @@ await test('waiting for screen capture stops reconnect overlay and clears stale 
     assert.equal(document.getElementById('controlStatus').innerText, '대기');
     assert.match(document.getElementById('statusDetail').textContent, /화면 공유 권한/);
 });
+
+await test("invalid JSON payload on dataChannel catches error gracefully", () => {
+    const { context } = loadViewer();
+
+    assert.doesNotThrow(() => {
+        vm.runInContext(
+            "dataChannel.onmessage({ data: \"invalid json {\" });",
+            context
+        );
+    });
+});
+
+await test("invalid JSON message on signalingSocket catches error gracefully", () => {
+    const { context, webSockets } = loadViewer();
+    vm.runInContext("connectSignaling();", context);
+
+    assert.doesNotThrow(() => {
+        webSockets[0].onmessage({ data: "invalid json {" });
+    });
+});
+
+await test("invalid JSON text message on USB socket catches error gracefully", () => {
+    const { context } = loadViewer();
+
+    assert.doesNotThrow(() => {
+        vm.runInContext("handleUsbTextMessage(\"invalid json {\");", context);
+    });
+});
+
+await test('setupWebRTC logs error when createOffer fails', async () => {
+    const { context, document, clock } = loadViewer();
+
+    vm.runInContext('RTCPeerConnection.prototype.createOffer = async function() { throw new Error("Offer creation failed"); };', context);
+
+    await vm.runInContext('setupWebRTC();', context);
+    clock.tick(50);
+
+    const logEntries = Array.from(document.getElementById('logBox').children).map(el => el.textContent);
+    assert.ok(logEntries.some(msg => msg.includes('WebRTC 기동 중 오류 발생: Offer creation failed')));
+});
+

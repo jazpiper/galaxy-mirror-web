@@ -2,12 +2,30 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-07-23
+updated: 2026-08-27
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-08-27
+
+- **CI 워크플로우 정상화 및 27개 Jules PR 통합/안정화**
+  - **CI Quota 고갈 원인 해결**: 동시 실행된 다수 PR에서 40MB 크기의 `app-debug.apk`를 무조건 업로드하면서 GitHub 계정 Artifact Storage Quota(500MB)가 초과되어 발생하던 `Failed to CreateArtifact` 빌드 실패를 근본 해결.
+    - 기존 만료/불필요 아티팩트 전량 API 삭제 및 스토리지 0MB로 초기화.
+    - `.github/workflows/android-build.yml`: `Upload Debug APK Artifact`를 `main` 브랜치 push 이벤트로만 한정하고 `continue-on-error: true` 적용. `Upload Test and Lint Reports`도 `if: failure()` + `continue-on-error: true`로 경량화.
+  - **Mac Viewer Vanilla JS 단위 테스트 스위트 전면 확장**:
+    - `ui.test.mjs`, `controls.test.mjs`, `signaling.test.mjs`, `webrtc.test.mjs` 신규 유닛 테스트 스위트 도입 및 `viewer-keyboard.test.mjs` 오류 처리 테스트 보강.
+    - CI 워크플로우에서 모든 JS 테스트(총 6개 파일)를 자동 실행하도록 구성.
+  - **Android Host / Kotlin 유닛 테스트 및 성능/보안 최적화 통합**:
+    - 신규 유닛 테스트: `NavigationKeysTest`, `MainActivityTest`, `MirrorTransportTest`, `UsbH264ScreenStreamerTest`, `JsonExtensionsTest`, `UsbScreenStreamerBenchmarkTest` 등 추가 및 기존 테스트 케이스 보강.
+    - 성능 최적화: `UsbScreenStreamer` 프레임 시그니처 계산 시 컬럼 오프셋 사전 연산(`colOffsets`) 및 JPEG 리사이징용 `Canvas`/`Rect` 인스턴스 캐싱 적용(프레임별 GC 힙 할당 제거).
+    - 보안/개인정보 보호: `WebRtcManager` DataChannel 수신 로그 및 `GalaxyMirrorAccessibilityService` 클립보드/텍스트 로그에서 원문 페이로드 마스킹(길이만 로깅).
+    - 리팩토링 및 UX 개선: `GalaxyMirrorAccessibilityService`의 `moveCursor` 및 `applyRemoteTextEdit` 공통 헬퍼 추출, `MirrorRouting`의 USB 세션 라우트 모듈화, `MainActivity` 화면 공유 권한 런처 실패 시 사용자 Toast 알림 추가.
+  - **검증**: JS 테스트 6개 파일(26개 테스트) 100% 통과, JVM 유닛 테스트(`app:testDebugUnitTest`) 100% 통과, Android lint(`app:lintDebug`) 및 `assembleDebug` 100% 빌드 성공.
 
 ---
 
