@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.Rect
 import android.media.AudioManager
 import android.os.Handler
@@ -189,13 +190,17 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                 }
                 "swipe" -> {
                     textInputBuffer.invalidate()
-                    val x1 = (json.getDouble("x1") * getScreenWidth()).toFloat()
-                    val y1 = (json.getDouble("y1") * getScreenHeight()).toFloat()
-                    val x2 = (json.getDouble("x2") * getScreenWidth()).toFloat()
-                    val y2 = (json.getDouble("y2") * getScreenHeight()).toFloat()
+                    val start = PointF(
+                        (json.getDouble("x1") * getScreenWidth()).toFloat(),
+                        (json.getDouble("y1") * getScreenHeight()).toFloat()
+                    )
+                    val end = PointF(
+                        (json.getDouble("x2") * getScreenWidth()).toFloat(),
+                        (json.getDouble("y2") * getScreenHeight()).toFloat()
+                    )
                     val duration = if (json.has("duration")) json.getLong("duration") else 300L
                     CrashDiagnostics.recordEvent(this, "Accessibility swipe requested.")
-                    performSwipe(x1, y1, x2, y2, duration) { applied ->
+                    performSwipe(start, end, duration) { applied ->
                         resultCallback(ControlEventResult(seq, type, applied, "SWIPE_COMPLETED"))
                     }
                 }
@@ -271,15 +276,15 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         enqueueGesture(gesture, "tap ($x, $y)", onResult)
     }
 
-    private fun performSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long, onResult: (Boolean) -> Unit) {
-        Log.d(TAG, "Queueing swipe from ($x1,$y1) to ($x2,$y2) in ${durationMs}ms")
+    private fun performSwipe(start: PointF, end: PointF, durationMs: Long, onResult: (Boolean) -> Unit) {
+        Log.d(TAG, "Queueing swipe from (${start.x},${start.y}) to (${end.x},${end.y}) in ${durationMs}ms")
         val path = Path().apply {
-            moveTo(x1, y1)
-            lineTo(x2, y2)
+            moveTo(start.x, start.y)
+            lineTo(end.x, end.y)
         }
         val strokeDescription = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(strokeDescription).build()
-        enqueueGesture(gesture, "swipe ($x1,$y1)->($x2,$y2)", onResult)
+        enqueueGesture(gesture, "swipe (${start.x},${start.y})->(${end.x},${end.y})", onResult)
     }
 
     private fun handleKeyEvent(keyCode: Int): Boolean {
