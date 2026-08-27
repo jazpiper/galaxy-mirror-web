@@ -216,7 +216,7 @@ class WebRtcManager(
                                 val bytes = ByteArray(buffer.data.remaining())
                                 buffer.data.get(bytes)
                                 val text = String(bytes, Charsets.UTF_8)
-                                Log.d("WebRTC", "DataChannel message: $text")
+                                Log.d("WebRTC", "DataChannel message received, length: ${text.length}")
                                 service.controlEventDispatcher.dispatch(text) { result ->
                                     sendControlAck(dc, result)
                                 }
