@@ -100,6 +100,7 @@ class FavoriteAppsRepository(
             true
         } catch (e: Exception) {
             android.util.Log.e("FavoriteAppsRepository", "Failed to launch package: $packageName", e)
+            CrashDiagnostics.recordCaughtException(context.filesDir, "launch favorite $packageName", e)
             false
         }
     }
