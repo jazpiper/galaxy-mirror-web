@@ -258,6 +258,7 @@ class WebRtcManager(
                 videoCapturer?.startCapture(streamProfile.width, streamProfile.height, streamProfile.fps)
             } catch (e: Exception) {
                 CrashDiagnostics.recordCaughtException(service.filesDir, "ScreenCapturerAndroid.startCapture", e)
+                Log.e("WebRTC", "Error starting screen capture: ${e.message}", e)
                 service.handleScreenCaptureReauthorizationRequired(
                     sessionId = sessionId,
                     sendResponse = sendResponse,
