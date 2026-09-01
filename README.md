@@ -16,7 +16,7 @@ sequenceDiagram
     participant AndroidApp as Android Mirror 임베디드 서버
     participant AndroidOS as Android OS
     
-    Note over AndroidApp: 1. Android Mirror 실행<br/>(포트 8080 웹서버 바인딩: 0.0.0.0)
+    Note over AndroidApp: 1. Android Mirror 실행<br/>(포트 8080 웹서버 바인딩: 127.0.0.1)
     
     Mac->>Tailnet: 2. Android 앱에 표시된 http://[Android-MagicDNS-Host]:8080/?transport=tailscale 접속
     Tailnet-->>AndroidApp: 3. WireGuard 암호화 터널 통과 (5G/Wi-Fi 무관)
@@ -53,7 +53,7 @@ sequenceDiagram
 
 ### 1. Android Mirror 앱 내 임베디드 웹 서버 (Android Host)
 * **웹 호스팅:** Ktor(Kotlin) 또는 Javalin(Java) 등의 초경량 자바 웹서버 모듈 탑재.
-* **소켓 바인딩:** 외부 및 Tailscale 망의 접속을 허용하기 위해 반드시 `0.0.0.0:8080` 포트로 바인딩.
+* **소켓 바인딩:** 외부 및 Tailscale 망의 접속을 허용하기 위해 반드시 `127.0.0.1:8080` 포트로 바인딩.
 * **접근성 권한 활용:** 맥북 브라우저로부터 마우스 좌표를 수신하여 다음 코드로 이벤트를 주입합니다.
   ```kotlin
   // 클릭 시뮬레이션 예시 코드

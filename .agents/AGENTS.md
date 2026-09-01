@@ -13,7 +13,7 @@
 ## 2. Core Architecture & Stack
 
 - **Android Host (Kotlin / Java 21 toolchain)**
-  - 임베디드 웹서버: Ktor CIO 3.0.3, `0.0.0.0:8080` 바인딩 (외부/Tailscale 망 접속 허용을 위해 반드시 `0.0.0.0`).
+  - 임베디드 웹서버: Ktor CIO 3.0.3, `127.0.0.1:8080` 바인딩 (외부/Tailscale 망 접속 허용을 위해 반드시 `127.0.0.1`).
   - 화면 캡처: `MediaProjection` API → WebRTC(H.264/VP8) 또는 USB(H.264/JPEG) 스트리밍.
   - 제어 입력 주입: `AccessibilityService` (터치/스크롤/키보드).
   - Gradle Kotlin DSL, Kotlin 2.x, Jetpack Compose + Material3 + Navigation, `compileSdk`/`targetSdk` 36, `minSdk` 29.
