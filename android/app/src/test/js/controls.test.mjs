@@ -371,6 +371,12 @@ await test('sendControlPayload & sendAndroidKey send messages via DataChannel an
     assert.equal(messages[messages.length - 1].type, 'key');
     assert.equal(messages[messages.length - 1].keyCode, 3);
 
+    // WebRTC DataChannel exception path when send throws
+    vm.runInContext('dataChannel.readyState = "open";', context);
+    vm.runInContext('dataChannel.send = () => { throw new Error("DataChannel send exception"); };', context);
+    const dcExceptionResult = vm.runInContext('sendControlPayload({ type: "key", keyCode: 26 });', context);
+    assert.equal(dcExceptionResult, false);
+
     // WebRTC DataChannel closed
     vm.runInContext('dataChannel.readyState = "closed";', context);
     const failKey = vm.runInContext('sendControlPayload({ type: "key", keyCode: 4 });', context);
@@ -385,6 +391,11 @@ await test('sendControlPayload & sendAndroidKey send messages via DataChannel an
     assert.equal(usbSent, true);
     assert.equal(usbSock.sent[usbSock.sent.length - 1].type, 'key');
     assert.equal(usbSock.sent[usbSock.sent.length - 1].keyCode, 187);
+
+    // USB Control Channel exception path when send throws
+    usbSock.send = () => { throw new Error('USB send exception'); };
+    const usbExceptionResult = vm.runInContext('sendControlPayload({ type: "key", keyCode: 187 });', context);
+    assert.equal(usbExceptionResult, false);
 
     usbSock.readyState = 3; // CLOSED
     const usbFail = vm.runInContext('sendControlPayload({ type: "key", keyCode: 187 });', context);
