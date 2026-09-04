@@ -1,4 +1,3 @@
-@file:Suppress("UNUSED_IMPORT")
 package com.example.galaxymirror
 
 import android.app.Activity
@@ -9,7 +8,6 @@ import android.content.ServiceConnection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import androidx.core.net.toUri
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
