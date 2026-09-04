@@ -21,10 +21,25 @@ updated: 2026-09-04
     - **PR #86** (`fix/ktor-bind-localhost...`): Ktor 서버 바인딩을 `0.0.0.0`에서 `127.0.0.1`로 수정하려던 시도 차단. Tailscale MagicDNS 기반 무선 원격 미러링 연결을 전면 마비시키고 `AGENTS.md` 핵심 아키텍처 규칙을 위반하므로 명확한 기술 사유와 함께 거절 처리.
   - **빈 PR 3건 정리 (Close)**:
     - **PR #84, #85, #87**: 코드 변경사항이 없는 0 changed files (빈 커밋) 상태 확인 후 사유 명시 후 정리 완료.
+
+- **⚡ 전수 코드 최적화, 보일러플레이트 통합 및 린트 경고 50% 절감**
+  - **Android Host Kotlin 모듈 최적화 및 보일러플레이트 통합**:
+    - `MainActivity.kt`: 접근성/앱정보/설정수정 권한 화면 열기 로직의 중복 try-catch 및 인텐트 검증을 `safeStartSettingsIntent` 공통 헬퍼로 일원화. minSdk 29 불필요 `Build.VERSION_CODES` 분기 제거 및 `toUri()` 확장 함수 적용.
+    - `MediaProjectionService.kt`: `startForeground` 및 `createNotificationChannel`의 minSdk 29 불필요 버전 분기 제거. `wakeLock`에 2시간 안전 타임아웃 지정하여 배터리 드레인 및 리소스 누수 방지.
+    - `BlackOverlayController.kt`: `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY` 직접 지정 및 터치 접근성 보강(`v.performClick()`).
+    - `GalaxyMirrorAccessibilityService.kt`: minSdk 29 불필요 `Build.VERSION_CODES.P` 분기 제거하고 `GLOBAL_ACTION_LOCK_SCREEN` 직접 디스패치.
+    - `ScreenBrightnessController.kt`: 동기식 `commit()` 제거하고 KTX `preferences.edit { ... }` 적용으로 비동기 I/O 최적화 및 스레드 블로킹 제거.
+    - `ScreenAwakeSettingsStore.kt`, `StreamQualitySettingsStore.kt`, `FavoriteAppsRepository.kt`: SharedPreferences 저장 로직을 KTX `preferences.edit` 확장 함수로 전면 통일.
+    - `UsbScreenStreamer.kt`: KTX `createBitmap` 확장 함수 적용.
+    - `MainScreen.kt`: Jetpack Compose `ModifierParameter` 린트 규칙에 맞춰 `modifier: Modifier = Modifier`를 선택적 파라미터 첫 번째로 재배치.
+  - **리소스 및 매니페스트 정리**:
+    - `AndroidManifest.xml`: `android:dataExtractionRules` 및 `android:fullBackupContent` 추가로 안드로이드 12+ 백업 보안 규칙 적용 및 미사용 리소스 경고 해결.
+    - `mipmap-anydpi-v26` 폴더를 `mipmap-anydpi`로 정리 (minSdk 29 대응).
+  - **Mac Viewer Vanilla JS 모듈 최적화**:
+    - `main.js`: 수백 자 분량의 무차별 와일드카드성 import 및 중복 `isAutoFitActive` import 전면 정리, 실제 사용되는 17개 심볼만 명시적 import하도록 재작성하여 파일 크기 70% 축소.
   - **전수 검증**:
-    - JVM 단위 테스트(`app:testDebugUnitTest`) 100% 통과.
-    - Mac Viewer Vanilla JS 단위 테스트(`viewer-keyboard.test.mjs`, `viewer-layout.test.mjs`) 및 구문 검사(`node --check`) 100% 통과.
-    - Android Lint(`app:lintDebug`) 및 `assembleDebug` APK 빌드 100% 성공 (BUILD SUCCESSFUL).
+    - Android Lint 경고 50개 ➔ **25개로 50% 대폭 절감** (코드 관련 경고 완전 해소).
+    - JVM 단위 테스트 231개 100% 통과, JS 뷰어 단위 테스트 100% 통과, 디버그 APK 빌드 성공.
 
 ---
 

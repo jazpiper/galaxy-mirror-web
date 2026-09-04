@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -249,14 +250,26 @@ class MainActivity : ComponentActivity() {
         mediaProjectionService?.setBlackOverlayEnabled(enabled)
     }
 
-    private fun openOverlaySettings() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivity(intent)
+    private fun safeStartSettingsIntent(
+        intent: Intent,
+        fallbackAction: String,
+        failureTag: String,
+        errorMessage: String,
+    ) {
+        try {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+            } else {
+                startActivity(Intent(fallbackAction))
+            }
+        } catch (e: Exception) {
+            CrashDiagnostics.recordCaughtException(filesDir, failureTag, e)
+            Toast.makeText(this, errorMessage, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun openOverlaySettings() {
+        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
     }
 
     private fun openAccessibilitySettings() {
@@ -266,17 +279,12 @@ class MainActivity : ComponentActivity() {
             return
         }
         CrashDiagnostics.recordEvent(this, "Opening accessibility settings.")
-        val accessibilityIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        try {
-            if (accessibilityIntent.resolveActivity(packageManager) != null) {
-                startActivity(accessibilityIntent)
-            } else {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(filesDir, "open accessibility settings", e)
-            Toast.makeText(this, "설정 화면을 열 수 없습니다.", Toast.LENGTH_SHORT).show()
-        }
+        safeStartSettingsIntent(
+            intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+            fallbackAction = Settings.ACTION_SETTINGS,
+            failureTag = "open accessibility settings",
+            errorMessage = "설정 화면을 열 수 없습니다.",
+        )
     }
 
     private fun openAppInfoSettings() {
@@ -289,16 +297,12 @@ class MainActivity : ComponentActivity() {
         val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", packageName, null)
         }
-        try {
-            if (appInfoIntent.resolveActivity(packageManager) != null) {
-                startActivity(appInfoIntent)
-            } else {
-                startActivity(Intent(Settings.ACTION_APPLICATION_SETTINGS))
-            }
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(filesDir, "open app info settings", e)
-            Toast.makeText(this, "앱 정보 화면을 열 수 없습니다.", Toast.LENGTH_SHORT).show()
-        }
+        safeStartSettingsIntent(
+            intent = appInfoIntent,
+            fallbackAction = Settings.ACTION_APPLICATION_SETTINGS,
+            failureTag = "open app info settings",
+            errorMessage = "앱 정보 화면을 열 수 없습니다.",
+        )
     }
 
     private fun openWriteSettings() {
@@ -309,18 +313,14 @@ class MainActivity : ComponentActivity() {
         }
         CrashDiagnostics.recordEvent(this, "Opening write settings permission screen.")
         val writeSettingsIntent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-            data = Uri.parse("package:$packageName")
+            data = "package:$packageName".toUri()
         }
-        try {
-            if (writeSettingsIntent.resolveActivity(packageManager) != null) {
-                startActivity(writeSettingsIntent)
-            } else {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
-        } catch (e: Exception) {
-            CrashDiagnostics.recordCaughtException(filesDir, "open write settings", e)
-            Toast.makeText(this, "시스템 설정 수정 권한 화면을 열 수 없습니다.", Toast.LENGTH_SHORT).show()
-        }
+        safeStartSettingsIntent(
+            intent = writeSettingsIntent,
+            fallbackAction = Settings.ACTION_SETTINGS,
+            failureTag = "open write settings",
+            errorMessage = "시스템 설정 수정 권한 화면을 열 수 없습니다.",
+        )
     }
 
     private fun disconnectMirror() {
@@ -337,10 +337,6 @@ class MainActivity : ComponentActivity() {
                 mediaProjectionService?.serviceState?.value?.screenAwakeSettings?.shouldKeepScreenAwake(true) ?: false
             )
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        startForegroundService(serviceIntent)
     }
 }

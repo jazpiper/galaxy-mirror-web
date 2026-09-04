@@ -11,12 +11,22 @@ updated: 2026-09-04
 
 ---
 
-### 🛡️ 2026-09-04 Jules PR 트리아지 및 코드베이스 동기화 완료
+### 🛡️ 2026-09-04 Jules PR 트리아지 및 전수 코드 최적화 완료
 - [x] **PR #88 병합**: `WebRtcManager.kt` 캡처 초기화 예외 로깅 추가 (`Log.e`)
 - [x] **PR #89 병합**: `FavoriteAppsRepository.kt` 앱 실행 실패 시 `CrashDiagnostics` 기록 및 단위 테스트 추가
 - [x] **PR #86 거절(Closed)**: Tailscale 원격 접속을 깨뜨리는 `127.0.0.1` 바인딩 변경 차단 (`AGENTS.md` 규격 보존)
 - [x] **PR #84, #85, #87 정리(Closed)**: 내용 없는 빈 커밋(0 changed files) 정리 완료
-- [x] **CI/로컬 전수 검증 통과**: JVM 단위 테스트, JS 뷰어 테스트, Lint 및 APK 빌드 100% 정상 통과
+- [x] **⚡ 전수 코드 최적화 & 통합**:
+  - `MainActivity.kt` 설정 인텐트 공통 실행 헬퍼 `safeStartSettingsIntent` 통합
+  - minSdk 29 불필요 `Build.VERSION_CODES` 분기 제거 (`MainActivity`, `MediaProjectionService`, `BlackOverlayController`, `GalaxyMirrorAccessibilityService`)
+  - `MediaProjectionService` `wakeLock` 안전 타임아웃(2시간) 지정
+  - `ScreenBrightnessController`, `ScreenAwakeSettingsStore`, `StreamQualitySettingsStore`, `FavoriteAppsRepository` SharedPreferences 저장 로직 KTX `edit` 확장 함수 통일
+  - `UsbScreenStreamer` KTX `createBitmap` 적용
+  - `MainScreen.kt` Compose `ModifierParameter` 컨벤션 준수
+  - `AndroidManifest.xml` 백업 보안 규칙 선언 및 `mipmap-anydpi` 리소스 폴더 정돈
+  - Mac Viewer `main.js` 불필요 대량 import 정리 (크기 70% 축소)
+  - Android Lint 경고 50개 ➔ 25개로 50% 절감
+- [x] **CI/로컬 전수 검증 통과**: JVM 단위 테스트 231개 100% 통과, JS 뷰어 테스트 100% 통과, Lint 및 APK 빌드 100% 정상 통과
 
 ---
 

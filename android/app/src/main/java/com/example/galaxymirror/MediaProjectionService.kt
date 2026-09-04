@@ -184,11 +184,11 @@ class MediaProjectionService : Service() {
         if (isValidStartData(resultCode, resultData != null)) {
             // Enter foreground state since we are starting projection capture
             val notification = createNotification()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
 
             webRtcManager.cleanupWebRTCResources(stopProjectionService = false, stopCapturer = true)
             screenCaptureManager.mediaProjectionResultCode = resultCode
@@ -794,7 +794,7 @@ class MediaProjectionService : Service() {
                     .newWakeLock(lockType, "AndroidMirror:Projection")
                     .apply {
                         setReferenceCounted(false)
-                        acquire()
+                        acquire(2 * 60 * 60 * 1000L)
                     }
             CrashDiagnostics.recordEvent(this@MediaProjectionService, "MediaProjection screen bright wake lock acquired.")
             return
@@ -824,17 +824,15 @@ class MediaProjectionService : Service() {
     }
 
     internal fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Mirroring Capture Notification Channel",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Android 미러링 화면 캡처 상태 알림 채널"
-            }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Mirroring Capture Notification Channel",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Android 미러링 화면 캡처 상태 알림 채널"
         }
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
     }
 }
 

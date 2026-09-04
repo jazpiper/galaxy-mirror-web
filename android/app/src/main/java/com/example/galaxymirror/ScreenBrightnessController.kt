@@ -2,6 +2,7 @@ package com.example.galaxymirror
 
 import android.content.Context
 import android.provider.Settings
+import androidx.core.content.edit
 
 data class ScreenBrightnessSnapshot(
   val brightness: Int,
@@ -153,21 +154,19 @@ private class SharedPreferencesBrightnessRestoreStore(
   }
 
   override fun saveSnapshot(snapshot: ScreenBrightnessSnapshot) {
-    preferences
-      .edit()
-      .putBoolean(KEY_HAS_SNAPSHOT, true)
-      .putInt(KEY_BRIGHTNESS, snapshot.brightness)
-      .putInt(KEY_MODE, snapshot.mode)
-      .commit()
+    preferences.edit {
+      putBoolean(KEY_HAS_SNAPSHOT, true)
+      putInt(KEY_BRIGHTNESS, snapshot.brightness)
+      putInt(KEY_MODE, snapshot.mode)
+    }
   }
 
   override fun clearSnapshot() {
-    preferences
-      .edit()
-      .remove(KEY_HAS_SNAPSHOT)
-      .remove(KEY_BRIGHTNESS)
-      .remove(KEY_MODE)
-      .commit()
+    preferences.edit {
+      remove(KEY_HAS_SNAPSHOT)
+      remove(KEY_BRIGHTNESS)
+      remove(KEY_MODE)
+    }
   }
 
   private companion object {

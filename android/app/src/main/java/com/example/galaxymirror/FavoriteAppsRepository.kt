@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
+import androidx.core.content.edit
 
 
 class FavoriteAppsRepository(
@@ -107,10 +108,9 @@ class FavoriteAppsRepository(
 
     private fun saveFavorites(favorites: List<FavoriteApp>) {
         cachedFavorites = favorites
-        preferences
-            .edit()
-            .putString(KEY_FAVORITES, FavoriteAppsCodec.toStoredJson(favorites))
-            .apply()
+        preferences.edit {
+            putString(KEY_FAVORITES, FavoriteAppsCodec.toStoredJson(favorites))
+        }
     }
 
     private companion object {

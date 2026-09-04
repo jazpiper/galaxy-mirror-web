@@ -1,6 +1,7 @@
 package com.example.galaxymirror
 
 import android.content.Context
+import androidx.core.content.edit
 
 class ScreenAwakeSettingsStore(
   private val store: KeyValueStore,
@@ -38,14 +39,14 @@ class ScreenAwakeSettingsStore(
       preferences.getBoolean(key, defaultValue)
 
     override fun putBoolean(key: String, value: Boolean) {
-      preferences.edit().putBoolean(key, value).apply()
+      preferences.edit { putBoolean(key, value) }
     }
 
     override fun getInt(key: String, defaultValue: Int): Int =
       preferences.getInt(key, defaultValue)
 
     override fun putInt(key: String, value: Int) {
-      preferences.edit().putInt(key, value).apply()
+      preferences.edit { putInt(key, value) }
     }
   }
 

@@ -307,13 +307,13 @@ internal fun MirrorHomeScreen(
 private fun ScreenAwakeSettingsPanel(
   settings: ScreenAwakeSettings,
   canWriteSystemSettings: Boolean,
+  onSettingsChange: (ScreenAwakeSettings) -> Unit,
+  onOpenWriteSettings: () -> Unit,
+  modifier: Modifier = Modifier,
   blackOverlayEnabled: Boolean = false,
   overlayPermissionReady: Boolean = false,
-  onSettingsChange: (ScreenAwakeSettings) -> Unit,
   onToggleBlackOverlay: (Boolean) -> Unit = {},
-  onOpenWriteSettings: () -> Unit,
   onOpenOverlaySettings: () -> Unit = {},
-  modifier: Modifier = Modifier,
 ) {
   Surface(
     modifier = modifier.fillMaxWidth(),

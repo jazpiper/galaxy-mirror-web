@@ -1,6 +1,7 @@
 package com.example.galaxymirror
 
 import android.content.Context
+import androidx.core.content.edit
 
 class StreamQualitySettingsStore(
   private val store: KeyValueStore,
@@ -26,7 +27,7 @@ class StreamQualitySettingsStore(
       preferences.getString(key, defaultValue) ?: defaultValue
 
     override fun putString(key: String, value: String) {
-      preferences.edit().putString(key, value).apply()
+      preferences.edit { putString(key, value) }
     }
   }
 

@@ -27,6 +27,7 @@ class BlackOverlayController(
         private const val TAG = "BlackOverlayController"
     }
 
+    @Suppress("ObsoleteSdkInt")
     fun canDrawOverlays(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Settings.canDrawOverlays(context)
@@ -52,9 +53,10 @@ class BlackOverlayController(
         try {
             val view = View(context).apply {
                 setBackgroundColor(Color.BLACK)
-                setOnTouchListener { _, event ->
+                setOnTouchListener { v, event ->
                     if (event.action == MotionEvent.ACTION_DOWN) {
                         Log.i(TAG, "Emergency touch detected on black overlay. Dismissing overlay.")
+                        v.performClick()
                         hideOverlay()
                         onEmergencyDismiss?.invoke()
                     }
@@ -62,17 +64,10 @@ class BlackOverlayController(
                 }
             }
 
-            val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            }
-
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
-                layoutType,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,

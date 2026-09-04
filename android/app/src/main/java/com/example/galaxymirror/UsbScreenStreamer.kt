@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import androidx.core.graphics.createBitmap
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -308,7 +309,7 @@ class UsbScreenStreamer(
             val currentSrc = cachedSourceBitmap
             if (currentSrc == null || currentSrc.width != bitmapWidth || currentSrc.height != captureProfile.height) {
                 currentSrc?.recycle()
-                cachedSourceBitmap = Bitmap.createBitmap(bitmapWidth, captureProfile.height, Bitmap.Config.ARGB_8888)
+                cachedSourceBitmap = createBitmap(bitmapWidth, captureProfile.height)
             }
             sBitmap = cachedSourceBitmap!!
 
@@ -320,7 +321,7 @@ class UsbScreenStreamer(
                 val currentJpeg = cachedJpegBitmap
                 if (currentJpeg == null || currentJpeg.width != profile.width || currentJpeg.height != profile.height) {
                     currentJpeg?.recycle()
-                    cachedJpegBitmap = Bitmap.createBitmap(profile.width, profile.height, Bitmap.Config.ARGB_8888)
+                    cachedJpegBitmap = createBitmap(profile.width, profile.height)
                 }
                 jBitmap = cachedJpegBitmap!!
             }

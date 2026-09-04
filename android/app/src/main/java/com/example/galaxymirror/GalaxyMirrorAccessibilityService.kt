@@ -308,13 +308,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
             HardwareKeyAction.VolumeUp -> adjustMusicVolume(AudioManager.ADJUST_RAISE)
             HardwareKeyAction.VolumeDown -> adjustMusicVolume(AudioManager.ADJUST_LOWER)
             HardwareKeyAction.ToggleMute -> adjustMusicVolume(AudioManager.ADJUST_TOGGLE_MUTE)
-            HardwareKeyAction.LockScreen -> {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
-                } else {
-                    false
-                }
-            }
+            HardwareKeyAction.LockScreen -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
             null -> false
         }
     }
