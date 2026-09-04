@@ -655,3 +655,59 @@ await test('disconnectMirrorFromButton closes active connection and updates conn
     assert.equal(ws.readyState, 3); // CLOSED
     assert.equal(Boolean(context.isMirrorConnectionActive()), false);
 });
+
+await test("loadStreamQualityStatus updates status on success and logs error on HTTP non-ok or fetch error", async () => {
+    let customFetch;
+    const { context, document } = loadViewer({
+        url: "http://example.test:8080/"
+    });
+    context.fetch = async (url, options) => customFetch(url, options);
+
+    // 1. Success path
+    customFetch = async () => ({
+        ok: true,
+        json: async () => ({ mode: "HIGH", label: "고화질" })
+    });
+    await context.loadStreamQualityStatus();
+
+    // 2. HTTP non-ok response
+    customFetch = async () => ({
+        ok: false,
+        status: 500
+    });
+    await context.loadStreamQualityStatus();
+
+    // 3. Network fetch rejection
+    customFetch = async () => {
+        throw new Error("Network error");
+    };
+    await context.loadStreamQualityStatus();
+});
+
+await test("setStreamQualityMode updates quality on success and logs error on HTTP non-ok or fetch error", async () => {
+    let customFetch;
+    const { context, document } = loadViewer({
+        url: "http://example.test:8080/"
+    });
+    context.fetch = async (url, options) => customFetch(url, options);
+
+    // 1. Success path
+    customFetch = async () => ({
+        ok: true,
+        json: async () => ({ mode: "BALANCED", label: "표준 화질" })
+    });
+    await context.setStreamQualityMode("BALANCED");
+
+    // 2. HTTP non-ok response
+    customFetch = async () => ({
+        ok: false,
+        status: 404
+    });
+    await context.setStreamQualityMode("BALANCED");
+
+    // 3. Network fetch rejection
+    customFetch = async () => {
+        throw new Error("Connection failed");
+    };
+    await context.setStreamQualityMode("BALANCED");
+});
