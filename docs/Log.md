@@ -13,6 +13,27 @@ updated: 2026-09-04
 
 ### 2026-09-04
 
+- **🚀 라이브러리 및 빌드 툴체인 최신 Stable 버전 전수 업그레이드**
+  - **Gradle & AGP 최신화**:
+    - `Gradle Wrapper`: `9.1.0` ➔ `9.7.1` (SHA-256 무결성 검증 포함 공식 업그레이드)
+    - `Android Gradle Plugin` (AGP): `9.0.1` ➔ `9.4.0` (Gradle 9.6+ 필수 요구조건 충족)
+    - `app/build.gradle.kts`: AGP 9.4.0 권고에 따라 더 이상 필요 없는 `textReport = true`, `htmlReport = true` 정리
+  - **컴파일러 및 임베디드 웹서버 최신화**:
+    - `Kotlin`: `2.3.20` ➔ `2.4.10` (Compose Compiler 플러그인 2.4.10 자동 동기화)
+    - `Ktor`: `3.0.3` ➔ `3.5.2` (`ktor-server-core`, `ktor-server-cio`, `ktor-server-websockets`, `ktor-server-test-host` 전면 상향, WebSockets/CIO 0.0.0.0 바인딩 및 시그널링 완전 호환)
+  - **테스트 및 유틸리티 최신화**:
+    - `mockito-core`: `5.10.0` ➔ `5.23.0`
+    - `mockito-kotlin`: `5.2.1` ➔ `6.3.0`
+    - `kotlinx-coroutines`: `1.10.2` ➔ `1.11.0`
+    - `org.json:json`: `20240303` ➔ `20260814`
+  - **AndroidX 버전 적응 분석**:
+    - `androidxCore 1.19.0`, `androidxLifecycle 2.11.0`, `androidxComposeBom 2026.08.00` 등은 Android API 37(compileSdk 37)을 필수로 요구함. 현재 프로젝트 타깃인 `compileSdk 36` 환경에 맞춰 검증된 최신 안정 버전(`1.18.0`, `2.10.0`, `2026.03.01`)으로 안전 고정.
+  - **전수 회귀 검증 완료**:
+    - JVM 단위 테스트 231개 100% 통과 (Failures: 0, Errors: 0)
+    - Mac Viewer JS 단위 테스트 100% 통과 (`viewer-keyboard.test.mjs`, `viewer-layout.test.mjs`, syntax check)
+    - Android Lint 검사: **0 issues found** (SARIF/HTML 무결점 유지)
+    - `assembleDebug` APK 빌드 성공 (`app-debug.apk` 108MB 정상 생성)
+
 - **Jules 자율 코딩 봇 PR 트리아지 및 안전 병합/거절 완수**
   - **유효 PR 2건 안전 병합**:
     - **PR #88** (`WebRtcManager.kt`): `startCapture` 화면 캡처 실패 catch 블록에 `Log.e("WebRTC", ...)` 에러 로깅 추가로 런타임 디버깅 가시성 강화.

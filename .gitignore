@@ -17,6 +17,7 @@ local.properties
 # OS & Logs
 .DS_Store
 *.log
+galaxy_mirror_recent_events.txt
 
 # Web client
 node_modules/

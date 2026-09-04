@@ -48,8 +48,6 @@ android {
             "NewerVersionAvailable",
             "AndroidGradlePluginVersion",
         )
-        textReport = true
-        htmlReport = true
     }
 }
 

@@ -11,7 +11,17 @@ updated: 2026-09-04
 
 ---
 
-### 🛡️ 2026-09-04 Jules PR 트리아지 및 전수 코드 최적화 완료
+### 🛡️ 2026-09-04 Jules PR 트리아지 및 전수 코드 최적화, 최신 Stable 버전 업그레이드 완료
+- [x] **🚀 최신 Stable 버전 전수 업그레이드 완수**:
+  - `Gradle Wrapper`: `9.1.0` ➔ `9.7.1`
+  - `Android Gradle Plugin`: `9.0.1` ➔ `9.4.0`
+  - `Kotlin`: `2.3.20` ➔ `2.4.10`
+  - `Ktor`: `3.0.3` ➔ `3.5.2` (코어, CIO, WebSockets, test-host)
+  - `Mockito Core`: `5.10.0` ➔ `5.23.0`
+  - `Mockito Kotlin`: `5.2.1` ➔ `6.3.0`
+  - `kotlinx.coroutines`: `1.10.2` ➔ `1.11.0`
+  - `org.json`: `20240303` ➔ `20260814`
+  - AndroidX: `compileSdk 36` 환경에 맞게 최신 안정 상태 검증 유지
 - [x] **PR #88 병합**: `WebRtcManager.kt` 캡처 초기화 예외 로깅 추가 (`Log.e`)
 - [x] **PR #89 병합**: `FavoriteAppsRepository.kt` 앱 실행 실패 시 `CrashDiagnostics` 기록 및 단위 테스트 추가
 - [x] **PR #86 거절(Closed)**: Tailscale 원격 접속을 깨뜨리는 `127.0.0.1` 바인딩 변경 차단 (`AGENTS.md` 규격 보존)
