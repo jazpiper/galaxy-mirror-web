@@ -3,6 +3,7 @@ package com.example.galaxymirror
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Path
 import android.graphics.Rect
 import android.media.AudioManager
@@ -28,8 +29,31 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
     private var clipboardListener: android.content.ClipboardManager.OnPrimaryClipChangedListener? = null
     private var lastInjectedClipboardText: String? = null
 
-    private fun getScreenWidth(): Int = resources.displayMetrics.widthPixels
-    private fun getScreenHeight(): Int = resources.displayMetrics.heightPixels
+    @Volatile
+    private var cachedScreenWidth: Int = 0
+    @Volatile
+    private var cachedScreenHeight: Int = 0
+
+    private fun updateScreenDimensions() {
+        val metrics = resources.displayMetrics
+        cachedScreenWidth = metrics.widthPixels
+        cachedScreenHeight = metrics.heightPixels
+    }
+
+    private fun getScreenWidth(): Int {
+        if (cachedScreenWidth == 0) updateScreenDimensions()
+        return cachedScreenWidth
+    }
+
+    private fun getScreenHeight(): Int {
+        if (cachedScreenHeight == 0) updateScreenDimensions()
+        return cachedScreenHeight
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateScreenDimensions()
+    }
 
     // Gesture Queueing structures to ensure serialized execution
     private val gestureQueue = mutableListOf<PendingGesture>()
@@ -120,6 +144,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        updateScreenDimensions()
         Log.d(TAG, "AccessibilityService connected. Screen: ${getScreenWidth()}x${getScreenHeight()}")
         registerClipboardListener()
     }
@@ -181,8 +206,10 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
             when (val type = json.getString("type")) {
                 "tap" -> {
                     textInputBuffer.invalidate()
-                    val x = (json.getDouble("x") * getScreenWidth()).toFloat()
-                    val y = (json.getDouble("y") * getScreenHeight()).toFloat()
+                    val width = getScreenWidth()
+                    val height = getScreenHeight()
+                    val x = (json.getDouble("x") * width).toFloat()
+                    val y = (json.getDouble("y") * height).toFloat()
                     CrashDiagnostics.recordEvent(this, "Accessibility tap requested.")
                     performTap(x, y) { applied ->
                         resultCallback(ControlEventResult(seq, type, applied, "TAP_COMPLETED"))
@@ -190,10 +217,12 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
                 }
                 "swipe" -> {
                     textInputBuffer.invalidate()
-                    val x1 = (json.getDouble("x1") * getScreenWidth()).toFloat()
-                    val y1 = (json.getDouble("y1") * getScreenHeight()).toFloat()
-                    val x2 = (json.getDouble("x2") * getScreenWidth()).toFloat()
-                    val y2 = (json.getDouble("y2") * getScreenHeight()).toFloat()
+                    val width = getScreenWidth()
+                    val height = getScreenHeight()
+                    val x1 = (json.getDouble("x1") * width).toFloat()
+                    val y1 = (json.getDouble("y1") * height).toFloat()
+                    val x2 = (json.getDouble("x2") * width).toFloat()
+                    val y2 = (json.getDouble("y2") * height).toFloat()
                     val duration = if (json.has("duration")) json.getLong("duration") else 300L
                     CrashDiagnostics.recordEvent(this, "Accessibility swipe requested.")
                     performSwipe(x1, y1, x2, y2, duration) { applied ->
