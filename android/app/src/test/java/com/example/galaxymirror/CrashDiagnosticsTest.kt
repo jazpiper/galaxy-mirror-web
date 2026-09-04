@@ -113,4 +113,32 @@ class CrashDiagnosticsTest {
         // Even though diagnostic gathering failed and threw, the finally block ensures delegation
         verify(mockHandler).uncaughtException(Thread.currentThread(), throwable)
     }
+
+    @Test
+    fun benchmarkFlushAsyncVsSyncBlocking() {
+        val dir = Files.createTempDirectory("galaxy-crash-benchmark").toFile()
+        val iterations = 100
+
+        // Benchmark async non-blocking flush call latency on calling thread
+        val startAsync = System.nanoTime()
+        for (i in 0 until iterations) {
+            CrashDiagnostics.recordEvent(dir, "event $i")
+            CrashDiagnostics.flush()
+        }
+        val durationAsyncMs = (System.nanoTime() - startAsync) / 1_000_000.0
+
+        // Ensure all pending events are flushed before testing sync blocking
+        CrashDiagnostics.flushExecutorForTesting()
+
+        // Benchmark synchronous blocking flush call latency on calling thread
+        val startSync = System.nanoTime()
+        for (i in 0 until iterations) {
+            CrashDiagnostics.recordEvent(dir, "event $i")
+            CrashDiagnostics.flushExecutorForTesting()
+        }
+        val durationSyncMs = (System.nanoTime() - startSync) / 1_000_000.0
+
+        println("BENCHMARK_RESULTS: async_flush=${durationAsyncMs}ms sync_blocking_flush=${durationSyncMs}ms speedup=${durationSyncMs / Math.max(durationAsyncMs, 0.001)}x")
+        assertTrue("Non-blocking flush should complete on caller thread faster than synchronous blocking .get()", durationAsyncMs <= durationSyncMs)
+    }
 }

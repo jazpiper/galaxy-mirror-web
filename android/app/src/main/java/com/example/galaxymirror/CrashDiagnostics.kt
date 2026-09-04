@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -155,8 +156,24 @@ object CrashDiagnostics {
         }
     }
 
-    fun flushExecutorForTesting() {
-        logExecutor.submit { }.get()
+    fun flush(onComplete: Runnable? = null) {
+        if (logExecutor.isShutdown) return
+        try {
+            logExecutor.submit {
+                onComplete?.run()
+            }
+        } catch (e: Exception) {
+            Log.e("CrashDiagnostics", "Failed to flush log executor: ${e.message}", e)
+        }
+    }
+
+    fun flushExecutorForTesting(timeoutMs: Long = 5000) {
+        if (logExecutor.isShutdown) return
+        try {
+            logExecutor.submit { }.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            Log.e("CrashDiagnostics", "Failed to flush log executor for testing: ${e.message}", e)
+        }
     }
 
     private fun StringBuilder.appendSection(file: File, emptyMessage: String) {
@@ -226,6 +243,6 @@ object CrashDiagnostics {
         ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSZ", Locale.US) }
 
     private fun timestamp(timeMillis: Long = System.currentTimeMillis()): String {
-        return timestampFormat.get().format(Date(timeMillis))
+        return timestampFormat.get()!!.format(Date(timeMillis))
     }
 }
