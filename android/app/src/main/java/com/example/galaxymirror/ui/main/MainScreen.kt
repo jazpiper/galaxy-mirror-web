@@ -77,84 +77,37 @@ fun MainScreen(
   viewModel: MainScreenViewModel = viewModel { MainScreenViewModel(DefaultDataRepository()) },
 ) {
   val state = viewModel.uiState.collectAsStateWithLifecycle().value
-  when (state) {
-    MainScreenUiState.Loading ->
-      MirrorHomeScreen(
-        modifier = modifier,
-        accessibilityEnabled = accessibilityEnabled,
-        favoriteApps = favoriteApps,
-        launchableApps = launchableApps,
-        screenAwakeSettings = screenAwakeSettings,
-        canWriteSystemSettings = canWriteSystemSettings,
-        streamQualityMode = streamQualityMode,
-        streamQualityNetwork = streamQualityNetwork,
-        streamQualityProfile = streamQualityProfile,
-        isMirroringActive = isMirroringActive,
-        blackOverlayEnabled = blackOverlayEnabled,
-        overlayPermissionReady = overlayPermissionReady,
-        onAddFavoriteApp = onAddFavoriteApp,
-        onRemoveFavoriteApp = onRemoveFavoriteApp,
-        onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
-        onStreamQualityModeChange = onStreamQualityModeChange,
-        onToggleBlackOverlay = onToggleBlackOverlay,
-        onOpenAppInfoSettings = onOpenAppInfoSettings,
-        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-        onOpenWriteSettings = onOpenWriteSettings,
-        onOpenOverlaySettings = onOpenOverlaySettings,
-        onDisconnect = onDisconnect,
-      )
-    is MainScreenUiState.Success ->
-      MirrorHomeScreen(
-        modifier = modifier,
-        accessibilityEnabled = accessibilityEnabled,
-        favoriteApps = favoriteApps,
-        launchableApps = launchableApps,
-        screenAwakeSettings = screenAwakeSettings,
-        canWriteSystemSettings = canWriteSystemSettings,
-        streamQualityMode = streamQualityMode,
-        streamQualityNetwork = streamQualityNetwork,
-        streamQualityProfile = streamQualityProfile,
-        isMirroringActive = isMirroringActive,
-        blackOverlayEnabled = blackOverlayEnabled,
-        overlayPermissionReady = overlayPermissionReady,
-        onAddFavoriteApp = onAddFavoriteApp,
-        onRemoveFavoriteApp = onRemoveFavoriteApp,
-        onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
-        onStreamQualityModeChange = onStreamQualityModeChange,
-        onToggleBlackOverlay = onToggleBlackOverlay,
-        onOpenAppInfoSettings = onOpenAppInfoSettings,
-        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-        onOpenWriteSettings = onOpenWriteSettings,
-        onOpenOverlaySettings = onOpenOverlaySettings,
-        onDisconnect = onDisconnect,
-      )
-    is MainScreenUiState.Error ->
-      MirrorHomeScreen(
-        modifier = modifier,
-        accessibilityEnabled = accessibilityEnabled,
-        favoriteApps = favoriteApps,
-        launchableApps = launchableApps,
-        screenAwakeSettings = screenAwakeSettings,
-        canWriteSystemSettings = canWriteSystemSettings,
-        streamQualityMode = streamQualityMode,
-        streamQualityNetwork = streamQualityNetwork,
-        streamQualityProfile = streamQualityProfile,
-        isMirroringActive = isMirroringActive,
-        blackOverlayEnabled = blackOverlayEnabled,
-        overlayPermissionReady = overlayPermissionReady,
-        onAddFavoriteApp = onAddFavoriteApp,
-        onRemoveFavoriteApp = onRemoveFavoriteApp,
-        onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
-        onStreamQualityModeChange = onStreamQualityModeChange,
-        onToggleBlackOverlay = onToggleBlackOverlay,
-        onOpenAppInfoSettings = onOpenAppInfoSettings,
-        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-        onOpenWriteSettings = onOpenWriteSettings,
-        onOpenOverlaySettings = onOpenOverlaySettings,
-        onDisconnect = onDisconnect,
-        warning = "상태를 불러오지 못했습니다: ${(state as MainScreenUiState.Error).throwable.message.orEmpty()}",
-      )
+  val warning = if (state is MainScreenUiState.Error) {
+    "상태를 불러오지 못했습니다: ${state.throwable.message.orEmpty()}"
+  } else {
+    null
   }
+
+  MirrorHomeScreen(
+    modifier = modifier,
+    accessibilityEnabled = accessibilityEnabled,
+    favoriteApps = favoriteApps,
+    launchableApps = launchableApps,
+    screenAwakeSettings = screenAwakeSettings,
+    canWriteSystemSettings = canWriteSystemSettings,
+    streamQualityMode = streamQualityMode,
+    streamQualityNetwork = streamQualityNetwork,
+    streamQualityProfile = streamQualityProfile,
+    isMirroringActive = isMirroringActive,
+    blackOverlayEnabled = blackOverlayEnabled,
+    overlayPermissionReady = overlayPermissionReady,
+    onAddFavoriteApp = onAddFavoriteApp,
+    onRemoveFavoriteApp = onRemoveFavoriteApp,
+    onScreenAwakeSettingsChange = onScreenAwakeSettingsChange,
+    onStreamQualityModeChange = onStreamQualityModeChange,
+    onToggleBlackOverlay = onToggleBlackOverlay,
+    onOpenAppInfoSettings = onOpenAppInfoSettings,
+    onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+    onOpenWriteSettings = onOpenWriteSettings,
+    onOpenOverlaySettings = onOpenOverlaySettings,
+    onDisconnect = onDisconnect,
+    warning = warning,
+  )
 }
 
 @Composable
@@ -260,35 +213,13 @@ internal fun MirrorHomeScreen(
       onRemoveClick = onRemoveFavoriteApp,
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      OutlinedButton(
-        onClick = onOpenAppInfoSettings,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !accessibilityEnabled,
-      ) {
-        Text(MainScreenContent.appInfoButtonLabel)
-      }
-      Button(
-        onClick = onOpenAccessibilitySettings,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !accessibilityEnabled,
-      ) {
-        Text(
-          if (accessibilityEnabled) {
-            MainScreenContent.accessibilityEnabledLabel
-          } else {
-            MainScreenContent.accessibilityButtonLabel
-          }
-        )
-      }
-      OutlinedButton(
-        onClick = onDisconnect,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = isMirroringActive,
-      ) {
-        Text(MainScreenContent.disconnectButtonLabel)
-      }
-    }
+    ActionButtonsPanel(
+      accessibilityEnabled = accessibilityEnabled,
+      isMirroringActive = isMirroringActive,
+      onOpenAppInfoSettings = onOpenAppInfoSettings,
+      onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+      onDisconnect = onDisconnect,
+    )
   }
 
   if (showAppPicker) {
@@ -300,6 +231,48 @@ internal fun MirrorHomeScreen(
         onAddFavoriteApp(app)
       },
     )
+  }
+}
+
+
+
+@Composable
+private fun ActionButtonsPanel(
+  accessibilityEnabled: Boolean,
+  isMirroringActive: Boolean,
+  onOpenAppInfoSettings: () -> Unit,
+  onOpenAccessibilitySettings: () -> Unit,
+  onDisconnect: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    OutlinedButton(
+      onClick = onOpenAppInfoSettings,
+      modifier = Modifier.fillMaxWidth(),
+      enabled = !accessibilityEnabled,
+    ) {
+      Text(MainScreenContent.appInfoButtonLabel)
+    }
+    Button(
+      onClick = onOpenAccessibilitySettings,
+      modifier = Modifier.fillMaxWidth(),
+      enabled = !accessibilityEnabled,
+    ) {
+      Text(
+        if (accessibilityEnabled) {
+          MainScreenContent.accessibilityEnabledLabel
+        } else {
+          MainScreenContent.accessibilityButtonLabel
+        }
+      )
+    }
+    OutlinedButton(
+      onClick = onDisconnect,
+      modifier = Modifier.fillMaxWidth(),
+      enabled = isMirroringActive,
+    ) {
+      Text(MainScreenContent.disconnectButtonLabel)
+    }
   }
 }
 
