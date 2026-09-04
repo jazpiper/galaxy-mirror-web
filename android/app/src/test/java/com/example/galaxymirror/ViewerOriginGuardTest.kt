@@ -7,9 +7,8 @@ import org.junit.Test
 class ViewerOriginGuardTest {
 
     @Test
-    fun missingOriginIsAllowedForNonBrowserClients() {
-        // curl, adb 스모크 테스트, 주소창 직접 입력은 Origin을 보내지 않는다.
-        assertTrue(ViewerOriginGuard.isAllowed(null, "127.0.0.1:8080"))
+    fun missingOriginIsRejected() {
+        assertFalse(ViewerOriginGuard.isAllowed(null, "127.0.0.1:8080"))
     }
 
     @Test
