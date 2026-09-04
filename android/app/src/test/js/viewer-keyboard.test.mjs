@@ -385,6 +385,9 @@ function loadViewer(options = {}) {
         }
 
         async addIceCandidate(candidate) {
+            if (candidate && candidate.invalid) {
+                throw new Error('Invalid candidate format');
+            }
             this.candidate = candidate;
         }
 
@@ -418,7 +421,11 @@ function loadViewer(options = {}) {
         WebSocket: FakeWebSocket,
         RTCPeerConnection: FakeRTCPeerConnection,
         RTCSessionDescription: class {},
-        RTCIceCandidate: class {},
+        RTCIceCandidate: class {
+            constructor(candidate) {
+                Object.assign(this, candidate);
+            }
+        },
         navigator: options.navigator || {},
         MediaRecorder: options.MediaRecorder,
         Blob: options.Blob || FakeBlob,
@@ -1480,4 +1487,57 @@ await test('waiting for screen capture stops reconnect overlay and clears stale 
     assert.equal(remoteVideo.srcObject, null);
     assert.equal(document.getElementById('controlStatus').innerText, '대기');
     assert.match(document.getElementById('statusDetail').textContent, /화면 공유 권한/);
+});
+
+
+await test('addRemoteCandidate catches error when addIceCandidate fails for malformed candidate', async () => {
+    const { context, document, webSockets, peerConnections, clock } = loadViewer();
+
+    vm.runInContext('connectSignaling();', context);
+    webSockets[0].onopen();
+    await flushAsyncWork();
+
+    const pc = peerConnections.at(-1);
+    pc.remoteDescription = { type: 'answer', sdp: 'fake' };
+    vm.runInContext('_set_remoteDescriptionSet(true);', context);
+
+    const malformedCandidate = { invalid: true };
+    await vm.runInContext('addRemoteCandidate(' + JSON.stringify(malformedCandidate) + ');', context);
+    clock.tick(16);
+    await flushAsyncWork();
+
+    const logBoxText = document.getElementById('logBox').textContent;
+    assert.match(logBoxText, /ICE Candidate 추가 실패: Invalid candidate format/);
+});
+
+await test('flushPendingRemoteCandidates catches error when candidate in queue is malformed', async () => {
+    const { context, document, webSockets, peerConnections, clock } = loadViewer();
+
+    vm.runInContext('connectSignaling();', context);
+    webSockets[0].onopen();
+    await flushAsyncWork();
+
+    // remoteDescriptionSet is false initially, candidates are queued
+    const candidate1 = { invalid: true };
+    const candidate2 = { candidate: "valid-candidate" };
+    await vm.runInContext('addRemoteCandidate(' + JSON.stringify(candidate1) + ');', context);
+    await vm.runInContext('addRemoteCandidate(' + JSON.stringify(candidate2) + ');', context);
+
+    const pendingBefore = vm.runInContext('pendingRemoteCandidates.length', context);
+    assert.equal(pendingBefore, 2);
+
+    const pc = peerConnections.at(-1);
+    pc.remoteDescription = { type: 'answer', sdp: 'fake' };
+    vm.runInContext('_set_remoteDescriptionSet(true);', context);
+
+    await vm.runInContext('flushPendingRemoteCandidates();', context);
+    clock.tick(16);
+    await flushAsyncWork();
+
+    const pendingAfter = vm.runInContext('pendingRemoteCandidates.length', context);
+    assert.equal(pendingAfter, 0);
+
+    const logBoxText = document.getElementById('logBox').textContent;
+    assert.match(logBoxText, /ICE Candidate 추가 실패: Invalid candidate format/);
+    assert.match(logBoxText, /대기 중 ICE Candidate 2개 추가 완료/);
 });
