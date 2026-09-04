@@ -2,12 +2,29 @@
 project: galaxy-mirror-web
 type: Log
 related: [Dashboard.md, Handoff.md, Protocols.md, Coordinates.md]
-updated: 2026-08-27
+updated: 2026-09-04
 ---
 
 # 📝 Android Mirror Web Development Log
 
 이 문서는 `galaxy-mirror-web` 프로젝트의 실시간 진행 상황과 핵심 개발 이력을 시간 순서대로 투명하게 기록하는 연대기적 개발 로그입니다.
+
+---
+
+### 2026-09-04
+
+- **Jules 자율 코딩 봇 PR 트리아지 및 안전 병합/거절 완수**
+  - **유효 PR 2건 안전 병합**:
+    - **PR #88** (`WebRtcManager.kt`): `startCapture` 화면 캡처 실패 catch 블록에 `Log.e("WebRTC", ...)` 에러 로깅 추가로 런타임 디버깅 가시성 강화.
+    - **PR #89** (`FavoriteAppsRepository.kt`, `FavoriteAppsRepositoryTest.kt`): 즐겨찾기 앱 실행 실패(`ActivityNotFoundException` 등) 발생 시 `CrashDiagnostics.recordCaughtException` 기록 추가 및 단위 테스트 케이스 보강.
+  - **치명적 회귀 PR #86 차단 및 거절 (Reject/Close)**:
+    - **PR #86** (`fix/ktor-bind-localhost...`): Ktor 서버 바인딩을 `0.0.0.0`에서 `127.0.0.1`로 수정하려던 시도 차단. Tailscale MagicDNS 기반 무선 원격 미러링 연결을 전면 마비시키고 `AGENTS.md` 핵심 아키텍처 규칙을 위반하므로 명확한 기술 사유와 함께 거절 처리.
+  - **빈 PR 3건 정리 (Close)**:
+    - **PR #84, #85, #87**: 코드 변경사항이 없는 0 changed files (빈 커밋) 상태 확인 후 사유 명시 후 정리 완료.
+  - **전수 검증**:
+    - JVM 단위 테스트(`app:testDebugUnitTest`) 100% 통과.
+    - Mac Viewer Vanilla JS 단위 테스트(`viewer-keyboard.test.mjs`, `viewer-layout.test.mjs`) 및 구문 검사(`node --check`) 100% 통과.
+    - Android Lint(`app:lintDebug`) 및 `assembleDebug` APK 빌드 100% 성공 (BUILD SUCCESSFUL).
 
 ---
 

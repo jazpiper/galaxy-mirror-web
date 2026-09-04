@@ -2,12 +2,21 @@
 project: galaxy-mirror-web
 type: Handoff
 related: [Dashboard.md, Log.md, Protocols.md, Coordinates.md]
-updated: 2026-08-27
+updated: 2026-09-04
 ---
 
 # 📋 Android Mirror Web Handoff & Task Board
 
 이 문서는 현재 활성화된 마일스톤의 세부 태스크 보드 및 백로그를 가볍고 효율적으로 추적하며, 개발 세션 전환 시 작업 맥락을 끊김 없이 보존하기 위한 핸드오프 정보입니다.
+
+---
+
+### 🛡️ 2026-09-04 Jules PR 트리아지 및 코드베이스 동기화 완료
+- [x] **PR #88 병합**: `WebRtcManager.kt` 캡처 초기화 예외 로깅 추가 (`Log.e`)
+- [x] **PR #89 병합**: `FavoriteAppsRepository.kt` 앱 실행 실패 시 `CrashDiagnostics` 기록 및 단위 테스트 추가
+- [x] **PR #86 거절(Closed)**: Tailscale 원격 접속을 깨뜨리는 `127.0.0.1` 바인딩 변경 차단 (`AGENTS.md` 규격 보존)
+- [x] **PR #84, #85, #87 정리(Closed)**: 내용 없는 빈 커밋(0 changed files) 정리 완료
+- [x] **CI/로컬 전수 검증 통과**: JVM 단위 테스트, JS 뷰어 테스트, Lint 및 APK 빌드 100% 정상 통과
 
 ---
 
