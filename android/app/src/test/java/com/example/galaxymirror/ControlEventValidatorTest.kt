@@ -85,6 +85,49 @@ class ControlEventValidatorTest {
     }
 
     @Test
+    fun isValid_validatesClipboardTextLengthBoundaryAndEdgeCases() {
+        // Lower bound testing: empty string and single character
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"clipboard","text":""}""")))
+        assertTrue(ControlEventValidator.isValid(JSONObject("""{"type":"clipboard","text":"a"}""")))
+
+        // Upper bound boundary tests around 8192 character limit
+        assertTrue(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(8191))}}""")
+            )
+        )
+        assertTrue(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(8192))}}""")
+            )
+        )
+        assertFalse(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(8193))}}""")
+            )
+        )
+        assertFalse(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote("a".repeat(10000))}}""")
+            )
+        )
+
+        // Multibyte / Unicode character boundary tests
+        val unicode8192 = "한".repeat(8192)
+        val unicode8193 = "한".repeat(8193)
+        assertTrue(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote(unicode8192)}}""")
+            )
+        )
+        assertFalse(
+            ControlEventValidator.isValid(
+                JSONObject("""{"type":"clipboard","text":${JSONObject.quote(unicode8193)}}""")
+            )
+        )
+    }
+
+    @Test
     fun outboundClipboardListenerAllowsEmptyTextButSkipsNullText() {
         val source = readAccessibilityServiceSource()
 
