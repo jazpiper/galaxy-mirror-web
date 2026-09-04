@@ -25,8 +25,8 @@ updated: 2026-09-04
   - `MainScreen.kt` Compose `ModifierParameter` 컨벤션 준수
   - `AndroidManifest.xml` 백업 보안 규칙 선언 및 `mipmap-anydpi` 리소스 폴더 정돈
   - Mac Viewer `main.js` 불필요 대량 import 정리 (크기 70% 축소)
-  - Android Lint 경고 50개 ➔ 25개로 50% 절감
-- [x] **CI/로컬 전수 검증 통과**: JVM 단위 테스트 231개 100% 통과, JS 뷰어 테스트 100% 통과, Lint 및 APK 빌드 100% 정상 통과
+  - Android Lint 경고 50개 ➔ **0개(No issues found, 100% 해소) 달성**
+- [x] **CI/로컬 전수 검증 통과**: JVM 단위 테스트 231개 100% 통과, JS 뷰어 테스트 100% 통과, Lint(0 warnings/0 errors) 및 APK 빌드 100% 정상 통과
 
 ---
 

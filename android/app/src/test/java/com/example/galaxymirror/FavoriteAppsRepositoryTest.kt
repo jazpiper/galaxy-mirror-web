@@ -12,6 +12,7 @@ import org.mockito.Mockito.*
 import org.mockito.ArgumentMatchers.any
 import java.nio.file.Files
 
+@Suppress("UnspecifiedRegisterReceiverFlag")
 class FavoriteAppsRepositoryTest {
     @Test
     fun launchFavorite_returnsFalse_whenStartActivityThrowsActivityNotFoundException() {

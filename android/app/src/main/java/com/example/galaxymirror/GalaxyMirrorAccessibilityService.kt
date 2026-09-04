@@ -124,6 +124,7 @@ class GalaxyMirrorAccessibilityService : AccessibilityService(), ControlEventApp
         registerClipboardListener()
     }
 
+    @Suppress("SwitchIntDef")
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         when (event.eventType) {

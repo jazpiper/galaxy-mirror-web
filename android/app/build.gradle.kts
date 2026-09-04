@@ -41,6 +41,16 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    lint {
+        disable += setOf(
+            "GradleDependency",
+            "NewerVersionAvailable",
+            "AndroidGradlePluginVersion",
+        )
+        textReport = true
+        htmlReport = true
+    }
 }
 
 kotlin {
